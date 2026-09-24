@@ -1,0 +1,502 @@
+# Ethora.com platform, copyright: Dappros Ltd (c) 2026, all rights reserved
+instances:
+  - id: local
+    name: {{BASE_APP_DISPLAY_NAME}}
+    enabled: true
+    tags: [enterprise]
+    checks:
+      - id: api_ping
+        name: API_ping
+        type: http
+        url: "http://host.docker.internal:{{BACKEND_PORT}}/ping"
+        intervalSeconds: 30
+        timeoutMs: 4000
+        expect:
+          - type: status_code
+            expected: [200]
+          # Optional metadata capture (does NOT affect health status)
+          - type: json
+            path: version
+            captureAs: version
+          - type: json
+            path: build.commit
+            captureAs: commit
+          - type: json
+            path: build.time
+            captureAs: time
+          - type: json
+            path: build.version
+            captureAs: buildVersion
+      - id: swagger_json
+        name: Swagger_JSON
+        type: http
+        severity: optional
+        url: "http://host.docker.internal:{{BACKEND_PORT}}/api-docs/swagger.json"
+        intervalSeconds: 60
+        timeoutMs: 6000
+        expect:
+          - type: status_code
+            expected: [200]
+          - type: json
+            path: openapi
+            exists: true
+          # Optional metadata capture (does NOT affect health status)
+          - type: json
+            path: info.version
+            captureAs: version
+
+      # Optional: validate push notifications service account (no mobile app required).
+      # Requires: ETHORA_API_BASE / ETHORA_BASE_DOMAIN_NAME / ETHORA_ADMIN_EMAIL / ETHORA_ADMIN_PASSWORD (already set in uptime.env.template)
+      - id: push_validate
+        name: Push_validate
+        type: push_validate
+        severity: optional
+        enabled: false
+        intervalSeconds: 3600
+        timeoutMs: 60000
+      - id: minio_live
+        name: MinIO_live
+        type: http
+        url: "http://host.docker.internal:9000/minio/health/live"
+        intervalSeconds: 30
+        timeoutMs: 3000
+        expect:
+          - type: status_code
+            expected: [200]
+      - id: xmpp_ws
+        name: XMPP_websocket
+        type: wss
+        severity: optional
+        # Uptime runs in docker and joins the same network as ejabberd, so it can talk to `xmpp:5280` directly.
+        url: "ws://xmpp:5280/ws"
+        intervalSeconds: 60
+        timeoutMs: 6000
+
+      # End-to-end XMPP chat heartbeat (no Mongo involvement):
+      # - ensures 2 test XMPP users exist
+      # - ensures a test MUC room exists
+      # - user1 joins + sends a groupchat message
+      # - user2 must receive it within timeout
+      #
+      # Uses env from deploy/generated/uptime/uptime.env:
+      # - ETHORA_XMPP_API_URL, ETHORA_XMPP_SERVICE, ETHORA_XMPP_ADMIN_PASSWORD, ...
+      - id: xmpp_muc_echo
+        name: XMPP_chat_echo
+        type: xmpp_muc_echo
+        intervalSeconds: 90
+        timeoutMs: 15000
+
+      # Optional: synthetic journey regression test (disabled by default).
+      # To enable:
+      # - add a check with type: journey
+      # - set ETHORA_API_BASE, ETHORA_BASE_DOMAIN_NAME, ETHORA_ADMIN_EMAIL, ETHORA_ADMIN_PASSWORD
+      #
+      - id: journey
+        name: Synthetic_journey
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 3600
+        timeoutMs: 180000
+
+      # Comprehensive synthetic journey (enabled by default)
+      - id: journey_advanced
+        name: Synthetic_journey_advanced
+        type: journey
+        severity: optional
+        enabled: true
+        intervalSeconds: 7200
+        timeoutMs: 240000
+
+      # Optional: tenant-admin / B2B regression journey (disabled by default).
+      # To enable:
+      # - ensure ETHORA_B2B_APP_ID / ETHORA_B2B_APP_SECRET are present in uptime.env
+      # - those values should point to the tenant/root app credentials (the app that owns child apps)
+      - id: journey_b2b
+        name: Synthetic_journey_b2b
+        type: journey
+        severity: optional
+        enabled: true
+        intervalSeconds: 7200
+        timeoutMs: 240000
+
+      # Customer-workflow regression journey: mirrors a typical customer
+      # integration sequence (account enabled -> users-batch -> chat with members
+      # in `${appId}_${uuid}` format -> user deletion -> account deletion).
+      # On every step where xmppUsername is returned, asserts no `${appId}_${appId}_*`
+      # double-prefix to catch the regression that broke chat membership lookups.
+      # Same env as journey_b2b: ETHORA_B2B_APP_ID / ETHORA_B2B_APP_SECRET.
+      - id: journey_customer_workflow
+        name: Synthetic_journey_customer_workflow
+        type: journey
+        severity: optional
+        enabled: true
+        intervalSeconds: 7200
+        timeoutMs: 240000
+
+      # ----- Manual journeys (run on demand from the wallboard "Run" button) -----
+      # All of these are `enabled: false` so they never run on a schedule. They
+      # exist so an operator can fire them after install / update for QA, or
+      # ad-hoc to confirm a specific area still works.
+
+      # Login + /login/refresh roundtrip + /me with the refreshed token.
+      - id: journey_token_refresh
+        name: Synthetic_token_refresh
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 0
+        timeoutMs: 30000
+
+      # Read-only signup validation: check-domain-name + checkEmail.
+      - id: journey_signup_validation
+        name: Synthetic_signup_validation
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 0
+        timeoutMs: 30000
+
+      # /v1/users/forgot + /v1/users/reset (with deliberately invalid token).
+      # Verifies the password-reset endpoints respond and the validation path
+      # rejects bad tokens. Does NOT consume the real reset token (we can't
+      # read the email).
+      - id: journey_password_reset
+        name: Synthetic_password_reset
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 0
+        timeoutMs: 60000
+
+      # /v1/apps/graph-statistic/{appId} + /v1/apps/{id}.
+      - id: journey_app_stats
+        name: Synthetic_app_stats
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 0
+        timeoutMs: 60000
+
+      # tags-add / tags-set / tags-delete on N synthetic users.
+      - id: journey_user_tags
+        name: Synthetic_user_tags
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 0
+        timeoutMs: 90000
+
+      # Public chat + /v1/chats/reports/{chatName} (moderation flow).
+      - id: journey_chat_reports
+        name: Synthetic_chat_reports
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 0
+        timeoutMs: 90000
+
+      # /v1/files upload + list + get + delete lifecycle.
+      - id: journey_v1_files
+        name: Synthetic_v1_files
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 0
+        timeoutMs: 60000
+
+      # /v1/chats/private DM + /v1/chats/my (cleanup via teardown).
+      - id: journey_private_chat
+        name: Synthetic_private_chat
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 0
+        timeoutMs: 60000
+
+      # /v2/chats/users (GET) + /v2/chats/users (PATCH multipart) on a v2 group chat.
+      - id: journey_v2_user_chats
+        name: Synthetic_v2_user_chats
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 0
+        timeoutMs: 60000
+
+      # AI Agents forward path: create app-scoped agent + list + invite into a
+      # room + inspect bot-instances (POST/GET /v2/apps/{appId}/agents,
+      # invite-to-chat, /v2/apps/{appId}/bot-instances).
+      # ONLY enable on deployments where the AI module is turned on at deploy-
+      # config level — it is deliberately excluded from journey_b2b so AI-
+      # disabled servers don't false-RED. Uses the same tenant credentials as
+      # journey_b2b: ETHORA_B2B_APP_ID / ETHORA_B2B_APP_SECRET.
+      - id: journey_ai
+        name: Synthetic_journey_ai
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 0
+        timeoutMs: 90000
+
+      # ----- Cheap HTTP availability checks (no fixture overhead) -----
+      # These hit single endpoints with deterministic inputs and verify the
+      # route is mounted + responding. They're scheduled on long intervals
+      # because their failure mode is the same as api_ping.
+
+      # /v1/users/checkEmail/{email} — used by the signup form. Must respond
+      # 2xx (available) for an obviously-not-registered probe email; 422 also
+      # acceptable as a validation response.
+      - id: signup_check_email
+        name: Signup_check_email
+        type: http
+        severity: optional
+        url: "http://host.docker.internal:{{BACKEND_PORT}}/v1/users/checkEmail/uptime-probe%40example.com"
+        intervalSeconds: 300
+        timeoutMs: 4000
+        expect:
+          - type: status_code
+            expected: [200, 422]
+
+      # ----- Hosted MCP server (optional; services.mcp.enabled) -----
+      # Rendered enabled only when the MCP service is installed on this host.
+      # /healthz reports the PM2 process is up and the base-app JWT bootstrap
+      # succeeded (appJwtReady), which is what login/register tools depend on.
+      - id: mcp_health
+        name: MCP_health
+        type: http
+        severity: optional
+        enabled: {{UPTIME_MCP_ENABLED}}
+        url: "http://host.docker.internal:{{MCP_PORT}}/healthz"
+        intervalSeconds: 60
+        timeoutMs: 4000
+        expect:
+          - type: status_code
+            expected: [200]
+          - type: json
+            path: ok
+            exists: true
+          # Metadata capture (does NOT affect health status)
+          - type: json
+            path: version
+            captureAs: version
+          - type: json
+            path: sessions
+            captureAs: sessions
+          - type: json
+            path: appJwtReady
+            captureAs: appJwtReady
+
+  # Remote instances (optional): useful for teams validating multiple environments.
+  # Public (external) checks for THIS deployment (TLS + Nginx routing).
+  # Enabled automatically for non-localhost installs.
+  - id: public
+    name: {{BASE_APP_DISPLAY_NAME}}_Public
+    enabled: {{UPTIME_PUBLIC_ENABLED}}
+    tags: [public]
+    checks:
+      - id: api_ping
+        name: API_ping
+        type: http
+        url: "https://{{API_DOMAIN}}/ping"
+        intervalSeconds: 60
+        timeoutMs: 6000
+        expect:
+          - type: status_code
+            expected: [200]
+      - id: swagger_json
+        name: Swagger_JSON
+        type: http
+        severity: optional
+        url: "https://{{API_DOMAIN}}/api-docs/swagger.json"
+        intervalSeconds: 300
+        timeoutMs: 8000
+        expect:
+          - type: status_code
+            expected: [200]
+          - type: json
+            path: openapi
+            exists: true
+
+      - id: web_home
+        name: Web_home
+        type: http
+        severity: optional
+        url: "https://{{WEB_DOMAIN}}/"
+        intervalSeconds: 300
+        timeoutMs: 8000
+        expect:
+          - type: status_code
+            expected: [200]
+
+      - id: files_minio_live
+        name: Files_MinIO_live
+        type: http
+        severity: optional
+        url: "https://{{FILES_DOMAIN}}/minio/health/live"
+        intervalSeconds: 120
+        timeoutMs: 8000
+        expect:
+          - type: status_code
+            expected: [200]
+
+      - id: xmpp_ws
+        name: XMPP_websocket
+        type: wss
+        severity: optional
+        url: "wss://{{XMPP_DOMAIN}}/ws"
+        intervalSeconds: 120
+        timeoutMs: 8000
+
+      # Cheap public availability check for the signup-form validation endpoint.
+      # Confirms TLS + Nginx + route are wired through to the backend.
+      - id: signup_check_email
+        name: Signup_check_email
+        type: http
+        severity: optional
+        url: "https://{{API_DOMAIN}}/v1/users/checkEmail/uptime-probe%40example.com"
+        intervalSeconds: 300
+        timeoutMs: 6000
+        expect:
+          - type: status_code
+            expected: [200, 422]
+
+      # Hosted MCP server discovery document through TLS + nginx (optional;
+      # rendered enabled only when services.mcp.enabled and a domain is set).
+      - id: mcp_discovery
+        name: MCP_discovery
+        type: http
+        severity: optional
+        enabled: {{UPTIME_MCP_PUBLIC_ENABLED}}
+        url: "https://{{UPTIME_MCP_DOMAIN}}/.well-known/mcp"
+        intervalSeconds: 300
+        timeoutMs: 8000
+        expect:
+          - type: status_code
+            expected: [200]
+          - type: json
+            path: endpoint
+            exists: true
+          - type: json
+            path: version
+            captureAs: version
+
+      # OAuth 2.1 authorization-server metadata (backend) used by MCP connector
+      # listings; rendered enabled with the public MCP checks.
+      - id: oauth_metadata
+        name: OAuth_metadata
+        type: http
+        severity: optional
+        enabled: {{UPTIME_MCP_PUBLIC_ENABLED}}
+        url: "https://{{API_DOMAIN}}/.well-known/oauth-authorization-server"
+        intervalSeconds: 300
+        timeoutMs: 8000
+        expect:
+          - type: status_code
+            expected: [200]
+          - type: json
+            path: issuer
+            exists: true
+
+      # --- TLS certificate expiry (proactive) ---
+      # These read each public cert's notAfter and go amber when < warnDays
+      # remaining, red when < critDays or already expired. They are the safety
+      # net for a silently-broken auto-renewal: a healthy certbot renews at
+      # ~30 days left, so a cert reaching 21 days means renewal has stalled.
+      # Critical severity (the default) so a lapsing cert is prominent.
+      - id: cert_api
+        name: Cert_api
+        type: tls
+        url: "https://{{API_DOMAIN}}"
+        intervalSeconds: 3600
+        timeoutMs: 8000
+        warnDays: 21
+        critDays: 7
+      - id: cert_web
+        name: Cert_web
+        type: tls
+        url: "https://{{WEB_DOMAIN}}"
+        intervalSeconds: 3600
+        timeoutMs: 8000
+        warnDays: 21
+        critDays: 7
+      - id: cert_files
+        name: Cert_files
+        type: tls
+        url: "https://{{FILES_DOMAIN}}"
+        intervalSeconds: 3600
+        timeoutMs: 8000
+        warnDays: 21
+        critDays: 7
+      - id: cert_xmpp
+        name: Cert_xmpp
+        type: tls
+        url: "https://{{XMPP_DOMAIN}}"
+        intervalSeconds: 3600
+        timeoutMs: 8000
+        warnDays: 21
+        critDays: 7
+      - id: cert_mcp
+        name: Cert_mcp
+        type: tls
+        severity: optional
+        enabled: {{UPTIME_MCP_PUBLIC_ENABLED}}
+        url: "https://{{UPTIME_MCP_DOMAIN}}"
+        intervalSeconds: 3600
+        timeoutMs: 8000
+        warnDays: 21
+        critDays: 7
+      # Optional public subdomains - uncomment the ones this install serves
+      # (leaving an unset {{...}} domain in would produce an invalid https:// url):
+      # - id: cert_playground
+      #   name: Cert_playground
+      #   type: tls
+      #   url: "https://{{PLAYGROUND_DOMAIN}}"
+      #   intervalSeconds: 3600
+      #   timeoutMs: 8000
+      #   warnDays: 21
+      #   critDays: 7
+      # - id: cert_uptime
+      #   name: Cert_uptime
+      #   type: tls
+      #   url: "https://{{UPTIME_DOMAIN}}"
+      #   intervalSeconds: 3600
+      #   timeoutMs: 8000
+      #   warnDays: 21
+      #   critDays: 7
+      # - id: cert_widget
+      #   name: Cert_widget
+      #   type: tls
+      #   url: "https://{{WIDGET_DOMAIN}}"
+      #   intervalSeconds: 3600
+      #   timeoutMs: 8000
+      #   warnDays: 21
+      #   critDays: 7
+
+  - id: ethora
+    name: Ethora_API
+    enabled: {{UPTIME_ETHORA_ENABLED}}
+    tags: [public]
+    checks:
+      - id: api_ping
+        name: API_ping
+        type: http
+        url: "https://api.ethora.com/ping"
+        intervalSeconds: 60
+        timeoutMs: 6000
+        expect:
+          - type: status_code
+            expected: [200]
+      - id: swagger_json
+        name: Swagger_JSON
+        type: http
+        url: "https://api.ethora.com/api-docs/swagger.json"
+        intervalSeconds: 300
+        timeoutMs: 8000
+        expect:
+          - type: status_code
+            expected: [200]
+          - type: json
+            path: openapi
+            exists: true
+
+

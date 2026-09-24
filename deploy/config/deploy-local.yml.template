@@ -1,0 +1,275 @@
+# Ethora Enterprise Deployment Configuration - LOCALHOST TESTING
+# This configuration is for testing deployment locally without SSL or domain names
+# Copy this file to deploy.yml for local testing
+
+# Path Configuration (optional - defaults to the current checkout)
+# - `source`: checkout / install package directory
+# - `base`: target install/update directory
+# - If `base` is omitted, the system installs into `source`
+# - During split source/target installs, edit deploy.yml only in `source`
+# - The target install does not keep a `deploy/` directory; always run deploy scripts from `source/deploy`
+# paths:
+#   source: /path/to/ethora-monoserver
+#   base: /path/to/ethora-runtime
+
+# Domain Configuration (localhost for testing)
+domains:
+  api: localhost          # Backend API domain
+  web: localhost         # Frontend web app domain
+  xmpp: localhost        # XMPP server domain
+  files: localhost        # MinIO file storage domain
+  playground: localhost  # Optional SDK Playground domain
+  widget: localhost      # Dedicated AI Widget domain
+  mcp: localhost         # Optional hosted MCP server domain (http://localhost:<services.mcp.port>/mcp locally)
+  # hosted_apps_root: chat.example.com  # Optional tenant suffix -> <app>.chat.example.com
+  uptime: localhost      # Optional Uptime domain
+
+# SSL Configuration (disabled for local testing)
+ssl:
+  method: none            # 'none', 'certbot', or 'provided'
+  email: admin@localhost  # Not used when method is 'none'
+  # Uncomment the below params only if you need hosted tenant apps
+  # hosted_apps_cert_path: /etc/letsencrypt/live/chat.example.com/fullchain.pem
+  # hosted_apps_key_path: /etc/letsencrypt/live/chat.example.com/privkey.pem
+
+# Database Configuration
+databases:
+  mongo:
+    port: 27017
+    database: ethora_test
+  mysql:
+    port: 3306
+    root_password: root  # Simple password for local testing
+  redis:
+    port: 6379
+
+# Service Configuration
+services:
+  backend:
+    port: 8080
+    node_env: development  # Use development for local testing
+    # Nginx request body limit for API uploads such as avatars and attachments.
+    client_max_body_size: 50M
+    # Email TLD validation policy. See deploy.yml.template for full docs.
+    # Default "off" - syntactic-only check; accepts any TLD.
+    # Quoted on purpose (YAML 1.1 would otherwise coerce unquoted `off` to bool).
+    email_tld_validation: "off"
+    email_tld_allowlist: ""
+  push:
+    enabled: true
+    port: 8098
+    common_post_url: ""
+    voip_post_url: ""
+  playground:
+    enabled: true
+    port: 3020
+  mcp:
+    enabled: false         # Hosted MCP server; when true it listens on http://localhost:<port>/mcp (no nginx locally)
+    port: 3030
+    enable_dangerous_tools: true
+    # OpenAI apps directory domain verification: paste the token from the OpenAI
+    # developer portal; served as plain text at /.well-known/openai-apps-challenge
+    # on the MCP host. Blank = endpoint returns 404.
+    openai_apps_challenge: ""
+    oauth_issuer: ""       # blank = http://localhost:<backend port> (OAuth 2.1 AS for /mcp/oauth; /mcp and /mcp/k/<key> stay open)
+  widget:
+    enabled: true
+    # Public file alias examples:
+    # - https://widget.example.com/assistant.js
+    # - https://widget.example.com/assistant2603.js
+    # Leave empty to derive current UTC YYMM automatically.
+    script_version: ""
+  hosted_apps:
+    enabled: false
+  ai_service:
+    enabled: false         # Disable for basic testing
+    port: 8013
+  docs_parse_service:
+    enabled: false         # Disable for basic testing
+    port: 8201
+  crawler:
+    enabled: false         # AI crawler (optional)
+    port: 8000
+    # Crawler -> backend callback. Empty = http://host.docker.internal:<backend port>/v1/sources/site-crawl/internal-for-crawler
+    callback_url: ""
+  uptime:
+    enabled: true
+    port: 8099
+    postgres_port: 5433
+  ejabberd:
+    admin_password: admin  # Simple password for local testing
+    # Optional: full URLs for ejabberd tracking modules (if you enable mod_track_member/mod_track_last_message).
+    # If not provided, deploy scripts will derive them from domains.api + services.backend.port.
+    track_member_url: ""
+    track_last_message_url: ""
+
+# Feature Flags (for future modularity)
+features:
+  blockchain: false
+  ai_service: false
+  analytics: false
+  hubspot: false
+  stripe: false
+  postmark: false
+  iap: false
+  firebase: false
+  # Immutable audit log export to S3. Off for local installs (nothing should
+  # reach out to AWS from a laptop). Turning it on makes every field in
+  # integrations.immutable_logs required — see validate.sh.
+  immutable_logs: false
+
+# Per-IP auth rate limits (requests per minute per client IP). Blank = backend
+# defaults (login 20, signup 10, password 10, refresh 60). When services.mcp.enabled
+# is true and these are blank, the deploy raises login to 120 and signup to 30
+# because hosted AI assistants reach the API from a handful of vendor egress IPs
+# shared by all their users. Per-email limits are unaffected.
+rate_limits:
+  auth_login_max: ""
+  auth_signup_max: ""
+  auth_password_max: ""
+  auth_refresh_max: ""
+  # Feedback submissions (see the `feedback` block below). Blank = backend
+  # defaults: 10/minute per IP authenticated, 5/hour per IP anonymous.
+  feedback_max: ""
+  feedback_anon_max: ""
+
+# What the separately-installed translation server can translate into (BCP-47
+# tags), served as `translateLanguages` from GET /v1/apps/get-config. Empty ->
+# `[]`. The only language list the install publishes: the interface picker uses
+# the bundled subset of it, the chat picker the whole list.
+translate:
+  languages: ""
+
+# Frontend Service Flags (set to 'true' to disable for local/enterprise setups)
+frontend:
+  disable_firebase: true   # Disable Firebase for local testing
+  disable_ga: true         # Disable Google Analytics
+  disable_clarity: true    # Disable Microsoft Clarity
+  ga_id: ""                # GA4 Measurement ID (optional)
+  gtm_id: ""               # GTM container ID (optional)
+  clarity_id: ""           # Microsoft Clarity project id (optional)
+
+# Third-party integrations (disabled by default for local)
+integrations:
+  hubspot:
+    enabled: false
+    portal_id: ""
+    form_id_app_create: ""
+    form_id_signup: ""
+    form_id_tutorial: ""
+    region: "na1"
+
+  # Firebase Admin (optional)
+  firebase:
+    project_name: ""
+    service_account_path: ""
+    web:
+      api_key: ""
+      auth_domain: ""
+      project_id: ""
+      storage_bucket: ""
+      messaging_sender_id: ""
+      app_id: ""
+      measurement_id: ""
+
+  # Stripe (optional)
+  stripe:
+    secret: ""
+    public: ""
+    plan: ""
+
+  # Postmark (optional)
+  postmark:
+    token: ""
+    from_email: "noreply@ethoramail.com"   # Must be a verified Sender Signature in your Postmark account
+    from_name: "Ethora Platform"           # Display name shown in the From field
+    subject_prefix: "Ethora"               # Prefix for email subjects (e.g. "Ethora Daily, issue ...")
+
+  # Analytics email reports (optional, requires postmark enabled)
+  analytics:
+    daily_report_receivers: ""             # Comma-separated list of email addresses for daily and weekly reports
+    monthly_report_receivers: ""           # Optional override for monthly reports; falls back to daily_report_receivers
+    daily_schedule: "30 8 * * *"           # Cron expression: daily report (default: 8:30 AM)
+    weekly_schedule: "30 8 * * 1"          # Cron expression: weekly report on Monday (default: 8:30 AM)
+    monthly_schedule: "30 8 1 * *"         # Cron expression: monthly report on 1st (default: 8:30 AM)
+    timezone: "Europe/London"              # IANA timezone for cron schedules (default: server local time)
+    legal_email: ""                        # Recipient for T&C / legal copies (default: legal@dappros.com)
+    alert_email: ""                        # Recipient for signup alerts (default: alert-signed@dappros.com)
+
+  # Immutable audit logs -> S3 (only used when features.immutable_logs: true).
+  # Left empty for local installs; fill in only if you are deliberately testing
+  # the uploader against a real (or MinIO/S3-compatible) bucket.
+  immutable_logs:
+    interval_hours: 6           # How often (in hours) the log-upload job runs
+    aws_access_key_id: ""       # IAM user's access key ID
+    aws_secret_access_key: ""   # IAM user's secret access key
+    aws_region: ""              # AWS region (e.g. eu-central-1)
+    aws_s3_bucket_name: ""      # Exact bucket name
+
+# Feedback channel (POST /v2/feedback), used by the hosted MCP server and
+# callable anonymously so a first-time user who cannot even sign up can still
+# report it. Stored in Mongo and, when configured, delivered by email and/or
+# Slack. Leave both destinations blank to store only - which is the norm for a
+# local install, where neither Postmark nor Slack is usually reachable.
+feedback:
+  email_to: ""            # comma-separated; needs features.postmark enabled
+  slack_webhook_url: ""   # Slack incoming webhook (keep out of version control)
+  retention_days: 180     # 0 = keep forever
+
+# AI providers (optional)
+ai:
+  ai_api_url: "https://api.openai.com/v1"
+  ai_api_key: ""
+  chat_model: "gpt-4.1-mini"
+  embedding_model: "text-embedding-3-small"
+
+# Web3 / blockchain providers (optional)
+blockchain:
+  coinbase_private: ""
+  external_bc_networkname: ""
+  external_bc_ws: ""
+  alchemy_url: ""
+  usdc_contract_address: ""
+
+# Admin Configuration
+admin:
+  email: admin@example.com   # Use example.com for localhost testing (standard test domain)
+  password: admin123          # Simple password for testing
+
+# License (optional; see docs/LICENSING.md). Local installs on localhost
+# always pass the domain check; leave empty to run in the grace window.
+license:
+  key: ""
+  key_file: ""
+  call_home: true
+  server_url: ""
+  grace_days: ""
+
+# Security
+security:
+  jwt_secret: test_jwt_secret_for_local_testing_only_change_in_production
+  refresh_secret: test_refresh_secret_for_local_testing_only_change_in_production
+  turnstile_site_key: ""  # Empty for localhost, or use a test key: "1x00000000000000000000AA"
+  turnstile_secret_key: ""  # Empty for localhost, or use a test secret: "1x0000000000000000000000000000000AA"
+  # Shared secret for ejabberd -> backend tracking calls (/v1/chats/track-member, /v1/chats/track-last-message).
+  # Must match backend env var XMPP_SECRET. Leave empty to use the default.
+  xmpp_secret: ""
+
+# MinIO Configuration
+storage:
+  minio_root_user: minioroot123
+  minio_root_password: ""  # Auto-generated if empty
+
+# Base App Configuration (created on first run)
+base_app:
+  display_name: Ethora Test
+  domain_name: ""  # app "slug" stored in MongoDB and used by the frontend as VITE_DOMAIN_NAME. Leave empty to derive automatically from domains.web
+  owner_email: admin@localhost.com  # Must be a valid email shape — frontend login validation rejects TLD-less addresses
+  owner_password: admin123
+  start_balance: 1000000
+
+# SDK Playground (optional)
+playground:
+  app_id: ""
+  app_secret: ""
+

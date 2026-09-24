@@ -1,0 +1,13 @@
+# Ethora.com platform, copyright: Dappros Ltd (c) 2026, all rights reserved
+apiVersion: 1
+
+providers:
+  - name: Ethora
+    orgId: 1
+    folder: Ethora
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

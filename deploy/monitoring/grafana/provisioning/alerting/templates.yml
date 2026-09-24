@@ -1,0 +1,30 @@
+# Ethora.com platform, copyright: Dappros Ltd (c) 2026, all rights reserved
+#
+# E-mail subject/body. The panel screenshot is attached by Grafana itself when
+# screenshots are enabled; the body adds a link to the logs view (Explore over
+# the Loki datasource) scoped to the alert's own time window, five minutes on
+# either side of the moment it fired.
+apiVersion: 1
+templates:
+  - orgId: 1
+    name: ethora
+    template: |
+      {{ define "ethora.subject" -}}
+      [Ethora {{ .Status | toUpper }}] {{ .CommonLabels.alertname }}{{ if .CommonLabels.name }} — {{ .CommonLabels.name }}{{ end }}
+      {{- end }}
+
+      {{ define "ethora.logs_link" -}}
+      {{ reReplaceAll "/alerting/silence/.*$" "" .SilenceURL }}/explore?schemaVersion=1&orgId=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22ethora-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22ethora-loki%22%7D%2C%22expr%22%3A%22%7Bjob%3D~%5C%22.%2B%5C%22%7D%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22{{ (.StartsAt.Add -300000000000).UnixMilli }}%22%2C%22to%22%3A%22{{ if eq .Status "resolved" }}{{ (.EndsAt.Add 300000000000).UnixMilli }}{{ else }}{{ (.StartsAt.Add 300000000000).UnixMilli }}{{ end }}%22%7D%7D%7D
+      {{- end }}
+
+      {{ define "ethora.message" -}}
+      {{ range .Alerts -}}
+      {{ .Labels.alertname }}{{ if .Labels.name }} ({{ .Labels.name }}){{ end }} — {{ .Status | toUpper }}
+      {{ if .Annotations.summary }}{{ .Annotations.summary }}{{ end }}
+      {{ if .Annotations.description }}{{ .Annotations.description }}{{ end }}
+      Started: {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}{{ if eq .Status "resolved" }}, ended: {{ .EndsAt.Format "2006-01-02 15:04:05 MST" }}{{ end }}
+      Panel: {{ .PanelURL }}
+      Logs for this window: {{ template "ethora.logs_link" . }}
+
+      {{ end -}}
+      {{- end }}

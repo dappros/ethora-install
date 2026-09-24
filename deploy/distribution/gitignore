@@ -1,0 +1,6 @@
+deploy/generated/
+deploy/.deploy.env
+deploy/.deploy-state/
+deploy/config/deploy.yml
+deploy/deploy.log
+*.bak*

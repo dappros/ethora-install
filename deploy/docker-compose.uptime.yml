@@ -1,0 +1,59 @@
+# Ethora Uptime (optional) - runs alongside Ethora enterprise stack
+#
+# NOTE:
+# - This compose file assumes the main Ethora stack is started via deploy/docker-compose.enterprise.yml
+# - It joins the same docker network (deploy_ethora-network by default)
+#
+services:
+  uptime-db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: uptime
+      POSTGRES_PASSWORD: uptime
+      POSTGRES_DB: uptime
+    ports:
+      - "${UPTIME_POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - uptime_pgdata:/var/lib/postgresql/data
+    networks:
+      ethora-network:
+        aliases:
+          - uptime-db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U uptime -d uptime"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  uptime:
+    build:
+      context: ${UPTIME_DIR:-../ethora-uptime}
+      dockerfile: Dockerfile
+      # Helps with transient DNS resolution failures during `npm ci` inside Docker build.
+      network: host
+    restart: always
+    env_file:
+      - ./generated/uptime/uptime.env
+    # Linux: make host.docker.internal resolve to the Docker host (so checks can hit host ports like 8080/9000/5280)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${UPTIME_PORT:-8099}:${UPTIME_PORT:-8099}"
+    volumes:
+      - ./generated/uptime/uptime.yml:/config/uptime.yml:ro
+    depends_on:
+      uptime-db:
+        condition: service_healthy
+    networks:
+      - ethora-network
+
+volumes:
+  uptime_pgdata:
+
+networks:
+  ethora-network:
+    external: true
+    name: ${COMPOSE_PROJECT_NAME:-deploy}_ethora-network
+
+

@@ -1,0 +1,28 @@
+# Bare root/apex domain -> app subdomain redirect.
+#
+# Without this, the apex (e.g. chat.example.com) has no server block of its
+# own and falls through to nginx's default site, showing the stock
+# "Welcome to nginx" page. Send users to the app login at {{WEB_DOMAIN}}
+# instead, on both http and https.
+#
+# Rendered by setup-nginx.sh only when {{ROOT_DOMAIN}} differs from the web
+# domain and a certificate covering the apex exists (the hosted-apps wildcard
+# provides apex + *.<root>; or supply one).
+server {
+    listen 80;
+    server_name {{ROOT_DOMAIN}};
+    return 301 https://{{WEB_DOMAIN}}$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name {{ROOT_DOMAIN}};
+
+    ssl_certificate /etc/letsencrypt/live/{{ROOT_DOMAIN}}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{{ROOT_DOMAIN}}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    return 301 https://{{WEB_DOMAIN}}$request_uri;
+}

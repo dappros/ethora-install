@@ -1,0 +1,12 @@
+# Ethora.com platform, copyright: Dappros Ltd (c) 2026, all rights reserved
+#
+# Notification policy: everything goes to the e-mail contact point, grouped
+# per rule and per container so one spike produces one thread, not a storm.
+apiVersion: 1
+policies:
+  - orgId: 1
+    receiver: ethora-email
+    group_by: [alertname, name]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h

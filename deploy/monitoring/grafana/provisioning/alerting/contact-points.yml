@@ -1,0 +1,18 @@
+# Ethora.com platform, copyright: Dappros Ltd (c) 2026, all rights reserved
+#
+# Where alert notifications go. Recipients come from deploy.yml
+# (services.monitoring.alerts.emails) via GRAFANA_ALERT_EMAILS in
+# deploy/monitoring/.env, written by setup-nginx.sh. SMTP itself is configured
+# on the Grafana container (GF_SMTP_*), see docker-compose.monitoring.yml.
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: ethora-email
+    receivers:
+      - uid: ethora-email
+        type: email
+        settings:
+          addresses: "${GRAFANA_ALERT_EMAILS}"
+          singleEmail: false
+          subject: '{{ template "ethora.subject" . }}'
+          message: '{{ template "ethora.message" . }}'

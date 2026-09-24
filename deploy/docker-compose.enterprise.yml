@@ -1,0 +1,257 @@
+# Ethora Enterprise Unified Docker Compose Configuration
+# This file orchestrates all services required for the Ethora platform
+
+services:
+  # MongoDB - Main database for backend
+  mongo:
+    image: mongo:6.0.8
+    command: mongod --replSet rs0 --bind_ip localhost,mongo
+    restart: always
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    # Data location: setup-env.sh resolves MONGO_DATA_DIR to a clearer path
+    # ($ROOT_DIR/data/mongo for new installs) and persists it to .deploy.env.
+    #
+    # The two-stage fallback below preserves the PRE-Layer-3 behavior when
+    # MONGO_DATA_DIR isn't in compose's env: fall through BACKEND_DATA_DIR
+    # (the historical umbrella var that install.sh and older deploys set)
+    # before landing on the compose-relative literal. Without this fallback,
+    # a `compose up` from a shell that hasn't sourced the *updated* .deploy.env
+    # will silently shift the mount to a different path and reinitialize
+    # MySQL/Mongo/MinIO/Redis from empty - we lost a customer's MUC state
+    # this way (their EJABBERD_DIR-based path differed from compose's `./`).
+    volumes:
+      - ${MONGO_DATA_DIR:?MONGO_DATA_DIR must be an absolute path - source deploy/.deploy.env (setup-env.sh sets it). No relative default, so data can never land under the git tree.}:/data/db
+    networks:
+      - ethora-network
+    healthcheck:
+      # A plain TCP connect, on purpose. The previous check started mongosh (a
+      # Node.js app: ~2.5s of CPU and ~100 MB per run) every 10s inside this
+      # container, which cost ~20% of a core around the clock and showed up as
+      # Mongo load on the dashboards. Nothing waits on this status (there is no
+      # depends_on: service_healthy) and a wedged mongod is caught by the uptime
+      # API probes, so "accepts connections" is all this has to prove.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/27017"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MongoDB Replica Set Setup
+  mongosetup:
+    image: mongo:6.0.8
+    volumes:
+      - ${BACKEND_DIR:-./ethora-backend}/infra/docker/mongo_scripts:/scripts
+    entrypoint: [ "bash", "/scripts/mongosetup.sh" ]
+    depends_on:
+      - mongo
+    networks:
+      - ethora-network
+
+  # MinIO - Object storage for files
+  minio:
+    # MinIO stopped publishing to Docker Hub (minio/minio has no tags left);
+    # images live on Quay. Pinned to the release QA and prod already run.
+    image: ${MINIO_IMAGE:-quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    restart: always
+    # See mongo above for the two-stage fallback rationale.
+    volumes:
+      - ${MINIO_DATA_DIR:?MINIO_DATA_DIR must be an absolute path - source deploy/.deploy.env (setup-env.sh sets it). No relative default, so data can never land under the git tree.}:/data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioroot123}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: server --console-address ":9001" /data
+    networks:
+      - ethora-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis - Caching and session storage
+  redis-server:
+    image: redis:latest
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+    # Redis state is short-lived (cache, queues), but still parked under a
+    # legacy nested-under-submodule path by default. setup-env.sh resolves
+    # REDIS_DATA_DIR to the same clean root as the other services.
+    # See mongo above for the two-stage fallback rationale.
+    volumes:
+      - ${REDIS_DATA_DIR:?REDIS_DATA_DIR must be an absolute path - source deploy/.deploy.env (setup-env.sh sets it). No relative default, so data can never land under the git tree.}:/data
+    restart: always
+    networks:
+      - ethora-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Centrifugo - Real-time messaging
+  # config.json is GENERATED per-install by deploy/scripts/setup-env.sh from
+  # deploy/templates/centrifugo-config.json.template using the secrets in .deploy.env.
+  # Bind-mount changes to that file require a `docker restart centrifugo` (or
+  # `docker compose up -d --force-recreate centrifugo`) to take effect inside
+  # the container; update.sh handles this when the rendered file changes.
+  centrifugo:
+    container_name: centrifugo
+    image: centrifugo/centrifugo:v6
+    volumes:
+      - ${BACKEND_DIR:-./ethora-backend}/centrifugo-config.json:/centrifugo/config.json
+    command: centrifugo -c config.json
+    ports:
+      - ${CENTRIFUGO_PORT:-8001}:8000
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    restart: always
+    networks:
+      - ethora-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Crawler Service
+  crawler:
+    build:
+      context: ${BACKEND_DIR:-./ethora-backend}/services/ai/crawler
+      dockerfile: Dockerfile
+    container_name: crawler-service
+    profiles:
+      - ai
+    ports:
+      - "${CRAWLER_PORT:-8000}:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    # DAPPROS_URL - where the crawler POSTs a finished deep crawl. Generated by
+    # setup-env.sh from deploy/templates/crawler.env.template; keep this path in
+    # sync with it. Without it main.py posts to the literal "None/<appId>" and
+    # the deep-crawl results are dropped.
+    env_file:
+      - ./generated/crawler/crawler.env
+    # Linux: make host.docker.internal resolve to the docker host, so the
+    # callback can reach the PM2-hosted backend on its published port.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${BACKEND_DIR:-./ethora-backend}/services/ai/crawler/main.py:/app/main.py:ro
+    restart: unless-stopped
+    # wget, not curl: the crawler image (services/ai/crawler/Dockerfile) installs
+    # wget and never installs curl, so the previous curl-based probe could only
+    # ever report the container as unhealthy.
+    # -O /dev/null, not --spider: --spider issues a HEAD, and main.py declares
+    # /health as @app.get only, so FastAPI answers 405 and wget exits 1 — the
+    # container reported unhealthy while the service was serving fine.
+    # 127.0.0.1, not localhost: localhost resolves to ::1 first, which nothing
+    # listens on, adding a "Connection refused" line before the IPv4 retry.
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 -O /dev/null http://127.0.0.1:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      - mongo
+      - redis-server
+    networks:
+      - ethora-network
+
+  # MySQL - Database for Ejabberd
+  mysql:
+    image: mysql:8.1.0
+    command: --default-authentication-plugin=mysql_native_password
+    # mysql2.sql is ejabberd-docker source (not data); keep EJABBERD_DIR for it.
+    # /var/lib/mysql is the live database state: use MYSQL_DATA_DIR which
+    # setup-env.sh resolves to a clearer location ($ROOT_DIR/data/mysql for
+    # new installs) and persists to .deploy.env.
+    #
+    # CRITICAL: the second-stage fallback uses EJABBERD_DIR, not the
+    # compose-relative ./ejabberd-docker. On install.sh-provisioned hosts
+    # EJABBERD_DIR is $ROOT_DIR/ejabberd-docker (no `deploy/`), but compose's
+    # `./` resolves to the deploy/ directory - so a pre-Layer-3 install had
+    # its data at a path that a Layer-3 fallback to `./` would NOT match.
+    # When compose's env didn't include MYSQL_DATA_DIR (the update.sh
+    # parent shell hadn't re-sourced .deploy.env after setup-env.sh wrote
+    # it), the mount silently moved and MySQL reinitialized from empty.
+    # The nested EJABBERD_DIR fallback restores the pre-Layer-3 resolution.
+    volumes:
+      - ${EJABBERD_DIR:-./ejabberd-docker}/docker/mysql2.sql:/docker-entrypoint-initdb.d/01.sql
+      - ${MYSQL_DATA_DIR:?MYSQL_DATA_DIR must be an absolute path - source deploy/.deploy.env (setup-env.sh sets it). No relative default, so data can never land under the git tree.}:/var/lib/mysql
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      # Allow ejabberd (separate container) to connect as root on fresh installs.
+      # NOTE: this only applies on first DB init (when /var/lib/mysql is empty).
+      MYSQL_ROOT_HOST: "%"
+    restart: always
+    networks:
+      - ethora-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Ejabberd - XMPP Chat Server
+  xmpp:
+    # Source mode builds this image from the checkout (compose names it
+    # deploy-xmpp); image mode pulls the published ethora-xmpp image and
+    # tags it deploy-xmpp (scripts/xmpp-from-image.sh), so the same service
+    # definition runs either way.
+    image: ${ETHORA_XMPP_IMAGE:-deploy-xmpp}
+    build:
+      context: ${EJABBERD_DIR:-./ejabberd-docker}
+      dockerfile: './docker/Dockerfile'
+      # Note: some Docker Compose versions don't support `build.platform`.
+      # We rely on the service-level `platform: linux/amd64` below for cross-arch builds/runs.
+    volumes:
+      # Mount config into both common layouts (/opt and /home) for maximum compatibility across ejabberd images.
+      - ${EJABBERD_DIR:-./ejabberd-docker}/docker/${EJABBERD_CONFIG_NAME:-ejabberd.yml}:/opt/ejabberd/conf/ejabberd.yml
+      - ${EJABBERD_DIR:-./ejabberd-docker}/docker/${EJABBERD_CONFIG_NAME:-ejabberd.yml}:/home/ejabberd/conf/ejabberd.yml
+
+      # JWK key ejabberd verifies the SASL JWT with (rendered by setup-ejabberd-config.sh
+      # from XMPP_JWT_SECRET). Mounted into both conf layouts.
+      - ${EJABBERD_DIR:-./ejabberd-docker}/docker/jwt.key:/opt/ejabberd/conf/jwt.key
+      - ${EJABBERD_DIR:-./ejabberd-docker}/docker/jwt.key:/home/ejabberd/conf/jwt.key
+
+      # Mount custom module sources (used by our entrypoint for discovery/copy).
+      - ${EJABBERD_DIR:-./ejabberd-docker}/docker/custom_modules:/opt/ejabberd/.ejabberd-modules/sources
+      - ${EJABBERD_DIR:-./ejabberd-docker}/docker/custom_modules:/home/ejabberd/.ejabberd-modules/sources
+
+      # Mount precompiled beams explicitly so they are always available at runtime, even if build context/filtering changes.
+      - ${EJABBERD_DIR:-./ejabberd-docker}/docker/custom_mod_compiled:/opt/ejabberd/custom_mod_compiled:ro
+      - ${EJABBERD_DIR:-./ejabberd-docker}/docker/custom_mod_compiled:/home/ejabberd/custom_mod_compiled:ro
+      # TLS certificate for ejabberd (combined fullchain.pem + privkey.pem).
+      # setup-ssl.sh ensures the file exists (may be empty if certbot not configured).
+      - ${EJABBERD_DIR:-./ejabberd-docker}/docker/sitecert.pem:/cert/sitecert.pem:ro
+    ports:
+      - 5280:5280
+      - 5443:5443
+    restart: always
+    depends_on:
+      - mysql
+    networks:
+      - ethora-network
+    healthcheck:
+      test: ["CMD", "/home/ejabberd/bin/ejabberdctl", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    # Use platform emulation for cross-architecture compatibility (AMD64 on ARM64)
+    platform: linux/amd64
+
+networks:
+  ethora-network:
+    driver: bridge

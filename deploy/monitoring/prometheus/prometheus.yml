@@ -1,0 +1,77 @@
+# Ethora.com platform, copyright: Dappros Ltd (c) 2026, all rights reserved
+#
+# Prometheus scrape config for the load-testing observability stack.
+# cadvisor + node-exporter are in the same compose project (reachable by
+# service name). The load tool (uptime) runs in the app's compose project, so
+# we scrape its host-published port via host.docker.internal.
+
+global:
+  scrape_interval: 5s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Per-container CPU / memory / network / disk.
+  - job_name: cadvisor
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["cadvisor:8080"]
+    # Keep only the series the dashboards and alerts read; every other cAdvisor
+    # family (blkio, tasks_state, memory_failures, fs, spec, ...) is hundreds
+    # of series per host held in RAM for nothing.
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: "container_(cpu_usage_seconds_total|memory_working_set_bytes|memory_usage_bytes|network_(receive|transmit)_bytes_total|last_seen)|machine_(cpu_cores|memory_bytes)"
+        action: keep
+
+  # Host CPU / memory / load / disk / network (covers backend pm2 + system).
+  - job_name: node
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  # Load test metrics (RPS / latency / errors / inflight) from the uptime tool.
+  # 8099 is the uptime container's host-published port. Adjust if your uptime
+  # port differs. Scraped frequently so load curves line up with resource graphs.
+  - job_name: ethora_load
+    scrape_interval: 2s
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8099"]
+
+  # Prometheus self-monitoring.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Container names for the cAdvisor series. cAdvisor runs on its raw cgroup
+  # factory here (see docker-compose.monitoring.yml), so its series only carry
+  # the cgroup id. Docker service discovery lists the running containers with
+  # their names; the targets are never scraped for real (closed loopback port),
+  # the job exists for the labels `up` carries: cid (short id) and name.
+  # Dashboards join the two on cid.
+  - job_name: docker_names
+    scrape_interval: 30s
+    scrape_timeout: 2s
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 30s
+    relabel_configs:
+      - source_labels: [__meta_docker_container_id]
+        regex: "(.{12}).*"
+        target_label: cid
+      - source_labels: [__meta_docker_container_name]
+        regex: "/?(.*)"
+        target_label: name
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        target_label: service
+      - target_label: __address__
+        replacement: "127.0.0.1:1"
+
+  # Backend API request metrics (prom-client, /metrics on the backend port,
+  # ENABLE_METRICS=true in the backend env): per-route request counts and
+  # latency histograms behind the 5xx-rate and latency alerts. Scraped on the
+  # host port directly; the public API vhost returns 404 for /metrics.
+  - job_name: api
+    scrape_interval: 15s
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8080"]
