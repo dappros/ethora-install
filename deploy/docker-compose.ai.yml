@@ -1,0 +1,29 @@
+services:
+  ai-postgres:
+    image: pgvector/pgvector:pg16
+    restart: always
+    environment:
+      POSTGRES_USER: ${AI_POSTGRES_USER:-ai_embeddings}
+      POSTGRES_PASSWORD: ${AI_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${AI_POSTGRES_DB:-ai_service_embeddings_db}
+    ports:
+      - "${AI_POSTGRES_PORT:-5434}:5432"
+    volumes:
+      - ai_pgdata:/var/lib/postgresql/data
+    networks:
+      ethora-network:
+        aliases:
+          - ai-postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AI_POSTGRES_USER:-ai_embeddings} -d ${AI_POSTGRES_DB:-ai_service_embeddings_db}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  ai_pgdata:
+
+networks:
+  ethora-network:
+    external: true
+    name: ${COMPOSE_PROJECT_NAME:-deploy}_ethora-network

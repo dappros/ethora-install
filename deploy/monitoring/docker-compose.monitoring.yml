@@ -1,0 +1,172 @@
+# Ethora.com platform, copyright: Dappros Ltd (c) 2026, all rights reserved
+#
+# Standalone observability stack for load testing (Prometheus + Grafana +
+# cAdvisor + node_exporter). Deliberately a SEPARATE compose project so it can
+# be brought up / torn down independently of the app stack and does not touch
+# the existing deploy flow:
+#
+#   docker compose -f deploy/monitoring/docker-compose.monitoring.yml up -d
+#   docker compose -f deploy/monitoring/docker-compose.monitoring.yml down
+#
+# What it scrapes (see prometheus/prometheus.yml):
+#   - cadvisor      -> per-container CPU/mem/net/disk (mongo, xmpp, mysql, redis, …)
+#   - node_exporter -> host CPU/mem/load/disk/net (covers backend pm2 + system)
+#   - ethora_load   -> the load tool's /metrics (RPS / latency / errors / inflight),
+#                      scraped from the host-published uptime port
+#
+# NOTE: this runs ON THE SAME box as the load target, so the monitoring
+# containers add some overhead. Acceptable for a QA/test box; for clean numbers
+# run Prometheus/Grafana on a separate host scraping this one.
+
+name: ethora-monitoring
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: ethora-prometheus
+    restart: unless-stopped
+    user: root
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Read-only Docker socket for docker_sd_configs (container names).
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      # Served behind nginx at <uptime-domain>/prometheus/ (basic-auth). The
+      # route-prefix makes Prometheus own that path so its assets/redirects work.
+      # MONITORING_BASE_URL is written to deploy/monitoring/.env by setup-nginx.sh.
+      - "--web.external-url=${MONITORING_BASE_URL:-http://localhost:9090}/prometheus/"
+      - "--web.route-prefix=/prometheus/"
+    # Bound to loopback only — nginx reverse-proxies /prometheus/ to this with
+    # basic-auth; not publicly reachable directly.
+    ports:
+      - "127.0.0.1:9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: ethora-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      # admin login still guards edit/config. Anonymous Viewer is enabled so that
+      # once past the nginx basic-auth (see uptime.conf.template /grafana/) the
+      # dashboards open without a second login. Safe because the port is
+      # loopback-only and nginx auth gates all external access.
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-admin}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      # Explore is Editor-only by default; the "Logs" link in alert e-mails
+      # opens Explore, so let the anonymous Viewer use it (edits stay temporary).
+      GF_USERS_VIEWERS_CAN_EDIT: "true"
+      # Served behind nginx at <uptime-domain>/grafana/ (basic-auth).
+      GF_SERVER_ROOT_URL: "${MONITORING_BASE_URL:-http://localhost:3001}/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      # Alert e-mails. Recipients and SMTP come from deploy.yml
+      # (services.monitoring.alerts, integrations.postmark) via monitoring/.env,
+      # written by setup-nginx.sh. GRAFANA_ALERT_EMAILS is read by the
+      # provisioned contact point (grafana/provisioning/alerting).
+      GRAFANA_ALERT_EMAILS: "${GRAFANA_ALERT_EMAILS:-}"
+      GF_SMTP_ENABLED: "${GRAFANA_SMTP_ENABLED:-false}"
+      GF_SMTP_HOST: "${GRAFANA_SMTP_HOST:-}"
+      GF_SMTP_USER: "${GRAFANA_SMTP_USER:-}"
+      GF_SMTP_PASSWORD: "${GRAFANA_SMTP_PASSWORD:-}"
+      GF_SMTP_FROM_ADDRESS: "${GRAFANA_SMTP_FROM:-}"
+      GF_SMTP_FROM_NAME: "Ethora Monitoring"
+      # Panel screenshots in alert e-mails: rendered by the `renderer` service
+      # (compose profile "renderer", enabled with services.monitoring.screenshots).
+      # The callback must be the sub-path URL Grafana actually serves.
+      GF_RENDERING_SERVER_URL: "http://renderer:8081/render"
+      GF_RENDERING_CALLBACK_URL: "http://grafana:3000/grafana/"
+      GF_UNIFIED_ALERTING_SCREENSHOTS_CAPTURE: "${GRAFANA_SCREENSHOTS:-false}"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      # Alerting provisioning is rendered by setup-nginx.sh into
+      # deploy/generated/monitoring/alerting so the e-mail contact point is
+      # only provisioned when services.monitoring.alerts.emails is set. An
+      # empty address makes Grafana refuse to start (restart loop); the
+      # rendered policy falls back to grafana-default-email instead.
+      - ${GRAFANA_ALERTING_DIR:-./grafana/provisioning/alerting}:/etc/grafana/provisioning/alerting:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    # Bound to loopback only — nginx reverse-proxies /grafana/ to this with
+    # basic-auth; not publicly reachable directly.
+    ports:
+      - "127.0.0.1:3001:3000"
+
+  # Headless Chromium that renders dashboard panels for alert e-mails. Opt-in
+  # (~400 MB RAM): only started when COMPOSE_PROFILES=renderer is set in
+  # monitoring/.env, i.e. services.monitoring.screenshots: true in deploy.yml.
+  renderer:
+    image: grafana/grafana-image-renderer:3.11.1
+    container_name: ethora-grafana-renderer
+    restart: unless-stopped
+    profiles: ["renderer"]
+    environment:
+      ENABLE_METRICS: "false"
+
+  cadvisor:
+    # PINNED to v0.49.1 on purpose — do NOT bump.
+    #
+    # Per-container metrics here come from cAdvisor's RAW/systemd factory, which
+    # enumerates container cgroups by path (/system.slice/docker-<id>.scope) —
+    # the id format the dashboard panels key off (map to service via `docker ps`).
+    #
+    # The catch: cAdvisor's Docker factory, WHEN it registers, claims those
+    # cgroups but on these hosts emits neither names nor raw entries, so the app
+    # containers vanish. Whether it registers depends on the host's Docker API
+    # version vs cAdvisor's bundled client (1.41): on newer Docker (needs >=1.44)
+    # it fails and we get raw (good); on older Docker it succeeds and containers
+    # disappear (bad). To make behaviour identical on every host, we point the
+    # Docker factory at a dead socket via --docker so it never registers, forcing
+    # the raw fallback everywhere.
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: ethora-cadvisor
+    restart: unless-stopped
+    command:
+      - "-logtostderr"
+      - "--docker=unix:///dev/null"
+      # Footprint: the dashboards only use per-container CPU and working-set
+      # memory. Walking cgroups every second costs ~7% CPU on a small host, so
+      # sample every 15s and skip the collectors nothing reads.
+      - "--housekeeping_interval=15s"
+      - "--max_housekeeping_interval=60s"
+      - "--store_container_labels=false"
+      - "--disable_metrics=advtcp,cpu_topology,cpuset,disk,diskIO,hugetlb,memory_numa,percpu,perf_event,process,referenced_memory,resctrl,sched,tcp,udp"
+    # cAdvisor needs broad read access to the host to enumerate containers.
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    # Bound to loopback only — no public exposure (raw cAdvisor UI/metrics).
+    ports:
+      - "127.0.0.1:8081:8080"
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: ethora-node-exporter
+    restart: unless-stopped
+    command:
+      - "--path.rootfs=/host"
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    # Bound to loopback only — no public exposure (raw host metrics).
+    ports:
+      - "127.0.0.1:9100:9100"
+
+volumes:
+  prometheus-data:
+  grafana-data:

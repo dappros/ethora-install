@@ -1,0 +1,144 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Ethora single-instance deployment from the Ethora AMI. Give the six setup
+  answers here to install unattended, or leave RootDomain empty and finish
+  on the first-boot setup page (http://<PublicIp>:8888, user admin, password =
+  instance id). DNS A records for api./app./xmpp./files.<RootDomain> must
+  point at the instance before Let's Encrypt can issue certificates.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: "Ethora setup (leave RootDomain empty to use the web page)" }
+        Parameters: [RootDomain, AdminEmail, LicenseKey, TlsMode, AiEnabled, AiApiKey, DisplayName]
+      - Label: { default: "Instance" }
+        Parameters: [AmiId, InstanceType, KeyName, VpcId, SubnetId, VolumeSizeGb, AdminCidr]
+
+Parameters:
+  AmiId:
+    Type: AWS::EC2::Image::Id
+    Description: Ethora AMI id (from the Marketplace listing or your Packer build)
+  InstanceType:
+    Type: String
+    Default: t3.medium
+    AllowedValues: [t3.medium, t3.large, t3.xlarge, m6i.large, m6i.xlarge, c6i.large, c6i.xlarge]
+    Description: t3.medium (2 vCPU / 4 GB) is the minimum; t3.large for AI-heavy use
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: SSH key pair for the ubuntu user
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: A public subnet (the instance gets a public IP)
+  VolumeSizeGb:
+    Type: Number
+    Default: 40
+    MinValue: 30
+  AdminCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    AllowedPattern: '^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$'
+    Description: Who may reach SSH (22) and the setup page (8888). Restrict to your IP.
+  RootDomain:
+    Type: String
+    Default: ""
+    Description: e.g. chat.example.com. Empty = configure on the setup page instead.
+  AdminEmail:
+    Type: String
+    Default: ""
+    Description: Platform admin login, base app owner, Let's Encrypt contact
+  LicenseKey:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: ETHORA1.… key. Empty = 14-day trial with every feature.
+  TlsMode:
+    Type: String
+    Default: certbot
+    AllowedValues: [certbot, none]
+    Description: certbot needs the DNS records in place at launch; none = HTTP only (testing)
+  AiEnabled:
+    Type: String
+    Default: "on"
+    AllowedValues: ["on", "off"]
+  AiApiKey:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: OpenAI-compatible API key (only with AiEnabled = on)
+  DisplayName:
+    Type: String
+    Default: Ethora
+
+Conditions:
+  Unattended: !Not [!Equals [!Ref RootDomain, ""]]
+
+Resources:
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Ethora single instance
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80,   ToPort: 80,   CidrIp: 0.0.0.0/0, Description: HTTP (redirect + ACME) }
+        - { IpProtocol: tcp, FromPort: 443,  ToPort: 443,  CidrIp: 0.0.0.0/0, Description: HTTPS / WSS }
+        - { IpProtocol: tcp, FromPort: 22,   ToPort: 22,   CidrIp: !Ref AdminCidr, Description: SSH }
+        - { IpProtocol: tcp, FromPort: 8888, ToPort: 8888, CidrIp: !Ref AdminCidr, Description: first-boot setup page }
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-sg" }]
+
+  Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds: [!Ref SecurityGroup]
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs: { VolumeSize: !Ref VolumeSizeGb, VolumeType: gp3, DeleteOnTermination: true }
+      Tags: [{ Key: Name, Value: !Ref "AWS::StackName" }]
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash
+            # Unattended install when RootDomain is set; otherwise the setup page stays up.
+            set -uo pipefail
+            exec > /var/log/ethora-userdata.log 2>&1
+            SRC=/home/ubuntu/ethora-install-shared
+            if [ -z "${RootDomain}" ]; then
+              echo "no RootDomain given; leaving the setup page enabled"
+              exit 0
+            fi
+            systemctl disable --now ethora-setup.service || true
+            export ETHORA_SETUP_LICENSE_KEY='${LicenseKey}'
+            export ETHORA_SETUP_AI_KEY='${AiApiKey}'
+            bash "$SRC/deploy/scripts/setup.sh" --yes --force \
+              --domain '${RootDomain}' --admin-email '${AdminEmail}' \
+              --display-name '${DisplayName}' --ssl '${TlsMode}' --ai '${AiEnabled}' \
+              --backend-mode image --frontend-mode image \
+              --target /home/ubuntu/ethora
+            rc=$?
+            if [ $rc -ne 0 ]; then echo "setup.sh failed ($rc); re-enabling the setup page"; systemctl enable --now ethora-setup.service; exit $rc; fi
+            cd "$SRC/deploy" && NON_INTERACTIVE=true bash scripts/install.sh --yes
+            rc=$?
+            if [ $rc -eq 0 ]; then mkdir -p /etc/ethora && date -u +%FT%TZ > /etc/ethora/setup-done; echo "install complete"; else echo "install.sh failed ($rc); re-enabling the setup page"; systemctl enable --now ethora-setup.service; fi
+            exit $rc
+          - {}
+
+Outputs:
+  PublicIp:
+    Value: !GetAtt Instance.PublicIp
+  SetupPage:
+    Description: First-boot setup page (only when RootDomain was left empty). User admin, password = instance id below.
+    Value: !Sub "http://${Instance.PublicIp}:8888"
+  InstanceId:
+    Description: Also the setup page password
+    Value: !Ref Instance
+  AppUrl:
+    Condition: Unattended
+    Value: !Sub "https://app.${RootDomain}"
+  DnsRecordsNeeded:
+    Condition: Unattended
+    Value: !Sub "A records -> ${Instance.PublicIp}: api.${RootDomain}, app.${RootDomain}, xmpp.${RootDomain}, files.${RootDomain}"

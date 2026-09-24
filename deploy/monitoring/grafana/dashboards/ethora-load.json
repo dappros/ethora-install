@@ -1,0 +1,116 @@
+{
+  "uid": "ethora-load",
+  "title": "Ethora Load Testing",
+  "tags": ["ethora", "load"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Load — throughput (iters/sec) & in-flight",
+      "datasource": { "type": "prometheus", "uid": "ethora-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "ethora_load_throughput_per_sec", "legendFormat": "iters/sec" },
+        { "refId": "B", "expr": "ethora_load_inflight", "legendFormat": "in-flight" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Load — ok / failed",
+      "datasource": { "type": "prometheus", "uid": "ethora-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "ethora_load_ok", "legendFormat": "ok" },
+        { "refId": "B", "expr": "ethora_load_failed", "legendFormat": "failed" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Load — latency ms (last finished run)",
+      "datasource": { "type": "prometheus", "uid": "ethora-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "ethora_load_latency_ms", "legendFormat": "p{{quantile}}" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Host — CPU %",
+      "datasource": { "type": "prometheus", "uid": "ethora-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "custom": { "drawStyle": "line", "fillOpacity": 20 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * 100)", "legendFormat": "cpu %" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Host — memory %",
+      "datasource": { "type": "prometheus", "uid": "ethora-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "custom": { "drawStyle": "line", "fillOpacity": 20 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))", "legendFormat": "mem %" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Containers — CPU % by container",
+      "datasource": { "type": "prometheus", "uid": "ethora-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "percent", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "label_replace(sum by (id) (rate(container_cpu_usage_seconds_total{id=~\"/system.slice/docker-.*\"}[1m])) * 100, \"cid\", \"$1\", \"id\", \"/system.slice/docker-(.{12}).*\") * on (cid) group_left (name) group by (cid, name) (up{job=\"docker_names\"})", "legendFormat": "{{name}}" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Containers — memory (MB) by container",
+      "datasource": { "type": "prometheus", "uid": "ethora-prom" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "fieldConfig": { "defaults": { "unit": "decmbytes", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "label_replace(sum by (id) (container_memory_working_set_bytes{id=~\"/system.slice/docker-.*\"}) / 1048576, \"cid\", \"$1\", \"id\", \"/system.slice/docker-(.{12}).*\") * on (cid) group_left (name) group by (cid, name) (up{job=\"docker_names\"})", "legendFormat": "{{name}}" }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "API — HTTP 5xx rate (%)",
+      "datasource": { "type": "prometheus", "uid": "ethora-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "custom": { "drawStyle": "line", "fillOpacity": 20 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "100 * (sum(rate(http_requests_total{job=\"api\",status=~\"5..\"}[5m])) or vector(0)) / clamp_min((sum(rate(http_requests_total{job=\"api\"}[5m])) or vector(0)), 0.1)", "legendFormat": "5xx %" }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "API — request latency p95 / p50 (s)",
+      "datasource": { "type": "prometheus", "uid": "ethora-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0, "custom": { "drawStyle": "line", "fillOpacity": 20 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job=\"api\"}[5m])))", "legendFormat": "p95" },
+        { "refId": "B", "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket{job=\"api\"}[5m])))", "legendFormat": "p50" }
+      ]
+    }
+  ]
+}

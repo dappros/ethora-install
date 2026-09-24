@@ -1,0 +1,22 @@
+# Ethora first-boot setup page. Installed by install-setup-web.sh; paths are
+# substituted then. Runs once: after a successful install server.js writes
+# /etc/ethora/setup-done and the Condition below keeps it from starting again.
+[Unit]
+Description=Ethora first-boot setup (web)
+ConditionPathExists=!/etc/ethora/setup-done
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=ETHORA_SOURCE_ROOT=__SOURCE_ROOT__
+Environment=SETUP_PORT=8888
+Environment=SETUP_DEFAULT_MODE=image
+Environment=HOME=/root
+ExecStart=/usr/bin/env node __SOURCE_ROOT__/deploy/setup-web/server.js
+Restart=no
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

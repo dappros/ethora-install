@@ -1,0 +1,542 @@
+# Ethora Enterprise Deployment Configuration
+# Copy this file to deploy.yml and customize for your deployment
+
+# Domain Configuration
+domains:
+  # Example with 4th-level domains (common for QA/Dev environments):
+  # app.messenger-dev.example.com, api.messenger-dev.example.com, etc.
+  # Production-aligned pattern example:
+  # app.chat.example.com, api.chat.example.com, xmpp.chat.example.com, files.chat.example.com
+  api: api.messenger-dev.example.com          # Backend API domain
+  web: app.messenger-dev.example.com          # Frontend web app domain
+  xmpp: xmpp.messenger-dev.example.com        # XMPP server domain
+  files: files.messenger-dev.example.com      # MinIO file storage domain
+  secure_files: ""                            # Optional: gated chat attachments, e.g. secure-files.messenger-dev.example.com. Blank = feature off.
+  playground: playground.messenger-dev.example.com # Optional SDK Playground domain
+  # widget: widget.chat.example.com           # Optional. Defaults to "widget.<root-of-web>"
+                                              # when services.widget.enabled = true and this
+                                              # is left blank/unset. E.g. web=app.chat.example.com
+                                              # auto-derives widget=widget.chat.example.com.
+  # hosted_apps_root: chat.example.com        # Optional tenant suffix -> <app>.chat.example.com
+  # mcp: mcp.chat.example.com                 # Optional. Hosted MCP server host. Defaults to
+                                              # "mcp.<root-of-web>" when services.mcp.enabled = true
+                                              # and this is left blank/unset (same rule as widget).
+  uptime: uptime.messenger-dev.example.com    # Optional Uptime domain
+
+# Optional legacy host compatibility during domain migration.
+# Useful when canonical production moves from *.example.com to *.chat.example.com.
+# These hosts are generated as compatibility shims only; canonical URLs should still use `domains.*` above.
+legacy_domains:
+  enabled: false
+  web: ""                 # Example: app.example.com
+  web_mode: redirect      # redirect | off
+  files: ""               # Example: files.example.com
+  files_mode: redirect    # redirect | proxy | off
+
+# SSL Configuration
+ssl:
+  method: certbot               # 'certbot' or 'provided'
+  email: admin@example.com      # For Let's Encrypt
+  # Cloudflare API token for auto-provisioning the hosted-apps wildcard cert
+  # (<hosted_apps_root> + *.<hosted_apps_root>) over the DNS-01 challenge.
+  # A wildcard cannot be validated via HTTP-01/nginx, so without this it has to
+  # be issued/renewed by hand; with it set, certbot obtains and unattended-renews
+  # the wildcard automatically.
+  # Generate at: Cloudflare dashboard -> My Profile -> API Tokens -> Create Token
+  #   -> "Edit zone DNS" template -> Permissions: Zone / DNS / Edit,
+  #   Zone Resources: Include -> Specific zone -> <your domain>. Use a scoped
+  #   token (not the Global API Key). deploy.yml is gitignored - keep it private.
+  # cloudflare_api_token: cf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  # Uncomment the below params only if you need hosted tenant apps
+  # hosted_apps_cert_path: /etc/letsencrypt/live/chat.example.com/fullchain.pem
+  # hosted_apps_key_path: /etc/letsencrypt/live/chat.example.com/privkey.pem
+  # If method is 'provided', specify paths:
+  # cert_path: /path/to/cert.pem
+  # key_path: /path/to/key.pem
+  # Optional dedicated wildcard cert for hosted tenant apps.
+  # Useful when the main stack stays on certbot, but hosted apps use a separate wildcard/root.
+  # hosted_apps_cert_path: /path/to/chat-wildcard-fullchain.pem
+  # hosted_apps_key_path: /path/to/chat-wildcard-privkey.pem
+
+# Database Configuration
+databases:
+  mongo:
+    port: 27017
+    database: ethora_prod
+  mysql:
+    port: 3306
+    root_password: # Auto-generated if not provided
+  redis:
+    port: 6379
+
+# Service Configuration
+services:
+  backend:
+    port: 8080
+    node_env: production
+    # How the API runs on this host (see docs/CONTAINER_IMAGES.md):
+    #   source - build from the checkout with npm/tsc and run under PM2 (default)
+    #   image  - run the prebuilt ethora-api container image (API + jobs +
+    #            blockchain worker) via deploy/docker-compose.api.yml; nothing
+    #            is built on the host and no Node.js is needed for the API.
+    # Private images need `docker login ghcr.io` on the host before install.
+    mode: source
+    image: ghcr.io/dappros/ethora-api:2610
+    # Nginx request body limit for API uploads such as avatars and attachments.
+    client_max_body_size: 50M
+    # Email TLD validation policy (controls Joi `string().email()` strictness on
+    # signup, login, and batch user creation endpoints).
+    #   off   - default. Syntax-only check; accepts any TLD (recommended for
+    #           self-hosted/enterprise installs that ingest real-world user
+    #           lists with uncommon domains, e.g. .health, .bank, .son).
+    #   icann - Joi 17 default. Rejects unknown / reserved TLDs like
+    #           .example, .test, .invalid, .son.
+    #   list  - Allow only the comma-separated TLDs in `email_tld_allowlist`
+    #           (case-insensitive; leading dot optional; supports multi-segment
+    #           public suffixes like co.uk).
+    # Quoted on purpose: in YAML 1.1 unquoted `off` parses as boolean false,
+    # which some legacy tools would coerce to the string "false" downstream.
+    email_tld_validation: "off"
+    # Comma-separated TLD allowlist used when `email_tld_validation: list`.
+    # Examples:
+    #   email_tld_allowlist: "com, .co.uk, health, bank"
+    email_tld_allowlist: ""
+  frontend:
+    # source - vite build from the checkout into ethora-app-reactjs/dist (default)
+    # image  - export the prebuilt ethora-frontend bundle into that same dist
+    #          directory (deploy/scripts/frontend-from-image.sh); host nginx
+    #          serves it exactly as before, configured at runtime from /config.js
+    mode: source
+    image: ghcr.io/dappros/ethora-frontend:2610
+  push:
+    enabled: true
+    port: 8098
+    mode: source                                  # source | image (ethora-push image: server + worker)
+    image: ghcr.io/dappros/ethora-push:2610
+    # Optional override for ejabberd mod_offline_post (offline push):
+    # If empty, deploy scripts derive it as:
+    # - production: https://<domains.api>/push/api/v2/push (nginx reverse proxy)
+    # - localhost:  http://host.docker.internal:<port>/api/v2/push
+    common_post_url: ""
+    # Optional VoIP push endpoint used by mod_offline_post for call events (if you run a VoIP push service).
+    voip_post_url: ""
+    # Platform-key push delivery for the universal store build. Set to the appId
+    # whose uploaded Firebase/APNs credentials act as the platform keys (only on
+    # the install that holds them); empty disables local platform delivery.
+    platform_project_id: ""
+    # Per-app daily cap for platform-key pushes (owner opt-in via the dashboard).
+    platform_daily_quota: 1000
+    # Installs without the platform keys forward platform-build pushes to the
+    # central install's push gateway instead. Leave empty when not used.
+    gateway_url: ""
+    gateway_token: ""
+  playground:
+    enabled: true
+    port: 3020
+    mode: source                                  # source | image (Next bundle is built on first start)
+    image: ghcr.io/dappros/ethora-playground:2610
+  mcp:
+    # Hosted MCP server (Streamable HTTP) for AI agents and MCP clients
+    # (Claude, Cursor, ChatGPT, autonomous agents). Runs as PM2 process `mcp`
+    # from ethora-mcp-server and proxies to the local API over loopback.
+    # Off by default for single-tenant enterprise installs; enable on
+    # multi-tenant cloud installs. Public URL: https://<domains.mcp>/mcp
+    enabled: false
+    port: 3030
+    mode: source                                  # source | image
+    image: ghcr.io/dappros/ethora-mcp:2610
+    # Allow app delete / bulk delete tools for the token owner (ownership is
+    # still enforced by the API). Set false to hide them. Wallet transfers are
+    # never offered on the hosted surface (stdio only).
+    enable_dangerous_tools: true
+    # OpenAI apps directory domain verification: paste the token from the OpenAI
+    # developer portal; served as plain text at /.well-known/openai-apps-challenge
+    # on the MCP host. Blank = endpoint returns 404.
+    openai_apps_challenge: ""
+    # Three entry points on https://<domains.mcp>:
+    #   /mcp            open; identity via Bearer header or the login/register tools
+    #   /mcp/k/<key>    personal URL with the user's API key embedded (paste-once
+    #                   connector for Claude.ai / ChatGPT custom connectors)
+    #   /mcp/oauth      OAuth 2.1 (PKCE + dynamic client registration) for the
+    #                   Claude.ai / ChatGPT connector directories
+    # The OAuth authorization server lives in the backend at the issuer below.
+    oauth_issuer: ""   # blank = https://<domains.api>; the OAuth 2.1 authorization server for Claude.ai / ChatGPT connector listings
+  widget:
+    # When omitted (this whole `widget:` block missing or null), widget
+    # hosting auto-follows `features.ai_service` — AI-on installs get
+    # widget hosting on by default, so the admin AI Widget tab's embed
+    # snippet renders against a real assistant.js. Set explicitly to
+    # `false` to disable widget hosting on an AI-on install, or `true`
+    # to enable it on an AI-off install.
+    enabled: true
+    # Public file alias examples:
+    # - https://widget.example.com/assistant.js
+    # - https://widget.example.com/assistant2603.js
+    # Leave empty to derive current UTC YYMM automatically.
+    script_version: ""
+  hosted_apps:
+    enabled: false
+  ai_service:
+    enabled: true
+    port: 8013
+    # The AI module ships as one image (ethora-ai): ai-service, docs-parse and
+    # the AI chat widget bundle. This mode covers all three.
+    mode: source                                  # source | image
+    image: ghcr.io/dappros/ethora-ai:2610
+    postgres_port: 5434
+    postgres_database: ai_service_embeddings_db
+    postgres_user: ai_embeddings
+    postgres_password: # Auto-generated if not provided
+    pg_url: ""                # Optional override for an externally managed AI Postgres/pgvector instance
+  docs_parse_service:
+    enabled: true
+    port: 8201
+  crawler:
+    enabled: false              # AI crawler (optional)
+    port: 8000
+    # Where the crawler POSTs a finished deep crawl (it appends /<appId> itself).
+    # Leave empty to use http://host.docker.internal:<backend port>/v1/sources/site-crawl/internal-for-crawler.
+    # Only set this if the backend is not reachable on the docker host gateway.
+    # Note the receiving route has no auth middleware - keep it off public URLs.
+    callback_url: ""
+  uptime:
+    enabled: true
+    port: 8099
+    postgres_port: 5433
+    # Whether to show the extra Uptime tiles:
+    # - "public": external checks for this deployment (TLS + routing)
+    # - "ethora": reference checks for the shared ethora.com platform API
+    public_enabled: true
+    ethora_enabled: false
+  # Observability stack for load testing (Prometheus + Grafana + cAdvisor +
+  # node-exporter). OFF by default — it adds host overhead and is only useful on
+  # QA/load boxes. When true, update.sh brings the stack up automatically, and
+  # Grafana + Prometheus are reverse-proxied behind the uptime domain at
+  # /grafana/ and /prometheus/ under the uptime basic-auth.
+  monitoring:
+    enabled: false
+    # Grafana alert e-mails (host CPU/memory, container CPU, API 5xx rate and
+    # latency). Recipients are comma-separated. SMTP defaults to the platform's
+    # Postmark server token (integrations.postmark); set smtp_* for another relay.
+    alerts:
+      emails: ""
+      smtp_host: ""          # host:port, e.g. smtp.example.com:587
+      smtp_user: ""
+      smtp_password: ""
+      smtp_from: ""          # defaults to integrations.postmark.from_email
+    # Attach a screenshot of the alerting panel to each e-mail. Runs a headless
+    # Chromium renderer container (~400 MB RAM); leave off on small hosts.
+    screenshots: false
+  ejabberd:
+    mode: source                                  # source | image (published ethora-xmpp image with the custom modules)
+    image: ghcr.io/dappros/ethora-xmpp:2610
+    admin_password: # Auto-generated if not provided
+    # Optional: full URLs for ejabberd tracking modules (mod_track_member /
+    # mod_track_last_message / mod_track_message).
+    # If not provided, deploy scripts will derive them from domains.api + services.backend.port.
+    # Example (prod): https://api.example.com/v1/chats/track-member
+    # Example (local): http://localhost:8080/v1/chats/track-member
+    track_member_url: ""
+    track_last_message_url: ""
+    # mod_track_message archive endpoint (message archival for unread-counts / search).
+    # Example (prod): https://api.example.com/v1/chats/archive-message
+    track_message_url: ""
+    # Optional: MAM history-read audit endpoint (mod_history_access). Same
+    # derivation rule as the track URLs above — leave empty and the deploy
+    # scripts build it from domains.api + services.backend.port.
+    # Example (prod): https://api.example.com/v1/chats/history-access
+    history_access_url: ""
+    # Optional: message edit/delete audit endpoint (mod_edit / mod_delete,
+    # one shared URL). Same derivation rule — leave empty and the deploy
+    # scripts build it from domains.api + services.backend.port.
+    # Example (prod): https://api.example.com/v1/chats/message-audit
+    message_audit_url: ""
+    # Optional: mod_translate endpoint. Set per-install; empty keeps the repo default.
+    translate_url: ""
+  # Centrifugo (real-time stats counters for the admin dashboard).
+  # NON-CRITICAL: backend stats publishing fails fast (CENTRIFUGO_TIMEOUT_MS) and silently when this
+  # service is unreachable; user logins and API requests are never blocked by it.
+  # Each instance runs its own local Centrifugo container; the API runs on host port `port`.
+  centrifugo:
+    enabled: true
+    port: 8001
+    # Bind/timeout settings exposed to the backend (axios) — keep small, this is non-critical.
+    timeout_ms: 2000
+    # Auto-generated per install if empty (persisted in .deploy.env across updates).
+    api_key: ""         # X-API-KEY header used by backend -> centrifugo HTTP API
+    hmac_secret: ""     # Used to sign the wsToken returned to the frontend (must match centrifugo)
+    admin_password: ""  # Centrifugo admin UI password
+    admin_secret: ""    # Centrifugo admin UI session secret
+
+# Feature Flags (for future modularity)
+features:
+  blockchain: false
+  ai_service: true
+  analytics: false
+  # Swagger UI (public)
+  # Recommended default: enabled (makes first-time installs easier to validate).
+  swagger: true
+  # Swagger UI (internal/advanced)
+  # Recommended default: disabled.
+  swagger_internal: false
+  hubspot: false            # Disable for enterprise (prevents sending CRM events to Ethora.com HubSpot)
+  stripe: false              # Disable for enterprise
+  postmark: false            # Disable for enterprise
+  iap: false                 # In-app purchases (Google/Apple receipt validation + subscription cron)
+  firebase: false            # Firebase Admin integration (backend)
+  # Video/audio calls (LiveKit). Requires a calls-capable chat-component build
+  # and a reachable LiveKit server. Disabled by default.
+  video_calls: false
+  # End-to-end encryption (OMEMO 2) for 1:1 chats. Client-side only: the
+  # server never holds keys and cannot read encrypted payloads. When on,
+  # users can start an encrypted chat alongside a plain one; encrypted
+  # rooms stay encrypted for life. Disabled by default.
+  #
+  # This is the INSTALL gate only. Each app additionally opts in via its own
+  # `e2eeEnabled` setting (admin panel: App Settings > Chats), which is off by
+  # default, so turning this on does not start encrypting anyone's chats - it
+  # makes the per-app switch available. A chat is encryptable only when both
+  # are on, and the API enforces the per-app one (403 E2EE_DISABLED on
+  # POST /v1/chats/private with e2ee: true).
+  e2ee: false
+  # Auth rate-limit kill switch for load testing. When true, all auth rate
+  # limiters become no-ops. Keep false on prod; set true only on a QA/load box
+  # while running load tests, then back to false.
+  rate_limit_disabled: false
+  # Immutable (tamper-evident) audit log export to an S3-compatible bucket.
+  # When true, integrations.immutable_logs below becomes REQUIRED: all four AWS
+  # fields must be filled in and interval_hours must be a positive integer, or
+  # deploy/scripts/validate.sh aborts the install. When false, none of those
+  # values are rendered into any service .env and no service touches S3.
+  # The log file format and the uploader itself are owned by a separate
+  # service; this flag only gates the configuration contract.
+  immutable_logs: false
+  # Refresh-token lifetime, in days.
+  refresh_token_ttl_days: 7
+  # What to do when an already-rotated refresh token is presented again. The event is
+  # always audited; this only controls the response.
+  #   log_only      - audit it, then hand the client the current token so it keeps
+  #                   working. Detects nothing, breaks nobody. Required while any client
+  #                   can refresh from two places at once (e.g. browser tabs with no
+  #                   shared refresh lock) — otherwise real users get logged out at random.
+  #   reject        - refuse the stale token; other sessions untouched.
+  #   revoke_family - treat it as theft and revoke that whole rotation chain (other
+  #                   devices unaffected). Only once every client refreshes through one lock.
+  refresh_reuse_policy: log_only
+  # XMPP JWT lifetimes (jsonwebtoken duration syntax: 10m / 30m / 1h). The token
+  # is only checked at XMPP (re)connect; every auth refresh carries a fresh one.
+  xmpp_jwt_ttl: 10m
+  # Widget visitor tokens stay long-lived until the widget learns to re-provision
+  # a session on SASL auth failure - a short TTL strands reconnecting visitors.
+  xmpp_widget_jwt_ttl: 100d
+
+# Per-IP auth rate limits (requests per minute per client IP). Blank = backend
+# defaults (login 20, signup 10, password 10, refresh 60). When services.mcp.enabled
+# is true and these are blank, the deploy raises login to 120 and signup to 30
+# because hosted AI assistants reach the API from a handful of vendor egress IPs
+# shared by all their users. Per-email limits are unaffected.
+rate_limits:
+  auth_login_max: ""
+  auth_signup_max: ""
+  auth_password_max: ""
+  auth_refresh_max: ""
+  # Feedback submissions (see the `feedback` block below). Blank = backend
+  # defaults: 10/minute per IP authenticated, 5/hour per IP anonymous.
+  feedback_max: ""
+  feedback_anon_max: ""
+
+# LANGUAGES
+# `languages` is what the separately-installed translation server can translate
+# INTO, as BCP-47 tags. Served to clients in the `translateLanguages` field of
+# GET /v1/apps/get-config.
+#
+# This is the ONLY language list the install publishes. Clients use it twice,
+# with different narrowings:
+#   * the profile's interface picker offers only the codes the web bundle ships
+#     translations for (currently en-CA, fr-CA, es-US) - anything else would
+#     render in English;
+#   * the chat translation picker offers the list whole, because translating
+#     messages INTO a language does not require the UI to render in it.
+# It is also what the API validates a user's language preferences against.
+#
+# So do NOT restrict this to the bundled locales - list whatever the server
+# actually supports. Listing a code with no bundled dictionary simply means it
+# is offered as a translation target and not as an interface language.
+#
+# Leave empty (or drop the block) when no translation server is installed:
+# get-config then reports `translateLanguages: []`, clients hide the chat
+# language picker, and language writes are not gated at all.
+#
+# Applied by the deploy: the value is pushed into the database on every install
+# / update, so changing it is an edit here + `update.sh`.
+translate:
+  languages: ""
+
+# Frontend tracking / analytics (disabled by default for enterprise)
+frontend:
+  disable_firebase: false
+  disable_ga: true
+  disable_clarity: true
+  ga_id: ""          # GA4 Measurement ID (e.g. G-XXXXXXX)
+  gtm_id: ""         # GTM container ID (e.g. GTM-XXXXXXX)
+  clarity_id: ""     # Microsoft Clarity project id
+  posthog_key: ""    # PostHog project API key (public, e.g. phc_XXXX)
+  posthog_host: ""   # PostHog ingestion host (e.g. https://us.i.posthog.com)
+
+# Third-party integrations (disabled by default for enterprise)
+integrations:
+  hubspot:
+    enabled: false
+    # HubSpot Forms API integration (used by backend to submit "create app" form)
+    portal_id: ""
+    form_id_app_create: ""
+    form_id_signup: ""
+    form_id_tutorial: ""
+    # HubSpot embedded form (used in frontend tutorial modal)
+    region: "na1"
+
+  # Firebase Admin (optional)
+  firebase:
+    project_name: ""            # e.g. "projects/ethora-668e9" (optional override)
+    service_account_path: ""    # relative to backend working dir, e.g. ".config/ethora.json"
+    web:
+      api_key: ""               # Firebase Web API key for base app Google sign-in
+      auth_domain: ""           # e.g. "your-project.firebaseapp.com"
+      project_id: ""            # e.g. "your-project"
+      storage_bucket: ""        # e.g. "your-project.appspot.com"
+      messaging_sender_id: ""   # Firebase messaging sender id
+      app_id: ""                # Firebase web app id
+      measurement_id: ""        # Optional GA measurement id
+      vapid_public_key: ""      # Web push: Console > Cloud Messaging > Web Push certificates (key pair). Required for chat push notifications.
+
+  # LiveKit (video/audio calls). Enable via features.video_calls. `url` is
+  # consumed by the frontend (VITE_LIVEKIT_URL); api_key/api_secret are for the
+  # backend call-token endpoint once calls land server-side.
+  livekit:
+    url: ""          # e.g. https://livekit.example.com
+    api_key: ""
+    api_secret: ""
+
+  # Stripe (optional)
+  stripe:
+    secret: ""
+    public: ""
+    plan: ""
+
+  # Postmark (optional)
+  postmark:
+    token: ""
+    from_email: "noreply@ethoramail.com"   # Must be a verified Sender Signature in your Postmark account
+    from_name: "Ethora Platform"           # Display name shown in the From field
+    subject_prefix: "Ethora"               # Prefix for email subjects (e.g. "Ethora Daily, issue ...")
+
+  # Analytics email reports (optional, requires postmark enabled)
+  analytics:
+    daily_report_receivers: ""             # Comma-separated list of email addresses for daily and weekly reports
+    monthly_report_receivers: ""           # Optional override for monthly reports; falls back to daily_report_receivers
+    daily_schedule: "30 8 * * *"           # Cron expression: daily report (default: 8:30 AM)
+    weekly_schedule: "30 8 * * 1"          # Cron expression: weekly report on Monday (default: 8:30 AM)
+    monthly_schedule: "30 8 1 * *"         # Cron expression: monthly report on 1st (default: 8:30 AM)
+    timezone: "Europe/London"              # IANA timezone for cron schedules (default: server local time)
+    legal_email: ""                        # Recipient for T&C / legal copies (default: legal@dappros.com)
+    alert_email: ""                        # Recipient for signup alerts (default: alert-signed@dappros.com)
+
+  # Immutable audit logs -> S3 (only used when features.immutable_logs: true).
+  # Connection settings + upload schedule for the log-export job. Give the IAM
+  # user write-only access to this one bucket (s3:PutObject on the bucket ARN);
+  # the platform never reads the objects back. Bucket-side retention /
+  # object-lock / lifecycle rules are configured in AWS, not here.
+  immutable_logs:
+    interval_hours: 6           # How often (in hours) the log-upload job runs. Positive integer; default 6.
+    aws_access_key_id: ""       # IAM user's access key ID
+    aws_secret_access_key: ""   # IAM user's secret access key
+    aws_region: ""              # AWS region the bucket lives in (e.g. eu-central-1)
+    aws_s3_bucket_name: ""      # Exact name of the bucket used to store the files
+
+# Feedback channel (POST /v2/feedback), used by the hosted MCP server and
+# callable anonymously so a first-time user who cannot even sign up can still
+# report it. Stored in Mongo and, when configured, delivered by email and/or
+# Slack. Leave both destinations blank to store only.
+feedback:
+  email_to: ""            # comma-separated; needs features.postmark enabled
+  slack_webhook_url: ""   # Slack incoming webhook (keep out of version control)
+  retention_days: 180     # 0 = keep forever
+
+# AI providers (optional)
+ai:
+  ai_api_url: "https://api.openai.com/v1"  # OpenAI-compatible base URL for your AI model/provider
+  ai_api_key: ""                           # API key for your AI model/provider; leave empty for unauthenticated/self-hosted setups
+  chat_model: "gpt-5.6-luna"               # Chat/completions model name (per-agent override: Agent.llmModel)
+  embedding_model: "text-embedding-3-small" # Embeddings model name
+
+# Web3 / blockchain providers (optional; only needed when features.blockchain=true)
+blockchain:
+  coinbase_private: ""
+  external_bc_networkname: ""
+  external_bc_ws: ""
+  alchemy_url: ""
+  usdc_contract_address: ""
+
+# Admin Configuration
+admin:
+  email: admin@example.com
+  password: "admin123" # Default admin password (change in production!)
+
+# License key for this install. Optional: with no key the backend runs with
+# every feature for a grace period counted from its first boot, then drops
+# to a restricted state (chat keeps working; creating apps/users from the
+# admin panel and batch API is refused). See docs/LICENSING.md.
+#
+# The key binds a parent domain: every host under `domains:` above must be
+# that domain or a subdomain of it (dev/qa/prod under one second-level
+# domain share one key). A key can also be pasted in the admin panel
+# (License page, super admin) - a key set here takes precedence over that.
+license:
+  key: ""              # ETHORA1.<payload>.<signature>, as issued
+  key_file: ""         # Alternatively, a path to a file holding the key
+  call_home: true      # Daily heartbeat to the license server; set false for air-gapped installs (needs an `offline` key)
+  server_url: ""       # License server base URL; empty = no call-home, no call-home enforcement
+  grace_days: ""       # Override the default grace window (days); leave empty for the default
+
+# Security
+security:
+  jwt_secret: # Auto-generated if not provided
+  refresh_secret: # Auto-generated if not provided
+  # Shared secret for ejabberd -> backend tracking calls (/v1/chats/track-member, /v1/chats/track-last-message).
+  # Must match backend env var XMPP_SECRET.
+  # If empty, we use the backend default for compatibility.
+  xmpp_secret: ""
+
+# MinIO Configuration
+storage:
+  minio_root_user: minioroot123
+  minio_root_password: "" # Auto-generated if empty
+
+# Path Configuration
+# - `source`: checkout / install package directory (the deploy.yml you edit lives here)
+# - `base`: target install/update directory
+# - If `base` is omitted, the system installs into `source`
+# - During split source/target installs, edit deploy.yml only in `source`
+# - The target install does not keep a `deploy/` directory; always run deploy scripts from `source/deploy`
+paths:
+  base: /home/ubuntu/ethora     # Target dir for installs and updates. If empty, source dir will be used.
+  source: /home/ubuntu/ethora-install-shared  # Source dir containing the git checkout or unpacked install bundle.
+
+# Base App Configuration (created on first run)
+base_app:
+  display_name: Ethora
+  # app "slug" stored in MongoDB and used by the frontend as VITE_DOMAIN_NAME.
+  # Leave empty to derive automatically from domains.web (e.g. app.messenger-dev.example.com -> app).
+  # If you want the slug to be "messenger-dev", set it explicitly here.
+  domain_name: ""
+  owner_email: admin@example.com
+  owner_password: # Uses admin.password if not specified
+  start_balance: 1000000
+
+# SDK Playground (optional)
+# - App ID/Secret are required for @ethora/sdk-backend
+# - If omitted, playground will start but API calls will fail with "SDK not configured"
+playground:
+  app_id: ""
+  app_secret: ""
+

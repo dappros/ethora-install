@@ -1,0 +1,13 @@
+# Sensitive configuration files
+config/deploy.yml
+.deploy.env
+
+# Log files
+*.log
+deploy.log
+
+# Temporary files
+*.tmp
+*.bak
+*~
+

@@ -1,0 +1,202 @@
+# Ethora.com platform, copyright: Dappros Ltd (c) 2026, all rights reserved
+#
+# Alert rules, provisioned as files so every install evaluates the same set.
+# Each rule points at the panel it watches (__dashboardUid__/__panelId__) so the
+# notification e-mail carries a screenshot of that panel when the image
+# renderer is enabled (services.monitoring.screenshots in deploy.yml).
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: ethora-resources
+    folder: Ethora
+    interval: 1m
+    rules:
+      - uid: ethora-host-cpu
+        title: Host CPU high
+        condition: C
+        for: 2m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          scope: host
+        annotations:
+          __dashboardUid__: ethora-load
+          __panelId__: "4"
+          summary: "Host CPU above 85% for 2 minutes"
+          description: "Average CPU usage across all cores is {{ printf \"%.0f\" $values.B.Value }}%."
+        data:
+          - refId: A
+            datasourceUid: ethora-prom
+            relativeTimeRange: { from: 600, to: 0 }
+            model:
+              refId: A
+              expr: 100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100)
+              instant: false
+              range: true
+              intervalMs: 15000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [85] }
+
+      - uid: ethora-host-memory
+        title: Host memory high
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          scope: host
+        annotations:
+          __dashboardUid__: ethora-load
+          __panelId__: "5"
+          summary: "Host memory above 90% for 5 minutes"
+          description: "Memory in use is {{ printf \"%.0f\" $values.B.Value }}% of the host total."
+        data:
+          - refId: A
+            datasourceUid: ethora-prom
+            relativeTimeRange: { from: 600, to: 0 }
+            model:
+              refId: A
+              expr: 100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))
+              instant: false
+              range: true
+              intervalMs: 15000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [90] }
+
+      - uid: ethora-container-cpu
+        title: Container CPU high
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          scope: container
+        annotations:
+          __dashboardUid__: ethora-load
+          __panelId__: "6"
+          summary: "Container {{ $labels.name }} above 80% CPU for 5 minutes"
+          description: "{{ $labels.name }} is using {{ printf \"%.0f\" $values.B.Value }}% CPU (100% = one core)."
+        data:
+          - refId: A
+            datasourceUid: ethora-prom
+            relativeTimeRange: { from: 600, to: 0 }
+            model:
+              refId: A
+              expr: label_replace(sum by (id) (rate(container_cpu_usage_seconds_total{id=~"/system.slice/docker-.*"}[1m])) * 100, "cid", "$1", "id", "/system.slice/docker-(.{12}).*") * on (cid) group_left (name) group by (cid, name) (up{job="docker_names"})
+              instant: false
+              range: true
+              intervalMs: 15000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [80] }
+
+  - orgId: 1
+    name: ethora-http
+    folder: Ethora
+    interval: 1m
+    rules:
+      - uid: ethora-http-5xx
+        title: HTTP 5xx rate high
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          scope: api
+        annotations:
+          __dashboardUid__: ethora-load
+          __panelId__: "8"
+          summary: "More than 5% of API requests return 5xx"
+          description: "{{ printf \"%.1f\" $values.B.Value }}% of requests over the last 5 minutes ended in a 5xx."
+        data:
+          - refId: A
+            datasourceUid: ethora-prom
+            relativeTimeRange: { from: 900, to: 0 }
+            model:
+              refId: A
+              expr: 100 * (sum(rate(http_requests_total{job="api",status=~"5.."}[5m])) or vector(0)) / clamp_min((sum(rate(http_requests_total{job="api"}[5m])) or vector(0)), 0.1)
+              instant: false
+              range: true
+              intervalMs: 15000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [5] }
+
+      - uid: ethora-http-latency
+        title: HTTP latency high
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          scope: api
+        annotations:
+          __dashboardUid__: ethora-load
+          __panelId__: "9"
+          summary: "API p95 latency above 2 seconds for 5 minutes"
+          description: "p95 request latency is {{ printf \"%.2f\" $values.B.Value }}s."
+        data:
+          - refId: A
+            datasourceUid: ethora-prom
+            relativeTimeRange: { from: 900, to: 0 }
+            model:
+              refId: A
+              expr: histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job="api"}[5m])))
+              instant: false
+              range: true
+              intervalMs: 15000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [2] }

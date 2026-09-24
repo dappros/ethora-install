@@ -1,0 +1,126 @@
+#!/bin/bash
+# Tests for setup.sh. Pure bash + yq; run: bash deploy/scripts/tests/setup.test.sh
+set -uo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SETUP="$HERE/../setup.sh"
+T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+PASS=0; FAIL=0
+ok()   { PASS=$((PASS+1)); echo "  ok   $1"; }
+fail() { FAIL=$((FAIL+1)); echo "  FAIL $1"; [ -n "${2:-}" ] && echo "       $2"; }
+y() { yq eval "$1" "$2"; }
+run() { "$SETUP" "$@" --no-validate 2>"$T/err" >"$T/out"; }
+
+echo "# derivation from a root domain"
+run --domain Chat.Example.com --admin-email ops@example.com --yes --out "$T/a.yml"
+[ "$(y .domains.api "$T/a.yml")" = "api.chat.example.com" ] && ok "api derived" || fail "api derived" "$(y .domains.api "$T/a.yml")"
+[ "$(y .domains.web "$T/a.yml")" = "app.chat.example.com" ] && ok "web derived" || fail "web derived"
+[ "$(y .domains.xmpp "$T/a.yml")" = "xmpp.chat.example.com" ] && ok "xmpp derived" || fail "xmpp derived"
+[ "$(y .domains.files "$T/a.yml")" = "files.chat.example.com" ] && ok "files derived" || fail "files derived"
+[ "$(y .domains.uptime "$T/a.yml")" = "uptime.chat.example.com" ] && ok "uptime host derived" || fail "uptime host derived"
+[ "$(y .ssl.method "$T/a.yml")" = "certbot" ] && ok "ssl defaults to certbot" || fail "ssl default"
+[ "$(y .ssl.email "$T/a.yml")" = "ops@example.com" ] && ok "ssl email = admin email" || fail "ssl email"
+[ "$(y .admin.email "$T/a.yml")" = "ops@example.com" ] && ok "admin email" || fail "admin email"
+[ "$(y .base_app.owner_email "$T/a.yml")" = "ops@example.com" ] && ok "base app owner email" || fail "owner email"
+pw="$(y .admin.password "$T/a.yml")"
+[ "$pw" != "admin123" ] && [ ${#pw} -ge 16 ] && ok "admin password generated (${#pw} chars)" || fail "admin password generated" "$pw"
+grep -q "$pw" "$T/out" && ok "generated password printed once" || fail "password printed"
+[ "$(y .features.ai_service "$T/a.yml")" = "true" ] && ok "ai on by default" || fail "ai default"
+[ "$(y .features.blockchain "$T/a.yml")" = "false" ] && ok "blockchain off by default" || fail "bc default"
+[ "$(y .license.key "$T/a.yml")" = "" ] && [ "$(y .license.call_home "$T/a.yml")" = "true" ] && ok "license empty, call-home on" || fail "license defaults"
+[ "$(y .paths.source "$T/a.yml")" = "$(cd "$HERE/../../.." && pwd)" ] && ok "paths.source = repo root" || fail "paths.source" "$(y .paths.source "$T/a.yml")"
+[ "$(y .paths.base "$T/a.yml")" != "$(y .paths.source "$T/a.yml")" ] && ok "paths.base differs from source" || fail "paths.base"
+c="$(grep -c '^\s*#' "$T/a.yml")"; [ "$c" -gt 200 ] && ok "template comments preserved ($c)" || fail "comments preserved" "$c"
+[ "$(stat -c %a "$T/a.yml")" = "600" ] && ok "file mode 600" || fail "file mode" "$(stat -c %a "$T/a.yml")"
+
+echo "# explicit overrides and modules"
+run --domain chat.example.com --api api-x.example.com --admin-email a@b.co --admin-password 'S3cret!pass' \
+    --display-name "Acme Chat" --ai off --blockchain on --uptime off --hosted-apps chat.example.com \
+    --license-server https://license.example.com --no-call-home --yes --out "$T/b.yml"
+[ "$(y .domains.api "$T/b.yml")" = "api-x.example.com" ] && ok "explicit --api wins" || fail "explicit api"
+[ "$(y .domains.web "$T/b.yml")" = "app.chat.example.com" ] && ok "others still derived" || fail "others derived"
+[ "$(y .admin.password "$T/b.yml")" = "S3cret!pass" ] && ok "supplied password kept" || fail "supplied pw"
+! grep -q "S3cret" "$T/out" && ok "supplied password not echoed" || fail "supplied pw not echoed"
+[ "$(y .base_app.display_name "$T/b.yml")" = "Acme Chat" ] && ok "display name" || fail "display name"
+[ "$(y .features.ai_service "$T/b.yml")" = "false" ] && [ "$(y .services.ai_service.enabled "$T/b.yml")" = "false" ] && [ "$(y .services.docs_parse_service.enabled "$T/b.yml")" = "false" ] && ok "ai off flips all three" || fail "ai off"
+[ "$(y .features.blockchain "$T/b.yml")" = "true" ] && ok "blockchain on" || fail "bc on"
+[ "$(y .services.uptime.enabled "$T/b.yml")" = "false" ] && ok "uptime off" || fail "uptime off"
+[ "$(y .domains.hosted_apps_root "$T/b.yml")" = "chat.example.com" ] && [ "$(y .services.hosted_apps.enabled "$T/b.yml")" = "true" ] && ok "hosted apps enabled" || fail "hosted apps"
+[ "$(y .license.server_url "$T/b.yml")" = "https://license.example.com" ] && [ "$(y .license.call_home "$T/b.yml")" = "false" ] && ok "license server + no call-home" || fail "license server"
+
+echo "# ai key/url/model"
+run --domain chat.example.com --admin-email a@b.co --ai on --ai-key sk-test --ai-url https://llm.internal/v1 --ai-model my-model --yes --out "$T/c.yml"
+[ "$(y .ai.ai_api_key "$T/c.yml")" = "sk-test" ] && [ "$(y .ai.ai_api_url "$T/c.yml")" = "https://llm.internal/v1" ] && [ "$(y .ai.chat_model "$T/c.yml")" = "my-model" ] && ok "ai provider settings" || fail "ai provider"
+
+echo "# local mode"
+run --local --yes --out "$T/l.yml"
+[ "$(y .domains.api "$T/l.yml")" = "localhost" ] && [ "$(y .domains.web "$T/l.yml")" = "localhost" ] && ok "localhost hosts" || fail "localhost hosts"
+[ "$(y .ssl.method "$T/l.yml")" = "none" ] && ok "local ssl none" || fail "local ssl"
+[ "$(y .admin.email "$T/l.yml")" = "admin@localhost" ] && ok "local admin email default" || fail "local admin email"
+[ "$(y .services.backend.node_env "$T/l.yml")" = "development" ] && ok "started from local template" || fail "local template"
+
+echo "# license key handling"
+KEY="ETHORA1.eyJ2IjoxfQ.c2ln"
+run --domain chat.example.com --admin-email a@b.co --license-key " $KEY " --yes --out "$T/k.yml"
+[ "$(y .license.key "$T/k.yml")" = "$KEY" ] && ok "key stored, whitespace stripped" || fail "key stored" "$(y .license.key "$T/k.yml")"
+echo "$KEY" > "$T/key.txt"
+run --domain chat.example.com --admin-email a@b.co --license-key-file "$T/key.txt" --yes --out "$T/kf.yml"
+[ "$(y .license.key_file "$T/kf.yml")" = "$T/key.txt" ] && ok "key_file stored" || fail "key_file"
+
+echo "# --from import: keeps existing values, applies new answers"
+yq eval -i '.features.stripe = true | .integrations.postmark.token = "pm-token" | .admin.password = "OldPass123"' "$T/a.yml"
+run --from "$T/a.yml" --domain chat.newdomain.com --yes --out "$T/a2.yml"
+[ "$(y .domains.api "$T/a2.yml")" = "api.chat.newdomain.com" ] && ok "domain re-derived from new answer" || fail "re-derived"
+[ "$(y .features.stripe "$T/a2.yml")" = "true" ] && [ "$(y .integrations.postmark.token "$T/a2.yml")" = "pm-token" ] && ok "unrelated values preserved" || fail "preserved"
+[ "$(y .admin.email "$T/a2.yml")" = "ops@example.com" ] && ok "admin email carried from --from" || fail "carried email"
+[ "$(y .admin.password "$T/a2.yml")" = "OldPass123" ] && ok "existing password carried, not regenerated" || fail "carried pw" "$(y .admin.password "$T/a2.yml")"
+run --from "$T/a.yml" --yes --out "$T/a3.yml"
+[ "$(y .domains.web "$T/a3.yml")" = "app.chat.example.com" ] && ok "domain inferred from --from web host" || fail "inferred domain"
+run --from "$T/a3.yml" --admin-email new@example.com --yes --out "$T/a3.yml"
+[ "$(y .admin.email "$T/a3.yml")" = "new@example.com" ] && ok "reconfigure in place (--from == --out) allowed" || fail "reconfigure in place" "$(cat "$T/err")"
+
+echo "# errors"
+run --admin-email a@b.co --yes --out "$T/e1.yml"; grep -q "root domain is required" "$T/err" && ok "missing domain refused" || fail "missing domain" "$(cat "$T/err")"
+run --domain "not a domain" --admin-email a@b.co --yes --out "$T/e2.yml"; grep -q "not a valid domain" "$T/err" && ok "bad domain refused" || fail "bad domain"
+run --domain chat.example.com --yes --out "$T/e3.yml"; grep -q "admin email is required" "$T/err" && ok "missing email refused" || fail "missing email"
+run --domain chat.example.com --admin-email nope --yes --out "$T/e4.yml"; grep -q "not a valid email" "$T/err" && ok "bad email refused" || fail "bad email"
+run --domain chat.example.com --admin-email a@b.co --license-key garbage --yes --out "$T/e5.yml"; grep -q "does not look like an Ethora key" "$T/err" && ok "bad key refused" || fail "bad key"
+run --domain chat.example.com --admin-email a@b.co --ssl provided --yes --out "$T/e6.yml"; grep -q "needs --cert and --key" "$T/err" && ok "provided ssl needs cert+key" || fail "provided ssl"
+run --domain chat.example.com --admin-email a@b.co --ssl weird --yes --out "$T/e7.yml"; grep -q "must be certbot" "$T/err" && ok "bad ssl mode refused" || fail "bad ssl"
+run --domain chat.example.com --admin-email a@b.co --ai maybe --yes --out "$T/e8.yml"; grep -q "must be on or off" "$T/err" && ok "bad on/off refused" || fail "bad onoff"
+run --domain chat.example.com --admin-email a@b.co --target "$(cd "$HERE/../../.." && pwd)" --yes --out "$T/e9.yml"; grep -q "in-place installs are refused" "$T/err" && ok "in-place target refused" || fail "in-place"
+run --domain chat.example.com --admin-email a@b.co --yes --out "$T/a.yml"; grep -q "exists; pass --force" "$T/err" && ok "existing output refused without --force" || fail "overwrite refused"
+run --domain chat.example.com --admin-email a@b.co --yes --force --out "$T/a.yml" && ok "--force overwrites" || fail "--force"
+run --domain chat.example.com --admin-email a@b.co --license-server license.example.com --yes --out "$T/e10.yml"; grep -q "http(s) URL" "$T/err" && ok "bad license server url refused" || fail "bad server url"
+
+echo "# run modes"
+run --domain chat.example.com --admin-email a@b.co --yes --out "$T/m1.yml"
+[ "$(y .services.backend.mode "$T/m1.yml")" = "source" ] && [ "$(y .services.frontend.mode "$T/m1.yml")" = "source" ] && ok "modes default to source" || fail "mode defaults"
+[ "$(y .services.backend.image "$T/m1.yml")" = "ghcr.io/dappros/ethora-api:2610" ] && ok "default api image ref written" || fail "default api image"
+run --domain chat.example.com --admin-email a@b.co --backend-mode image --frontend-mode image --api-image ghcr.io/x/api:1 --frontend-image ghcr.io/x/fe:1 --yes --out "$T/m2.yml"
+[ "$(y .services.backend.mode "$T/m2.yml")" = "image" ] && [ "$(y .services.backend.image "$T/m2.yml")" = "ghcr.io/x/api:1" ] && ok "backend image mode + ref" || fail "backend image mode"
+[ "$(y .services.frontend.mode "$T/m2.yml")" = "image" ] && [ "$(y .services.frontend.image "$T/m2.yml")" = "ghcr.io/x/fe:1" ] && ok "frontend image mode + ref" || fail "frontend image mode"
+run --from "$T/m2.yml" --yes --out "$T/m3.yml"
+[ "$(y .services.backend.mode "$T/m3.yml")" = "image" ] && ok "mode carried through --from" || fail "mode carried"
+run --domain chat.example.com --admin-email a@b.co --all-modes image --yes --out "$T/e1.yml"
+[ "$(y .services.ejabberd.mode "$T/e1.yml")" = "image" ] && [ "$(y .services.mcp.mode "$T/e1.yml")" = "image" ] && ok "--all-modes covers ejabberd" || fail "all-modes ejabberd"
+run --domain chat.example.com --admin-email a@b.co --ejabberd-mode image --yes --out "$T/e2.yml"
+[ "$(y .services.ejabberd.mode "$T/e2.yml")" = "image" ] && [ "$(y .services.backend.mode "$T/e2.yml")" = "source" ] && ok "--ejabberd-mode alone" || fail "ejabberd-mode alone"
+run --domain chat.example.com --admin-email a@b.co --backend-mode weird --yes --out "$T/m4.yml"; grep -q "must be source or image" "$T/err" && ok "bad mode refused" || fail "bad mode"
+run --domain chat.example.com --admin-email a@b.co --all-modes image --push-mode source --yes --out "$T/m5.yml"
+[ "$(y .services.ai_service.mode "$T/m5.yml")" = "image" ] && [ "$(y .services.mcp.mode "$T/m5.yml")" = "image" ] && [ "$(y .services.playground.mode "$T/m5.yml")" = "image" ] && ok "--all-modes seeds every service" || fail "all-modes"
+[ "$(y .services.push.mode "$T/m5.yml")" = "source" ] && ok "individual flag beats --all-modes" || fail "flag beats all-modes"
+[ "$(y .services.ai_service.image "$T/m5.yml")" = "ghcr.io/dappros/ethora-ai:2610" ] && ok "ai image ref kept from template" || fail "ai image ref"
+
+echo "# dry run writes nothing"
+run --domain chat.example.com --admin-email a@b.co --yes --dry-run --out "$T/d.yml"
+[ ! -f "$T/d.yml" ] && grep -q "dry run" "$T/out" && ok "dry-run" || fail "dry-run"
+
+echo "# env precedence"
+ETHORA_SETUP_DOMAIN=chat.env.com ETHORA_SETUP_ADMIN_EMAIL=env@x.co run --yes --out "$T/env.yml"
+[ "$(y .domains.api "$T/env.yml")" = "api.chat.env.com" ] && ok "env answers honoured" || fail "env answers"
+ETHORA_SETUP_DOMAIN=chat.env.com run --domain chat.flag.com --admin-email a@b.co --yes --out "$T/env2.yml"
+[ "$(y .domains.api "$T/env2.yml")" = "api.chat.flag.com" ] && ok "flag beats env" || fail "flag beats env"
+
+echo
+echo "passed $PASS, failed $FAIL"
+[ "$FAIL" -eq 0 ]

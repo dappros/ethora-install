@@ -1,0 +1,14 @@
+# Ethora.com platform, copyright: Dappros Ltd (c) 2026, all rights reserved
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: ethora-prom
+    type: prometheus
+    access: proxy
+    # Prometheus runs with --web.route-prefix=/prometheus/, so its API lives
+    # under /prometheus/ too — the datasource URL must include that prefix or
+    # every query 404s ("No data").
+    url: http://prometheus:9090/prometheus
+    isDefault: true
+    editable: true

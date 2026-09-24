@@ -1,0 +1,171 @@
+# Ethora API as prebuilt container images ("image mode").
+#
+# Runs the same three processes that setup-node-services.sh registers with
+# PM2 in source mode (backend, backend-jobs, backend-bc-worker), from the
+# ethora-api image built by ethora-backend/services/api/Dockerfile and
+# published by .github/workflows/release-images.yml.
+#
+# Host networking on purpose: the rendered backend .env points at
+# localhost for Mongo, Redis, MySQL and MinIO (the enterprise compose file
+# publishes their ports on the host), and nginx proxies to 127.0.0.1:8080.
+# Nothing in the env rendering has to change between source mode and image
+# mode; the only difference is what runs the code.
+#
+#   ETHORA_API_IMAGE=ghcr.io/dappros/ethora-api:2610 \
+#   ETHORA_BACKEND_ENV_FILE=/home/ubuntu/ethora/ethora-backend/services/api/.env \
+#   docker compose -f deploy/docker-compose.api.yml up -d
+#
+# Enable the blockchain worker only when features.blockchain is on:
+#   docker compose -f deploy/docker-compose.api.yml --profile blockchain up -d
+#
+# Frontend: on hosts where nginx serves the bundle from a directory (the
+# deploy-script layout), use deploy/scripts/frontend-from-image.sh instead of
+# a container. The `frontend` service below is for docker-only hosts and is
+# behind a profile; it serves the rendered bundle on 127.0.0.1:${FRONTEND_PORT}
+# for a reverse proxy to pick up. Its env_file is the docker-clean copy that
+# frontend-from-image.sh writes (plain KEY=value lines only).
+#   docker compose -f deploy/docker-compose.api.yml --profile frontend-container up -d
+
+# Own compose project. The enterprise, AI and uptime compose files share the
+# default project (the deploy/ directory name); if this stack ran under that
+# same project, any `up --remove-orphans` would treat Mongo, XMPP, MySQL,
+# Redis, MinIO and the rest as orphans of THIS file and delete them. Never
+# run this file without this name, and never pass --remove-orphans.
+name: ethora-api
+
+x-api-common: &api-common
+  image: ${ETHORA_API_IMAGE:-ghcr.io/dappros/ethora-api:2610}
+  env_file:
+    - ${ETHORA_BACKEND_ENV_FILE:-../ethora-backend/services/api/.env}
+  network_mode: host
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "50m"
+      max-file: "5"
+
+services:
+  backend:
+    <<: *api-common
+    container_name: ethora-backend
+    command: ["api"]
+    volumes:
+      - ${ETHORA_API_UPLOADS_DIR:-./generated/api-uploads}:/app/dist/uploads
+
+  backend-jobs:
+    <<: *api-common
+    container_name: ethora-backend-jobs
+    command: ["jobs"]
+    depends_on:
+      - backend
+
+  backend-bc-worker:
+    <<: *api-common
+    container_name: ethora-backend-bc-worker
+    command: ["bc-worker"]
+    profiles: ["blockchain"]
+    depends_on:
+      - backend
+
+  # ---- AI module (profile: ai): ai-service + docs-parse from ethora-ai.
+  # ai-service loads /app/ai-service/.env itself (dotenv), so the rendered
+  # file is mounted there as well as passed as env_file.
+  ai-service:
+    image: ${ETHORA_AI_IMAGE:-ghcr.io/dappros/ethora-ai:2610}
+    container_name: ethora-ai-service
+    profiles: ["ai"]
+    command: ["ai-service"]
+    env_file:
+      - ${ETHORA_AI_ENV_FILE:-../ethora-backend/services/ai/ai-service/.env}
+    volumes:
+      - ${ETHORA_AI_ENV_FILE:-../ethora-backend/services/ai/ai-service/.env}:/app/ai-service/.env:ro
+    network_mode: host
+    restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "50m", max-file: "5" } }
+
+  docs-parse:
+    image: ${ETHORA_AI_IMAGE:-ghcr.io/dappros/ethora-ai:2610}
+    container_name: ethora-docs-parse
+    profiles: ["ai"]
+    command: ["docs-parse"]
+    env_file:
+      - ${ETHORA_DOCS_PARSE_ENV_FILE:-../ethora-backend/services/ai/docs-parse/.env}
+    network_mode: host
+    restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "3" } }
+
+  # ---- push (profile: push): server + worker from ethora-push. The service
+  # loads /app/push/.env itself (dotenv). Uploads persist under DATA_DIR.
+  push:
+    image: ${ETHORA_PUSH_IMAGE:-ghcr.io/dappros/ethora-push:2610}
+    container_name: ethora-push
+    profiles: ["push"]
+    command: ["server"]
+    env_file:
+      - ${ETHORA_PUSH_ENV_FILE:-../ethora-backend/services/push/.env}
+    volumes:
+      - ${ETHORA_PUSH_ENV_FILE:-../ethora-backend/services/push/.env}:/app/push/.env:ro
+      - ${ETHORA_PUSH_UPLOADS_DIR:-./generated/push-uploads}:${ETHORA_PUSH_UPLOADS_DIR:-/app/push/uploads}
+    network_mode: host
+    restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "3" } }
+
+  push-worker:
+    image: ${ETHORA_PUSH_IMAGE:-ghcr.io/dappros/ethora-push:2610}
+    container_name: ethora-push-worker
+    profiles: ["push"]
+    command: ["worker"]
+    env_file:
+      - ${ETHORA_PUSH_ENV_FILE:-../ethora-backend/services/push/.env}
+    volumes:
+      - ${ETHORA_PUSH_ENV_FILE:-../ethora-backend/services/push/.env}:/app/push/.env:ro
+      - ${ETHORA_PUSH_UPLOADS_DIR:-./generated/push-uploads}:${ETHORA_PUSH_UPLOADS_DIR:-/app/push/uploads}
+    network_mode: host
+    restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "3" } }
+
+  # ---- SDK playground (profile: playground). Next builds on first start
+  # from the env (NEXT_PUBLIC_* are build-time); .next kept in a volume.
+  playground:
+    image: ${ETHORA_PLAYGROUND_IMAGE:-ghcr.io/dappros/ethora-playground:2610}
+    container_name: ethora-playground
+    profiles: ["playground"]
+    env_file:
+      - ${ETHORA_PLAYGROUND_ENV_FILE:-../ethora-sdk-playground/.env.local}
+    environment:
+      PORT: ${PLAYGROUND_PORT:-3020}
+    volumes:
+      - playground-next:/app/.next
+    network_mode: host
+    restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "3" } }
+
+  # ---- hosted MCP server (profile: mcp), reads its config from the env.
+  mcp:
+    image: ${ETHORA_MCP_IMAGE:-ghcr.io/dappros/ethora-mcp:2610}
+    container_name: ethora-mcp
+    profiles: ["mcp"]
+    env_file:
+      - ${ETHORA_MCP_ENV_FILE:-../ethora-mcp-server/.env}
+    network_mode: host
+    restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "3" } }
+
+  frontend:
+    image: ${ETHORA_FRONTEND_IMAGE:-ghcr.io/dappros/ethora-frontend:2610}
+    container_name: ethora-frontend
+    profiles: ["frontend-container"]
+    env_file:
+      - ${ETHORA_FRONTEND_ENV_FILE:-./generated/frontend.image.env}
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:8080"
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+volumes:
+  playground-next:
