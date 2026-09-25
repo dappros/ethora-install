@@ -60,6 +60,20 @@ docker cp "$cid:/ethora-dist/." "$dest/" || error "the image has no /ethora-dist
 if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ] && id "$SUDO_USER" >/dev/null 2>&1; then
     chown -R "$SUDO_USER":"$SUDO_USER" "$dest" 2>/dev/null || true
 fi
+# The entrypoint links a module's beams from custom_modules/<module>/ebin
+# (that is how a source install loads them after compiling). Lay the
+# extracted beams out the same way, one directory per module, no sources.
+n=0
+for beam in "$dest/custom_mod_compiled"/*.beam; do
+    [ -f "$beam" ] || continue
+    mod="$(basename "$beam" .beam)"
+    case "$mod" in _*) continue ;; esac   # disabled artefacts, never loadable
+    mkdir -p "$dest/custom_modules/$mod/ebin"
+    cp -f "$beam" "$dest/custom_modules/$mod/ebin/$mod.beam"
+    n=$((n + 1))
+done
+if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ] && id "$SUDO_USER" >/dev/null 2>&1; then
+    chown -R "$SUDO_USER":"$SUDO_USER" "$dest/custom_modules" 2>/dev/null || true
+fi
 docker tag "$image" deploy-xmpp:latest
-n="$(ls "$dest/custom_mod_compiled"/*.beam 2>/dev/null | wc -l)"
 log "ejabberd runs from image $image (tagged deploy-xmpp); $n compiled modules and the config templates extracted to $dest"

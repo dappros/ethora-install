@@ -923,7 +923,7 @@ CONFIG_FILE="$DEPLOY_DIR/config/deploy.yml"
 PLAYGROUND_CREDENTIALS_EXPLICIT="false"
 if command -v yq >/dev/null 2>&1 && [ -f "$CONFIG_FILE" ]; then
     if [ -z "${PLAYGROUND_ENABLED:-}" ] || [ "${PLAYGROUND_ENABLED:-}" == "null" ]; then
-        PLAYGROUND_ENABLED="$(yq eval '.services.playground.enabled // "true"' "$CONFIG_FILE" 2>/dev/null || echo "true")"
+        PLAYGROUND_ENABLED="$(yq eval '.services.playground.enabled | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; PLAYGROUND_ENABLED="${PLAYGROUND_ENABLED:-true}"
     fi
     if [ -z "${PLAYGROUND_PORT:-}" ] || [ "${PLAYGROUND_PORT:-}" == "null" ]; then
         PLAYGROUND_PORT="$(yq eval '.services.playground.port // 3020' "$CONFIG_FILE" 2>/dev/null || echo "3020")"

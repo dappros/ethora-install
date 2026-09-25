@@ -151,8 +151,22 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-command -v yq >/dev/null 2>&1 || die "yq v4 is required (https://github.com/mikefarah/yq). The installer installs it; for setup.sh alone: sudo snap install yq  or  sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 && sudo chmod +x /usr/local/bin/yq"
-yq --version 2>/dev/null | grep -qE "version v?4\." || die "yq v4 is required; found: $(yq --version 2>/dev/null)"
+# yq v4 (mikefarah). Distributions ship the unrelated v3 under the same name,
+# and this script runs before install.sh (which installs v4 itself), so put
+# the right one in place here: /usr/local/bin comes first on PATH.
+ensure_yq() {
+  if command -v yq >/dev/null 2>&1 && yq --version 2>/dev/null | grep -qE "version v?4\."; then return 0; fi
+  local arch url
+  case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; *) die "yq v4 is required (https://github.com/mikefarah/yq); install it for $(uname -m) and re-run" ;; esac
+  url="https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${arch}"
+  echo "[setup] yq v4 is required$(command -v yq >/dev/null 2>&1 && echo " (found: $(yq --version 2>/dev/null))"); installing it to /usr/local/bin/yq" >&2
+  local sudo=""; [ "$(id -u)" = 0 ] || sudo=sudo
+  $sudo sh -c "curl -fsSL '$url' -o /usr/local/bin/yq.new && chmod 755 /usr/local/bin/yq.new && mv /usr/local/bin/yq.new /usr/local/bin/yq" \
+    || die "could not install yq v4; run: sudo wget -qO /usr/local/bin/yq $url && sudo chmod +x /usr/local/bin/yq"
+  hash -r
+  yq --version 2>/dev/null | grep -qE "version v?4\." || die "yq v4 is required; /usr/local/bin/yq is $(yq --version 2>/dev/null)"
+}
+ensure_yq
 
 # ----------------------------------------------------------------- helpers --
 is_tty() { [ -t 0 ] && [ -t 1 ]; }

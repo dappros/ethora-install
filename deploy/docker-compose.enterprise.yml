@@ -40,7 +40,9 @@ services:
   mongosetup:
     image: mongo:6.0.8
     volumes:
-      - ${BACKEND_DIR:-./ethora-backend}/infra/docker/mongo_scripts:/scripts
+      # Replica-set init script lives with the deploy (docker/mongo_scripts), so
+      # an image-mode install with no backend checkout still initialises Mongo.
+      - ./docker/mongo_scripts:/scripts
     entrypoint: [ "bash", "/scripts/mongosetup.sh" ]
     depends_on:
       - mongo
@@ -49,9 +51,11 @@ services:
 
   # MinIO - Object storage for files
   minio:
-    # MinIO stopped publishing to Docker Hub (minio/minio has no tags left);
-    # images live on Quay. Pinned to the release QA and prod already run.
-    image: ${MINIO_IMAGE:-quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z}
+    # MinIO withdrew its public images (Docker Hub in 2026-09, then Quay
+    # returned 401 for everything). dappros/minio is our own copy of the exact
+    # release our installs run (amd64 + arm64), unchanged, under MinIO's
+    # AGPL-3.0. Override with MINIO_IMAGE for a private mirror.
+    image: ${MINIO_IMAGE:-docker.io/dappros/minio:RELEASE.2025-09-07T16-13-09Z}
     ports:
       - "9000:9000"
       - "9001:9001"
