@@ -237,7 +237,7 @@ if [ -n "$license_key_file" ] && [ -f "$license_key_file" ]; then
   license_key="$(tr -d '[:space:]' < "$license_key_file")"
 fi
 license_key="$(printf '%s' "$license_key" | tr -d '[:space:]')"
-license_call_home="$(read_config '.license.call_home // "true"')"
+license_call_home="$(read_config '.license.call_home | select(. != null)')"; license_call_home="${license_call_home:-true}"
 license_server_url="$(read_config '.license.server_url // ""')"
 license_grace_days="$(read_config '.license.grace_days // ""')"
 force_update_env_var "ETHORA_LICENSE_KEY" "$license_key"
@@ -256,7 +256,7 @@ update_env_var "ALERT_RECIPIENTS" "$alert_recipients"
 
 # Swagger feature flags (used by setup-env.sh -> backend .env)
 # Default: swagger ON (public), swagger_internal OFF.
-enable_swagger="$(read_config '.features.swagger // "true"')"
+enable_swagger="$(read_config '.features.swagger | select(. != null)')"; enable_swagger="${enable_swagger:-true}"
 enable_swagger_internal="$(read_config '.features.swagger_internal // "false"')"
 
 update_env_var "ENABLE_SWAGGER" "$enable_swagger"
@@ -294,7 +294,7 @@ update_env_var "SSL_EMAIL" "$ssl_email"
 backend_port="$(read_config '.services.backend.port')"
 node_env="$(read_config '.services.backend.node_env // "production"')"
 api_client_max_body_size="$(read_config '.services.backend.client_max_body_size // "50M"')"
-playground_enabled="$(read_config '.services.playground.enabled // "true"')"
+playground_enabled="$(read_config '.services.playground.enabled | select(. != null)')"; playground_enabled="${playground_enabled:-true}"
 playground_port="$(read_config '.services.playground.port // 3020')"
 # Widget enabled: respect explicit value; otherwise default to features.ai_service
 # so the admin panel's AI Widget tab gets a usable embed URL whenever AI is on.
@@ -328,9 +328,9 @@ hosted_apps_enabled="$(read_config '.services.hosted_apps.enabled // "false"')"
 uptime_enabled="$(read_config '.services.uptime.enabled')"
 uptime_port="$(read_config '.services.uptime.port // 8099')"
 uptime_postgres_port="$(read_config '.services.uptime.postgres_port // 5433')"
-uptime_public_enabled="$(read_config '.services.uptime.public_enabled // "true"')"
+uptime_public_enabled="$(read_config '.services.uptime.public_enabled | select(. != null)')"; uptime_public_enabled="${uptime_public_enabled:-true}"
 uptime_ethora_enabled="$(read_config '.services.uptime.ethora_enabled // "false"')"
-push_enabled="$(read_config '.services.push.enabled // "true"')"
+push_enabled="$(read_config '.services.push.enabled | select(. != null)')"; push_enabled="${push_enabled:-true}"
 push_port="$(read_config '.services.push.port // 8098')"
 push_common_post_url="$(read_config '.services.push.common_post_url // ""')"
 push_voip_post_url="$(read_config '.services.push.voip_post_url // ""')"
@@ -341,7 +341,7 @@ push_gateway_token="$(read_config '.services.push.gateway_token // ""')"
 # Centrifugo non-secret settings refresh from deploy.yml on every update.
 # Secrets (api_key/hmac_secret/admin_*) are intentionally NOT refreshed when blank in
 # deploy.yml so auto-generated values persisted in .deploy.env are preserved across updates.
-centrifugo_enabled="$(read_config '.services.centrifugo.enabled // "true"')"
+centrifugo_enabled="$(read_config '.services.centrifugo.enabled | select(. != null)')"; centrifugo_enabled="${centrifugo_enabled:-true}"
 centrifugo_port="$(read_config '.services.centrifugo.port // 8001')"
 centrifugo_timeout_ms="$(read_config '.services.centrifugo.timeout_ms // 2000')"
 centrifugo_api_key="$(read_config '.services.centrifugo.api_key // ""')"

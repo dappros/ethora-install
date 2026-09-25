@@ -738,8 +738,18 @@ parse_config() {
     # Ensure git submodules are present in the source repo (if this is a git checkout).
     ensure_submodules_present "$SOURCE_ROOT"
 
+    # Run modes decide which component sources must exist. An image-mode
+    # service (deploy.yml services.<x>.mode: image) needs no source tree at
+    # all: the installer only prepares the directory that its rendered .env
+    # and exported bundles land in. That is what a Docker Hub install is: the
+    # deploy scripts plus images, no component checkouts.
+    BACKEND_MODE_CFG="$(yq eval '.services.backend.mode // "source"' "$CONFIG_FILE" 2>/dev/null || echo source)"; [ "$BACKEND_MODE_CFG" = "null" ] && BACKEND_MODE_CFG="source"
+    FRONTEND_MODE_CFG="$(yq eval '.services.frontend.mode // "source"' "$CONFIG_FILE" 2>/dev/null || echo source)"; [ "$FRONTEND_MODE_CFG" = "null" ] && FRONTEND_MODE_CFG="source"
+    EJABBERD_MODE_CFG="$(yq eval '.services.ejabberd.mode // "source"' "$CONFIG_FILE" 2>/dev/null || echo source)"; [ "$EJABBERD_MODE_CFG" = "null" ] && EJABBERD_MODE_CFG="source"
+    export BACKEND_MODE_CFG FRONTEND_MODE_CFG EJABBERD_MODE_CFG
+
     # If backend sources are still missing, fail early with a helpful message.
-    if ! is_backend_source_complete "$SOURCE_ROOT/ethora-backend"; then
+    if [ "$BACKEND_MODE_CFG" != "image" ] && ! is_backend_source_complete "$SOURCE_ROOT/ethora-backend"; then
         if [ -d "$SOURCE_ROOT/.git" ]; then
             error "Backend source is missing in $SOURCE_ROOT/ethora-backend. Run: git submodule update --init --recursive"
         else
@@ -777,97 +787,114 @@ parse_config() {
             fi
         done
         
-        # Copy/sync backend (ensure it's complete; partial copies can break docker-compose before mongo even starts)
-        if ! is_backend_complete "$BACKEND_DIR"; then
-            if [ -d "$BACKEND_DIR" ]; then
-                warn "Backend directory exists but looks incomplete. Re-syncing from source..."
-            else
-                log "Copying backend from $SOURCE_ROOT/ethora-backend to $BACKEND_DIR..."
-            fi
-            # Avoid copying runtime data directories from the source repo
-            copy_dir_with_progress "$SOURCE_ROOT/ethora-backend" "$BACKEND_DIR" "backend" --exclude "docker/data/**" --exclude "docker/data" --exclude "docker-data/**" --exclude "docker-data"
-            log "Backend prepared successfully"
+        if [ "$BACKEND_MODE_CFG" = "image" ] && ! is_backend_source_complete "$SOURCE_ROOT/ethora-backend"; then
+            log "Backend runs from an image and no source is present: preparing $BACKEND_DIR for its rendered configuration only"
+            mkdir -p "$BACKEND_DIR/services/api" "$BACKEND_DIR/services/push" "$BACKEND_DIR/services/ai/ai-service" "$BACKEND_DIR/services/ai/docs-parse"
         else
-            log "Backend directory already exists at $BACKEND_DIR"
-            # Keep target up-to-date with source code on re-runs, but do NOT clobber runtime artifacts.
-            # This fixes cases where /home/.../deptest has older code than /home/.../ethora-monoserver.
-            copy_dir_with_progress "$SOURCE_ROOT/ethora-backend" "$BACKEND_DIR" "backend (sync)" --delete \
-              --exclude "**/node_modules" \
-              --exclude "**/node_modules/**" \
-              --exclude "**/dist" \
-              --exclude "**/dist/**" \
-              --exclude "**/bin" \
-              --exclude "**/bin/**" \
-              --exclude "**/.env" \
-              --exclude "docker/data/**" --exclude "docker/data" \
-              --exclude "docker-data/**" --exclude "docker-data"
-        fi
+            # Copy/sync backend (ensure it's complete; partial copies can break docker-compose before mongo even starts)
+            if ! is_backend_complete "$BACKEND_DIR"; then
+                if [ -d "$BACKEND_DIR" ]; then
+                    warn "Backend directory exists but looks incomplete. Re-syncing from source..."
+                else
+                    log "Copying backend from $SOURCE_ROOT/ethora-backend to $BACKEND_DIR..."
+                fi
+                # Avoid copying runtime data directories from the source repo
+                copy_dir_with_progress "$SOURCE_ROOT/ethora-backend" "$BACKEND_DIR" "backend" --exclude "docker/data/**" --exclude "docker/data" --exclude "docker-data/**" --exclude "docker-data"
+                log "Backend prepared successfully"
+            else
+                log "Backend directory already exists at $BACKEND_DIR"
+                # Keep target up-to-date with source code on re-runs, but do NOT clobber runtime artifacts.
+                # This fixes cases where /home/.../deptest has older code than /home/.../ethora-monoserver.
+                copy_dir_with_progress "$SOURCE_ROOT/ethora-backend" "$BACKEND_DIR" "backend (sync)" --delete \
+                  --exclude "**/node_modules" \
+                  --exclude "**/node_modules/**" \
+                  --exclude "**/dist" \
+                  --exclude "**/dist/**" \
+                  --exclude "**/bin" \
+                  --exclude "**/bin/**" \
+                  --exclude "**/.env" \
+                  --exclude "docker/data/**" --exclude "docker/data" \
+                  --exclude "docker-data/**" --exclude "docker-data"
+            fi
         
-        # Copy/sync frontend (ensure it's complete)
-        if ! is_frontend_complete "$FRONTEND_DIR"; then
-            if [ -d "$FRONTEND_DIR" ]; then
-                warn "Frontend directory exists but looks incomplete. Re-syncing from source..."
-            else
-                log "Copying frontend from $SOURCE_ROOT/ethora-app-reactjs to $FRONTEND_DIR..."
-            fi
-            copy_dir_with_progress "$SOURCE_ROOT/ethora-app-reactjs" "$FRONTEND_DIR" "frontend"
-            log "Frontend prepared successfully"
-        else
-            log "Frontend directory already exists at $FRONTEND_DIR"
-            # Sync source updates without overwriting local installs/build outputs.
-            copy_dir_with_progress "$SOURCE_ROOT/ethora-app-reactjs" "$FRONTEND_DIR" "frontend (sync)" --delete \
-              --exclude "node_modules" \
-              --exclude "node_modules/**" \
-              --exclude "dist" \
-              --exclude "dist/**" \
-              --exclude ".env"
         fi
 
-        # Guardrail: remove accidental "misplaced copies" in the TARGET tree too.
-        if [ -f "$FRONTEND_DIR/src/pages/Chat.tsx" ] && [ -f "$FRONTEND_DIR/src/Chat.tsx" ]; then
-            warn "Removing misplaced file in target tree: $FRONTEND_DIR/src/Chat.tsx"
-            rm -f "$FRONTEND_DIR/src/Chat.tsx" 2>/dev/null || true
-        fi
-        if [ -f "$FRONTEND_DIR/src/pages/_Chat.tsx" ] && [ -f "$FRONTEND_DIR/src/_Chat.tsx" ]; then
-            warn "Removing misplaced file in target tree: $FRONTEND_DIR/src/_Chat.tsx"
-            rm -f "$FRONTEND_DIR/src/_Chat.tsx" 2>/dev/null || true
-        fi
-        if [ -f "$FRONTEND_DIR/src/components/Sorting.tsx" ] && [ -f "$FRONTEND_DIR/src/Sorting.tsx" ]; then
-            warn "Removing misplaced file in target tree: $FRONTEND_DIR/src/Sorting.tsx"
-            rm -f "$FRONTEND_DIR/src/Sorting.tsx" 2>/dev/null || true
-        fi
-        for f in "$FRONTEND_DIR/src/Chat.tsx" \
-                 "$FRONTEND_DIR/src/_Chat.tsx" \
-                 "$FRONTEND_DIR/src/Sorting.tsx"; do
-            if [ -f "$f" ] && grep -q "from '\\.\\./http'" "$f" 2>/dev/null; then
-                warn "Removing misplaced file in target tree: $f"
-                rm -f "$f" 2>/dev/null || true
-            fi
-        done
-        
-        # Copy/sync ejabberd (avoid copying docker-data)
-        if ! is_ejabberd_complete "$EJABBERD_DIR"; then
-            if [ -d "$EJABBERD_DIR" ]; then
-                warn "Ejabberd directory exists but looks incomplete. Re-syncing from source..."
-            else
-                log "Copying ejabberd from $SOURCE_ROOT/ejabberd-docker to $EJABBERD_DIR..."
-            fi
-            copy_dir_with_progress "$SOURCE_ROOT/ejabberd-docker" "$EJABBERD_DIR" "ejabberd" --exclude "docker-data/**" --exclude "docker-data"
-            log "Ejabberd prepared successfully"
+        if [ "$FRONTEND_MODE_CFG" = "image" ] && ! is_frontend_complete "$SOURCE_ROOT/ethora-app-reactjs"; then
+            log "Frontend runs from an image and no source is present: preparing $FRONTEND_DIR for the exported bundle only"
+            mkdir -p "$FRONTEND_DIR/dist" "$FRONTEND_DIR/public"
         else
-            log "Ejabberd directory already exists at $EJABBERD_DIR"
-            # Sync config/module updates, but keep runtime docker-data intact.
-            copy_dir_with_progress "$SOURCE_ROOT/ejabberd-docker" "$EJABBERD_DIR" "ejabberd (sync)" --delete \
-              --exclude "docker-data/**" --exclude "docker-data"
-            # Update Dockerfile and entrypoint to ensure latest version
-            if [ -f "$SOURCE_ROOT/ejabberd-docker/docker/Dockerfile" ]; then
-                log "Updating Ejabberd Dockerfile..."
-                cp "$SOURCE_ROOT/ejabberd-docker/docker/Dockerfile" "$EJABBERD_DIR/docker/Dockerfile" || warn "Failed to update Dockerfile"
+            # Copy/sync frontend (ensure it's complete)
+            if ! is_frontend_complete "$FRONTEND_DIR"; then
+                if [ -d "$FRONTEND_DIR" ]; then
+                    warn "Frontend directory exists but looks incomplete. Re-syncing from source..."
+                else
+                    log "Copying frontend from $SOURCE_ROOT/ethora-app-reactjs to $FRONTEND_DIR..."
+                fi
+                copy_dir_with_progress "$SOURCE_ROOT/ethora-app-reactjs" "$FRONTEND_DIR" "frontend"
+                log "Frontend prepared successfully"
+            else
+                log "Frontend directory already exists at $FRONTEND_DIR"
+                # Sync source updates without overwriting local installs/build outputs.
+                copy_dir_with_progress "$SOURCE_ROOT/ethora-app-reactjs" "$FRONTEND_DIR" "frontend (sync)" --delete \
+                  --exclude "node_modules" \
+                  --exclude "node_modules/**" \
+                  --exclude "dist" \
+                  --exclude "dist/**" \
+                  --exclude ".env"
             fi
-            if [ -f "$SOURCE_ROOT/ejabberd-docker/docker/entrypoint.sh" ]; then
-                log "Updating Ejabberd entrypoint script..."
-                cp "$SOURCE_ROOT/ejabberd-docker/docker/entrypoint.sh" "$EJABBERD_DIR/docker/entrypoint.sh" || warn "Failed to update entrypoint"
-                chmod +x "$EJABBERD_DIR/docker/entrypoint.sh" || warn "Failed to make entrypoint executable"
+
+            # Guardrail: remove accidental "misplaced copies" in the TARGET tree too.
+            if [ -f "$FRONTEND_DIR/src/pages/Chat.tsx" ] && [ -f "$FRONTEND_DIR/src/Chat.tsx" ]; then
+                warn "Removing misplaced file in target tree: $FRONTEND_DIR/src/Chat.tsx"
+                rm -f "$FRONTEND_DIR/src/Chat.tsx" 2>/dev/null || true
+            fi
+            if [ -f "$FRONTEND_DIR/src/pages/_Chat.tsx" ] && [ -f "$FRONTEND_DIR/src/_Chat.tsx" ]; then
+                warn "Removing misplaced file in target tree: $FRONTEND_DIR/src/_Chat.tsx"
+                rm -f "$FRONTEND_DIR/src/_Chat.tsx" 2>/dev/null || true
+            fi
+            if [ -f "$FRONTEND_DIR/src/components/Sorting.tsx" ] && [ -f "$FRONTEND_DIR/src/Sorting.tsx" ]; then
+                warn "Removing misplaced file in target tree: $FRONTEND_DIR/src/Sorting.tsx"
+                rm -f "$FRONTEND_DIR/src/Sorting.tsx" 2>/dev/null || true
+            fi
+            for f in "$FRONTEND_DIR/src/Chat.tsx" \
+                     "$FRONTEND_DIR/src/_Chat.tsx" \
+                     "$FRONTEND_DIR/src/Sorting.tsx"; do
+                if [ -f "$f" ] && grep -q "from '\\.\\./http'" "$f" 2>/dev/null; then
+                    warn "Removing misplaced file in target tree: $f"
+                    rm -f "$f" 2>/dev/null || true
+                fi
+            done
+        
+        fi
+
+        if [ "$EJABBERD_MODE_CFG" = "image" ] && ! is_ejabberd_complete "$SOURCE_ROOT/ejabberd-docker"; then
+            log "ejabberd runs from an image and no source is present: preparing $EJABBERD_DIR for the files extracted from the image"
+            mkdir -p "$EJABBERD_DIR/docker"
+        else
+            # Copy/sync ejabberd (avoid copying docker-data)
+            if ! is_ejabberd_complete "$EJABBERD_DIR"; then
+                if [ -d "$EJABBERD_DIR" ]; then
+                    warn "Ejabberd directory exists but looks incomplete. Re-syncing from source..."
+                else
+                    log "Copying ejabberd from $SOURCE_ROOT/ejabberd-docker to $EJABBERD_DIR..."
+                fi
+                copy_dir_with_progress "$SOURCE_ROOT/ejabberd-docker" "$EJABBERD_DIR" "ejabberd" --exclude "docker-data/**" --exclude "docker-data"
+                log "Ejabberd prepared successfully"
+            else
+                log "Ejabberd directory already exists at $EJABBERD_DIR"
+                # Sync config/module updates, but keep runtime docker-data intact.
+                copy_dir_with_progress "$SOURCE_ROOT/ejabberd-docker" "$EJABBERD_DIR" "ejabberd (sync)" --delete \
+                  --exclude "docker-data/**" --exclude "docker-data"
+                # Update Dockerfile and entrypoint to ensure latest version
+                if [ -f "$SOURCE_ROOT/ejabberd-docker/docker/Dockerfile" ]; then
+                    log "Updating Ejabberd Dockerfile..."
+                    cp "$SOURCE_ROOT/ejabberd-docker/docker/Dockerfile" "$EJABBERD_DIR/docker/Dockerfile" || warn "Failed to update Dockerfile"
+                fi
+                if [ -f "$SOURCE_ROOT/ejabberd-docker/docker/entrypoint.sh" ]; then
+                    log "Updating Ejabberd entrypoint script..."
+                    cp "$SOURCE_ROOT/ejabberd-docker/docker/entrypoint.sh" "$EJABBERD_DIR/docker/entrypoint.sh" || warn "Failed to update entrypoint"
+                    chmod +x "$EJABBERD_DIR/docker/entrypoint.sh" || warn "Failed to make entrypoint executable"
+                fi
             fi
         fi
 
@@ -902,22 +929,26 @@ parse_config() {
             fi
         fi
 
-        if ! is_node_project_complete "$SOURCE_ROOT/ethora-chat-component"; then
-            if [ -d "$SOURCE_ROOT/ethora-chat-component" ]; then
-                error "Source chat component at $SOURCE_ROOT/ethora-chat-component is an empty directory (submodule not initialized). Run: git -C \"$SOURCE_ROOT\" submodule update --init ethora-chat-component"
-            fi
-            error "Source chat component directory is missing at $SOURCE_ROOT/ethora-chat-component"
-        fi
-        if [ ! -d "$ROOT_DIR/ethora-chat-component" ]; then
-            log "Copying ethora-chat-component from $SOURCE_ROOT/ethora-chat-component to $ROOT_DIR/ethora-chat-component..."
-            copy_dir_with_progress "$SOURCE_ROOT/ethora-chat-component" "$ROOT_DIR/ethora-chat-component" "ethora-chat-component" \
-              --exclude "node_modules" --exclude "node_modules/**" \
-              --exclude "dist" --exclude "dist/**"
+        if [ "$FRONTEND_MODE_CFG" = "image" ] && ! is_node_project_complete "$SOURCE_ROOT/ethora-chat-component"; then
+            log "Chat component source not present; not needed when the frontend runs from an image"
         else
-            log "Chat component directory already exists at $ROOT_DIR/ethora-chat-component"
-            copy_dir_with_progress "$SOURCE_ROOT/ethora-chat-component" "$ROOT_DIR/ethora-chat-component" "ethora-chat-component (sync)" --delete \
-              --exclude "node_modules" --exclude "node_modules/**" \
-              --exclude "dist" --exclude "dist/**"
+            if ! is_node_project_complete "$SOURCE_ROOT/ethora-chat-component"; then
+                if [ -d "$SOURCE_ROOT/ethora-chat-component" ]; then
+                    error "Source chat component at $SOURCE_ROOT/ethora-chat-component is an empty directory (submodule not initialized). Run: git -C \"$SOURCE_ROOT\" submodule update --init ethora-chat-component"
+                fi
+                error "Source chat component directory is missing at $SOURCE_ROOT/ethora-chat-component"
+            fi
+            if [ ! -d "$ROOT_DIR/ethora-chat-component" ]; then
+                log "Copying ethora-chat-component from $SOURCE_ROOT/ethora-chat-component to $ROOT_DIR/ethora-chat-component..."
+                copy_dir_with_progress "$SOURCE_ROOT/ethora-chat-component" "$ROOT_DIR/ethora-chat-component" "ethora-chat-component" \
+                  --exclude "node_modules" --exclude "node_modules/**" \
+                  --exclude "dist" --exclude "dist/**"
+            else
+                log "Chat component directory already exists at $ROOT_DIR/ethora-chat-component"
+                copy_dir_with_progress "$SOURCE_ROOT/ethora-chat-component" "$ROOT_DIR/ethora-chat-component" "ethora-chat-component (sync)" --delete \
+                  --exclude "node_modules" --exclude "node_modules/**" \
+                  --exclude "dist" --exclude "dist/**"
+            fi
         fi
 
         # Copy/sync widget bundle source (optional)
@@ -1009,9 +1040,9 @@ parse_config() {
     export BACKEND_PORT=$(yq eval '.services.backend.port' "$CONFIG_FILE")
     export NODE_ENV=$(yq eval '.services.backend.node_env // "production"' "$CONFIG_FILE")
     export API_CLIENT_MAX_BODY_SIZE=$(yq eval '.services.backend.client_max_body_size // "50M"' "$CONFIG_FILE")
-    export PUSH_ENABLED=$(yq eval '.services.push.enabled // "true"' "$CONFIG_FILE")
+    export PUSH_ENABLED="$(yq eval '.services.push.enabled | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; export PUSH_ENABLED="${PUSH_ENABLED:-true}"
     export PUSH_PORT=$(yq eval '.services.push.port // 8098' "$CONFIG_FILE")
-    export PLAYGROUND_ENABLED=$(yq eval '.services.playground.enabled // "true"' "$CONFIG_FILE")
+    export PLAYGROUND_ENABLED="$(yq eval '.services.playground.enabled | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; export PLAYGROUND_ENABLED="${PLAYGROUND_ENABLED:-true}"
     export PLAYGROUND_PORT=$(yq eval '.services.playground.port // 3020' "$CONFIG_FILE")
     # Hosted MCP server (optional; off unless explicitly enabled). Read raw so
     # an explicit false is not swallowed by yq's `//` alternative.
@@ -1076,13 +1107,13 @@ parse_config() {
     export UPTIME_PORT=$(yq eval '.services.uptime.port // 8099' "$CONFIG_FILE")
     export UPTIME_POSTGRES_PORT=$(yq eval '.services.uptime.postgres_port // 5433' "$CONFIG_FILE")
     # Uptime dashboard tiles (instances)
-    export UPTIME_PUBLIC_ENABLED=$(yq eval '.services.uptime.public_enabled // "true"' "$CONFIG_FILE")
+    export UPTIME_PUBLIC_ENABLED="$(yq eval '.services.uptime.public_enabled | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; export UPTIME_PUBLIC_ENABLED="${UPTIME_PUBLIC_ENABLED:-true}"
     export UPTIME_ETHORA_ENABLED=$(yq eval '.services.uptime.ethora_enabled // "false"' "$CONFIG_FILE")
 
     # Centrifugo (real-time stats); per-deployment config + secrets.
     # Backend reaches it via http://127.0.0.1:${CENTRIFUGO_PORT}/api (host network),
     # the centrifugo container listens on 8000 internally and binds to ${CENTRIFUGO_PORT} on the host.
-    export CENTRIFUGO_ENABLED=$(yq eval '.services.centrifugo.enabled // "true"' "$CONFIG_FILE")
+    export CENTRIFUGO_ENABLED="$(yq eval '.services.centrifugo.enabled | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; export CENTRIFUGO_ENABLED="${CENTRIFUGO_ENABLED:-true}"
     export CENTRIFUGO_PORT=$(yq eval '.services.centrifugo.port // 8001' "$CONFIG_FILE")
     export CENTRIFUGO_TIMEOUT_MS=$(yq eval '.services.centrifugo.timeout_ms // 2000' "$CONFIG_FILE")
     export CENTRIFUGO_API_KEY=$(yq eval '.services.centrifugo.api_key // ""' "$CONFIG_FILE")
@@ -1142,7 +1173,7 @@ parse_config() {
     #
     # NOTE:
     # These values are persisted in .deploy.env and used by setup-env.sh to generate backend .env.
-    swagger_enabled="$(yq eval '.features.swagger // "true"' "$CONFIG_FILE" 2>/dev/null || echo "true")"
+    swagger_enabled="$(yq eval '.features.swagger | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; swagger_enabled="${swagger_enabled:-true}"
     swagger_internal_enabled="$(yq eval '.features.swagger_internal // false' "$CONFIG_FILE" 2>/dev/null || echo "false")"
     if [ "$API_DOMAIN" == "localhost" ]; then
         export ENABLE_SWAGGER="true"
@@ -1308,10 +1339,17 @@ parse_config() {
 
     # If the MySQL data directory exists (bind mount) and we still don't have a password, abort with a clear message.
     # This avoids silently generating a new password that won't match the already-initialized MySQL instance.
-    MYSQL_DATA_DIR="$EJABBERD_DIR/docker-data/my-sql"
-    if [ -d "$MYSQL_DATA_DIR" ] && [ "$(ls -A "$MYSQL_DATA_DIR" 2>/dev/null | wc -l)" -gt 0 ]; then
+    # Never assign the global MYSQL_DATA_DIR here: on a fresh host it would
+    # leak into docker compose and initialise MySQL at the legacy path
+    # instead of DATA_DIR/mysql (preflight-paths.sh then refuses the next
+    # run). Check both the configured and the legacy location read-only.
+    local existing_mysql_dir=""
+    for candidate in "${MYSQL_DATA_DIR:-}" "$EJABBERD_DIR/docker-data/my-sql"; do
+        [ -n "$candidate" ] && [ -d "$candidate" ] && [ "$(ls -A "$candidate" 2>/dev/null | wc -l)" -gt 0 ] && { existing_mysql_dir="$candidate"; break; }
+    done
+    if [ -n "$existing_mysql_dir" ]; then
         if [ -z "$MYSQL_ROOT_PASSWORD" ] || [ "$MYSQL_ROOT_PASSWORD" == "null" ]; then
-            error "MySQL data directory exists at $MYSQL_DATA_DIR but no MySQL root password is set (and none found in $ENV_FILE). Set databases.mysql.root_password in deploy.yml or delete $MYSQL_DATA_DIR to reinitialize."
+            error "MySQL data directory exists at $existing_mysql_dir but no MySQL root password is set (and none found in $ENV_FILE). Set databases.mysql.root_password in deploy.yml or delete $existing_mysql_dir to reinitialize."
         fi
     fi
 
@@ -1338,12 +1376,12 @@ parse_config() {
     fi
     
     if [ -z "$JWT_SECRET" ] || [ "$JWT_SECRET" == "null" ]; then
-        export JWT_SECRET=$(openssl rand -base64 64)
+        export JWT_SECRET=$(openssl rand -base64 64 | tr -d '\n')
         log "Generated JWT secret"
     fi
     
     if [ -z "$REFRESH_SECRET" ] || [ "$REFRESH_SECRET" == "null" ]; then
-        export REFRESH_SECRET=$(openssl rand -base64 64)
+        export REFRESH_SECRET=$(openssl rand -base64 64 | tr -d '\n')
         log "Generated refresh secret"
     fi
 

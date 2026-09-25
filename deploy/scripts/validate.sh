@@ -87,7 +87,7 @@ LICENSE_KEY=$(printf '%s' "$LICENSE_KEY" | tr -d '[:space:]')
 if [ -n "$LICENSE_KEY" ] && ! [[ "$LICENSE_KEY" =~ ^ETHORA1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$ ]]; then
     error "license.key does not look like an Ethora license key (expected ETHORA1.<payload>.<signature>). Paste the key exactly as issued, or leave it empty."
 fi
-LICENSE_CALL_HOME=$(yq eval '.license.call_home // "true"' "$CONFIG_FILE" 2>/dev/null || echo "true")
+LICENSE_CALL_HOME="$(yq eval '.license.call_home | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; LICENSE_CALL_HOME="${LICENSE_CALL_HOME:-true}"
 if [ "$LICENSE_CALL_HOME" != "true" ] && [ "$LICENSE_CALL_HOME" != "false" ] && [ "$LICENSE_CALL_HOME" != "null" ]; then
     error "license.call_home must be true or false (got: '$LICENSE_CALL_HOME')."
 fi
@@ -255,7 +255,8 @@ if [ -n "$CONFIG_BASE_DIR" ] && [ "$CONFIG_BASE_DIR" != "null" ]; then
     if [ -n "$CONFIG_SOURCE_DIR" ] && [ "$CONFIG_SOURCE_DIR" != "null" ]; then
         SOURCE_CHAT_COMPONENT_DIR="$CONFIG_SOURCE_DIR/ethora-chat-component"
     fi
-    if [ ! -d "$SOURCE_CHAT_COMPONENT_DIR" ]; then
+    frontend_mode="$(yq eval '.services.frontend.mode // "source"' "$CONFIG_FILE" 2>/dev/null || echo source)"
+    if [ ! -d "$SOURCE_CHAT_COMPONENT_DIR" ] && [ "$frontend_mode" != "image" ]; then
         error "Source chat component directory is missing: $SOURCE_CHAT_COMPONENT_DIR"
     fi
     if [ "${WIDGET_ENABLED:-false}" == "true" ]; then

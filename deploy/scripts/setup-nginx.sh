@@ -50,7 +50,7 @@ ROOT_DOMAIN="${ROOT_DOMAIN:-$(echo "$WEB_DOMAIN" | sed 's|^[^.]*\.||')}"
 CONFIG_FILE="$DEPLOY_DIR/config/deploy.yml"
 if command -v yq >/dev/null 2>&1 && [ -f "$CONFIG_FILE" ]; then
     if [ -z "${PLAYGROUND_ENABLED:-}" ] || [ "${PLAYGROUND_ENABLED:-}" == "null" ]; then
-        PLAYGROUND_ENABLED="$(yq eval '.services.playground.enabled // "true"' "$CONFIG_FILE" 2>/dev/null || echo "true")"
+        PLAYGROUND_ENABLED="$(yq eval '.services.playground.enabled | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; PLAYGROUND_ENABLED="${PLAYGROUND_ENABLED:-true}"
     fi
     if [ -z "${WIDGET_ENABLED:-}" ] || [ "${WIDGET_ENABLED:-}" == "null" ]; then
         WIDGET_ENABLED="$(yq eval '.services.widget.enabled // "false"' "$CONFIG_FILE" 2>/dev/null || echo "false")"

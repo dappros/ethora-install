@@ -145,7 +145,7 @@ if command -v yq >/dev/null 2>&1 && [ -f "$CONFIG_FILE" ]; then
         HOSTED_APPS_ROOT_DOMAIN="$(yq eval '.domains.hosted_apps_root // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
     fi
     if [ -z "${PLAYGROUND_ENABLED:-}" ] || [ "${PLAYGROUND_ENABLED:-}" == "null" ]; then
-        PLAYGROUND_ENABLED="$(yq eval '.services.playground.enabled // "true"' "$CONFIG_FILE" 2>/dev/null || echo "true")"
+        PLAYGROUND_ENABLED="$(yq eval '.services.playground.enabled | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; PLAYGROUND_ENABLED="${PLAYGROUND_ENABLED:-true}"
     fi
     # Always re-read WIDGET_ENABLED from deploy.yml so toggling
     # services.widget.enabled (and the AI umbrella below) takes effect on
@@ -347,7 +347,7 @@ if command -v yq >/dev/null 2>&1 && [ -f "$CONFIG_FILE" ]; then
         fi
     fi
     ETHORA_LICENSE_KEY="$(printf '%s' "${ETHORA_LICENSE_KEY}" | tr -d '[:space:]')"
-    ETHORA_LICENSE_CALL_HOME="$(yq eval '.license.call_home // "true"' "$CONFIG_FILE" 2>/dev/null || echo "true")"
+    ETHORA_LICENSE_CALL_HOME="$(yq eval '.license.call_home | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; ETHORA_LICENSE_CALL_HOME="${ETHORA_LICENSE_CALL_HOME:-true}"
     [ "${ETHORA_LICENSE_CALL_HOME}" = "null" ] && ETHORA_LICENSE_CALL_HOME="true"
     ETHORA_LICENSE_SERVER_URL="$(yq eval '.license.server_url // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
     [ "${ETHORA_LICENSE_SERVER_URL}" = "null" ] && ETHORA_LICENSE_SERVER_URL=""
@@ -1244,7 +1244,7 @@ persist_env_var "INTERNAL_REQUESTS_SECRET" "${INTERNAL_REQUESTS_SECRET:-}"
 # .deploy.env) get values populated on the first update without needing reinstall.
 if [ -z "${CENTRIFUGO_ENABLED:-}" ] || [ "${CENTRIFUGO_ENABLED:-}" == "null" ]; then
     if command -v yq >/dev/null 2>&1 && [ -f "$CONFIG_FILE" ]; then
-        export CENTRIFUGO_ENABLED="$(yq eval '.services.centrifugo.enabled // "true"' "$CONFIG_FILE" 2>/dev/null || echo "true")"
+        export CENTRIFUGO_ENABLED="$(yq eval '.services.centrifugo.enabled | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; export CENTRIFUGO_ENABLED="${CENTRIFUGO_ENABLED:-true}"
     else
         export CENTRIFUGO_ENABLED="true"
     fi
