@@ -129,6 +129,41 @@ sudo bash -lc 'source "/home/ubuntu/ethora/deploy/.deploy.env"; \
   docker-compose -f "/home/ubuntu/ethora/deploy/docker-compose.enterprise.yml" restart xmpp'
 ```
 
+## 4f. Update stops at "Starting/refreshing docker services": MinIO image cannot be pulled from quay.io
+
+**Symptoms** (in the update log, services untouched, API still on the old
+version):
+
+```
+Image quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z Error unknown: failed to resolve reference
+"quay.io/minio/minio:RELEASE...": unexpected status from HEAD request to https://quay.io/v2/minio/minio/manifests/RELEASE...: 401 UNAUTHORIZED
+```
+
+**Cause**: MinIO moved off Docker Hub, so the compose file pulls the release
+from quay.io. A host that never pulled that reference has to negotiate a
+quay.io token on first pull, and quay.io sometimes refuses that negotiation
+(the `401` is the token challenge, which docker then fails to complete).
+Hosts that already have the image do not pull and are not affected.
+`update.sh` stops before any build or restart, so nothing is half-deployed:
+the live tree already has the new source, the running services are the old
+build.
+
+**Fix**: the release is byte-identical to the last `minio/minio` image from
+Docker Hub, which most hosts still have. If the IDs match, tag it and re-run
+the update:
+
+```bash
+docker images --format '{{.Repository}}:{{.Tag}} {{.ID}}' | grep -i minio
+# minio/minio:latest 14cea493d9a3       <- same ID as on a host that pulled from quay
+docker tag minio/minio:latest quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+sudo ... deploy/scripts/update.sh --ref <line>     # same command as before
+```
+
+If there is no local image, copy it from another host of the same line
+(`docker save quay.io/minio/minio:RELEASE... | gzip` there, `docker load`
+here), or retry the pull later; `docker pull quay.io/minio/minio:RELEASE...`
+by hand shows whether quay.io is answering again.
+
 ## 4b. Docker Compose YAML option errors
 
 **Problem**: Compose errors like:
