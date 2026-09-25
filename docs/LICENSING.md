@@ -50,20 +50,40 @@ machines, CI and QA never fight the check.
 
 ## States
 
+There is no expiry for the free editions and nothing is ever locked. A key
+only adds entitlements; without one the install is Ethora Core.
+
 | State | When | What happens |
 |---|---|---|
-| `licensed` | Valid signature, domain matches, before `exp`, call-home fresh | Everything the key lists is on |
-| `grace` | No valid key and less than 14 days since install; or the key expired less than 14 days ago; or an online key has not reached the license server for 30 days | Full features. Yellow banner for admins, daily operator email if outbound email is configured, `X-Ethora-License: grace` on every response |
-| `restricted` | Grace period elapsed | Chat keeps working for end users. Admin panel is locked to the License page. Creating apps (v1 and v2) and creating users through the admin panel or batch API is refused with `LICENSE_RESTRICTED` |
+| `unlicensed` | No valid key ("no key", malformed, bad signature, wrong domain), or a key whose grace ran out | **Ethora Core, unregistered**: Core features, 5 apps and 500 user accounts per server, no countdown, no banner, nothing locked. The reason is shown on the License page so a rejected key is visible. |
+| `licensed` | Valid signature, domain matches, before `exp`, call-home fresh | The key's tier, features and limits (below) |
+| `grace` | The key expired less than 14 days ago, or an online key has not reached its license server for 30 days | The key's entitlements are kept. Yellow banner for admins, daily operator e-mail if outbound e-mail is configured, `X-Ethora-License: grace` on every response. When the grace ends the install continues as Core. |
 
-"No key", "malformed key", "bad signature" and "wrong domain" all count as
-"no valid key". The grace window in that case is counted from the install's
-first boot, and the reason is shown so the operator knows which it was. An
-install therefore always gets 14 days of full functionality to evaluate or to
-fix a key problem, and never more than that without a key.
+### Editions (tiers)
 
-Chat traffic is never gated. End users are not the people who can buy a
-license, so every consequence lands on the operator surfaces only.
+| Tier | How you get it | Features | Apps per server | User accounts per server | Expiry |
+|---|---|---|---|---|---|
+| `core` (unregistered) | nothing to do | `core` | 5 | 500 | never |
+| `core-registered` | free: admin panel License page, "Register", or `POST /v1/register` on the license server; key tier `core` | `core` | 10 | 5,000 | never (key is issued for 100 years) |
+| `trial` | 14-day enterprise trial key | what the key lists (`*`) | unlimited | unlimited | key `exp`, then 14 days grace, then Core |
+| `enterprise` | any other key | what the key lists | unlimited unless the key sets `limits` | unlimited unless the key sets `limits` | key `exp`, then 14 days grace, then Core |
+
+A key's own `limits` always win over the tier defaults, so an enterprise
+contract can cap a server and a Core key can be issued with other numbers.
+A `core` key never grants more than the `core` feature, whatever its
+`features` field says.
+
+The caps apply to creation only: creating an app (`POST /v2/apps` and the
+v1 route) and creating a user account (self sign-up, `POST /v2/users/batch`,
+`POST /v2/apps/:appId/users/batch`) return `403 LICENSE_LIMIT_REACHED` with
+`details.kind`, `limit`, `current` and `upgrade` (`register` for an
+unregistered install, `enterprise` otherwise) once the count is at the cap.
+Existing apps, users, logins, chat, files and every other endpoint are never
+affected. Users are counted with `estimatedDocumentCount` and cached for 15
+seconds, so a burst of sign-ups can overshoot the cap by a few accounts.
+
+`GET /v2/license` reports `tier`, `limits` and `usage` (counts against the
+caps) next to the state, which is what the License page and the footer show.
 
 The grace length can be changed per install with `license.grace_days`.
 
@@ -133,19 +153,29 @@ only ever holds the public one.
 Instance counting for `limits.instances` only works through call-home. Each
 install generates a random instance id on first boot and keeps it in Mongo.
 
-## Trials and anti-abuse, honestly
+## Registration, trials and anti-abuse, honestly
 
-The no-key grace clock is anchored to a record the backend writes into Mongo
-on first boot. Reinstalling the code keeps the clock; only wiping the
-database resets it, and losing the data is the deterrent. The backend also
-records the highest wall-clock time it has ever seen and refuses to evaluate
-the license at an earlier time, so setting the system clock back does not
-extend anything.
+Registering is one request from the admin panel (super admin): the backend
+derives the install's parent domain from the configured hosts
+(`api.chat.example.com` + `app.chat.example.com` gives `chat.example.com`),
+sends it with the operator's e-mail to `license.ethora.com/v1/register`
+(or `license.server_url` when set) and stores the returned key. Nothing
+else is sent, and registration does not switch call-home on. One
+registration per domain: the same e-mail gets the key re-issued (reinstalls),
+another e-mail is refused. Installs without a public hostname (`localhost`,
+`*.test.ethora.com`) cannot register; they get an enterprise or internal key
+instead.
 
-Proper trials are keys issued for a domain with a short expiry. The license
-server (or whoever issues keys) is the place to refuse a second trial for the
-same domain. Someone rotating domains to dodge a monthly fee is not a customer
-worth chasing, and nothing client-side can stop them anyway.
+The caps are per server and the free tiers never expire, so there is no
+clock to game. Someone splitting one product across many servers to stay
+under 500 users per server is not a customer worth chasing, and nothing
+client-side can stop them anyway. The backend still records the highest
+wall-clock time it has seen and refuses to evaluate a key at an earlier
+time, so setting the clock back does not extend an enterprise key.
+
+Proper trials are enterprise keys issued for a domain with a short expiry
+(`/trial` on the license server, one per domain and per e-mail). The license
+server is the place to refuse a second trial for the same domain.
 
 ## Issuing keys
 

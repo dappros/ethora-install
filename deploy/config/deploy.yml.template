@@ -486,10 +486,11 @@ admin:
   email: admin@example.com
   password: "admin123" # Default admin password (change in production!)
 
-# License key for this install. Optional: with no key the backend runs with
-# every feature for a grace period counted from its first boot, then drops
-# to a restricted state (chat keeps working; creating apps/users from the
-# admin panel and batch API is refused). See docs/LICENSING.md.
+# License key for this install. Optional: with no key the install is Ethora
+# Core, unregistered (5 apps, 500 user accounts per server, no expiry,
+# nothing locked). Registering from the admin panel License page raises the
+# caps for free; an enterprise key unlocks the paid modules. See
+# docs/LICENSING.md.
 #
 # The key binds a parent domain: every host under `domains:` above must be
 # that domain or a subdomain of it (dev/qa/prod under one second-level

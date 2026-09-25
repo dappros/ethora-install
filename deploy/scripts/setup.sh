@@ -24,7 +24,7 @@
 #   --admin-email EMAIL      platform admin + base app owner + Let's Encrypt contact
 #   --admin-password PASS    default: generated, printed once
 #   --display-name NAME      base app display name (default: Ethora)
-#   --license-key KEY        ETHORA1.<payload>.<signature>; empty = grace window
+#   --license-key KEY        ETHORA1.<payload>.<signature>; empty = Ethora Core (register later from the admin panel)
 #   --license-key-file PATH  alternative to --license-key
 #   --license-server URL     license server base URL (call-home)
 #   --no-call-home           air-gapped install
@@ -383,7 +383,7 @@ show_summary() {
   echo "                   playground=$A_PLAYGROUND uptime=$A_UPTIME_HOST"
   echo "  Admin:           $A_ADMIN_EMAIL  ($([ "$GENERATED_PASSWORD" = true ] && echo "password generated" || echo "password supplied"))"
   echo "  Display name:    $A_DISPLAY_NAME"
-  echo "  License:         $([ -n "$A_LICENSE_KEY_FILE" ] && echo "file $A_LICENSE_KEY_FILE" || ([ -n "$A_LICENSE_KEY" ] && echo "key ${A_LICENSE_KEY:0:24}..." || echo "none (14-day grace window)"))  call-home=$A_CALL_HOME${A_LICENSE_SERVER:+ server=$A_LICENSE_SERVER}"
+  echo "  License:         $([ -n "$A_LICENSE_KEY_FILE" ] && echo "file $A_LICENSE_KEY_FILE" || ([ -n "$A_LICENSE_KEY" ] && echo "key ${A_LICENSE_KEY:0:24}..." || echo "none (Ethora Core; register from the admin panel)"))  call-home=$A_CALL_HOME${A_LICENSE_SERVER:+ server=$A_LICENSE_SERVER}"
   echo "  TLS:             $A_SSL${A_CERT:+ ($A_CERT)}"
   echo "  AI:              $A_AI${A_AI_KEY:+ (key set)}${A_AI_URL:+ url=$A_AI_URL}${A_AI_MODEL:+ model=$A_AI_MODEL}"
   echo "  Blockchain:      $A_BLOCKCHAIN    Uptime: $A_UPTIME    Hosted apps: ${A_HOSTED_APPS:-off}"

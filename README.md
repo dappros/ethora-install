@@ -22,10 +22,10 @@ the SDK playground and the hosted MCP server are enterprise modules;
    DNS records pointing at the server (all plain A or AAAA records, no proxy):
    `api.`, `app.`, `xmpp.`, `files.` under that root. `setup.sh` prints the
    exact names before it writes anything.
-3. A license key. Get a 14-day trial at
-   [https://license.ethora.com/trial](https://license.ethora.com/trial);
-   without a key the install runs every feature for 14 days, then restricts
-   creating apps and users until a key is added. Chat keeps working.
+3. Nothing else. Ethora Core needs no license key: 5 apps and 500 user
+   accounts per server, no expiry. Registering from the admin panel
+   (License page, free, domain plus e-mail) raises that to 10 apps and
+   5,000 accounts and gives you e-mail support.
 
 ## Install
 
@@ -34,8 +34,7 @@ git clone -b 2610 https://github.com/dappros/ethora-install.git ~/ethora-install
 cd ~/ethora-install-shared
 
 deploy/scripts/setup.sh --edition core --all-modes image \
-    --domain chat.example.com --admin-email ops@example.com \
-    --license-key 'ETHORA1....'
+    --domain chat.example.com --admin-email ops@example.com
 
 sudo deploy/scripts/install.sh
 deploy/scripts/health-check.sh
@@ -54,7 +53,14 @@ What happens:
 
 Then open `https://app.<your root domain>`, sign in with the admin e-mail
 and the printed password, and follow the setup checklist in the admin
-panel. The API is at `https://api.<root>` (Swagger at `/api-docs/`).
+panel. The API is at `https://api.<root>` (Swagger at `/api-docs/`). The
+footer shows `Ethora Core v<build> UNREGISTERED` until you register on the
+License page.
+
+The software is licensed under the
+[Ethora Core Software License](docs/legal/ETHORA_CORE_LICENSE.md); the
+editions and their limits are in the
+[feature schedule](docs/legal/FEATURE_SCHEDULE.md).
 
 ## Update
 
@@ -93,7 +99,7 @@ previous image build in `deploy.yml` and run `update.sh` on the same ref.
 - [docs/LICENSING.md](docs/LICENSING.md): how license keys work, the grace window, air-gapped installs.
 - [docs/CONTAINER_IMAGES.md](docs/CONTAINER_IMAGES.md): the images, versions, what each replaces.
 - [docs/runbooks/](docs/runbooks/): backup and restore, troubleshooting, migrations.
-- [docs/legal/](docs/legal/): license agreement, support policy, privacy and telemetry notice.
+- [docs/legal/](docs/legal/): Ethora Core license, feature schedule, support policy, privacy and telemetry notice.
 
 ## Support
 

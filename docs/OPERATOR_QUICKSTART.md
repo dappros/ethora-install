@@ -91,12 +91,12 @@ pm2 logs backend --lines 200       # API log
 
 ## License
 
-Your license key goes in `deploy/config/deploy.yml` under `license.key`
-(or is pasted on the admin panel License page). Without a key the install
-runs every feature for 14 days, then restricts creating apps and users
-until a key is installed; chat keeps working. A renewed key is applied by
-editing the file and running `update.sh`, or by pasting it in the admin
-panel.
+No key is needed. Without one the install is Ethora Core: 5 apps and 500
+user accounts per server, no expiry. Register for free from the admin
+panel (License page) to raise that to 10 apps and 5,000 accounts and get
+e-mail support. An enterprise key goes in `deploy/config/deploy.yml` under
+`license.key` or is pasted on the same page; a renewed key is applied by
+editing the file and running `update.sh`, or by pasting it.
 
 ## Back up
 

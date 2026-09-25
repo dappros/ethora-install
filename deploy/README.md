@@ -275,9 +275,12 @@ license:
 `setup.sh --license-key KEY` (or `--license-key-file PATH`, `--license-server URL`,
 `--no-call-home`) writes this block for you.
 
-Without a key the install runs every feature for a 14-day grace window,
-then restricts creating apps and users and locks the admin panel until a
-key is installed. Chat keeps working in every state. The key binds a
+A key is optional. Without one the install is **Ethora Core, unregistered**:
+Core features, 5 apps and 500 user accounts per server, no expiry, nothing
+locked. Registering from the admin panel License page (free, domain plus
+e-mail) raises the caps to 10 apps and 5,000 user accounts; enterprise keys
+unlock the paid modules and lift the caps. Chat keeps working in every
+state; the caps only stop creating apps and accounts beyond them. The key binds a
 parent domain: every host under `domains:` must be that domain or a
 subdomain of it, so `dev`, `qa` and `prod` under one second-level domain
 share one key. `localhost` and `*.test.ethora.com` always pass.
