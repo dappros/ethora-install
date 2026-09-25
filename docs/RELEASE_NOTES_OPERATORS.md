@@ -14,12 +14,16 @@ default is not what you want.
 
 ## 2610 (development line, September 2026)
 
-**Licensing.** The backend enforces a signed license key. New `deploy.yml`
-block `license:` (`key`, `key_file`, `call_home`, `server_url`,
-`grace_days`). Without a key every feature works for 14 days, then
-creating apps and users is restricted and the admin panel is locked until
-a key is installed; chat is never gated. Get a key before upgrading a
-production install. Reference: [LICENSING.md](LICENSING.md).
+**Licensing and editions.** New `deploy.yml` block `license:` (`key`,
+`key_file`, `call_home`, `server_url`, `grace_days`), all optional. Without
+a key an install is Ethora Core (unregistered): Core features, 5 apps and
+500 user accounts per server, no expiry, nothing locked. Registering from
+the admin panel License page (free) raises the caps to 10 and 5,000. An
+enterprise key unlocks the paid modules (AI agents need it) and lifts the
+caps. Existing installs upgrading to 2610 with more than 5 apps or 500
+users keep working; they cannot create more until they register or install
+a key, so get the key before upgrading a production install. Chat is never
+gated. Reference: [LICENSING.md](LICENSING.md).
 
 **Image mode.** Every Node service can run from a prebuilt container
 instead of being built on the host: `services.<name>.mode: source | image`

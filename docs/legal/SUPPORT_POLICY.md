@@ -6,11 +6,12 @@
 
 | Edition | How you got it | Support |
 |---|---|---|
-| Trial and community (self-installed from Docker Hub, GitHub or a marketplace image) | trial license key or grace period | community support: documentation, the public issue tracker, and the `#ethora` community channel. Best effort, no response-time commitment. |
-| Enterprise | a signed agreement with Dappros | the support terms in that agreement, which take precedence over this policy |
+| Ethora Core, unregistered | self-installed from Docker Hub, GitHub or a marketplace image | community support: documentation, the public issue tracker, and the `#ethora` community channel. Best effort, no response-time commitment. |
+| Ethora Core, registered | registered the install for free from the admin panel | the above, plus e-mail support at [support@ethora.com] and the ticketing system, quoting the license id shown on the License page. Best effort, no response-time commitment. |
+| Enterprise, including trials | a signed agreement or trial with Dappros | the support terms in that agreement, which take precedence over this policy |
 
 Marketplace subscriptions (AWS Marketplace, DigitalOcean) fall under the
-trial and community column unless the listing says otherwise.
+Core columns unless the listing says otherwise.
 
 ## What is supported
 
