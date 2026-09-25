@@ -1,0 +1,59 @@
+# Ethora Server: Privacy and Telemetry Notice
+
+**Draft for review.** Version 0.1, [date]. Controller for the data described
+here: Dappros Ltd, [address], [privacy@ethora.com].
+
+This notice describes what an Ethora Server install sends to Dappros. Your
+users' data (messages, files, accounts) is stored on your servers and is
+never sent to Dappros by the Software.
+
+## 1. License call-home
+
+When a license server address is configured (it is set by default for
+trial keys), the install contacts `license.ethora.com` once a day and once
+shortly after each start. It sends:
+
+- the install's random instance identifier and the license key identifier,
+- the domain the key is bound to and the hostnames the install serves,
+- the license state (licensed, grace, restricted) and the key's expiry,
+- the software version, build commit and Node.js version,
+- the number of apps and the number of user accounts on the install (counts
+  only, no names or content),
+- and, as with any web request, the public IP address the request comes from.
+
+Purpose: to renew keys automatically, enforce the instance limit in the
+license, and know which versions are in use. Legal basis: performance of the
+license agreement and Dappros's legitimate interest in operating the
+licensing service. Retention: instance records are kept for the life of the
+license plus [12] months.
+
+You can switch call-home off (`license.call_home: false`) or leave the server
+address empty; keys keep working offline. Keys issued as offline keys never
+require call-home.
+
+## 2. Trial key requests
+
+Requesting a trial key on `license.ethora.com` sends the domain, e-mail
+address, optional company name and the IP address of the request. We use
+them to issue the key, prevent duplicate trials, e-mail you the key, and
+contact you about your trial. Retention: [24] months after the trial ends.
+
+## 3. What is not collected
+
+The Software does not send crash reports, usage analytics or any content of
+chats, files or user profiles to Dappros. Third-party services you configure
+yourself (an AI provider, push notification services, e-mail delivery,
+analytics keys in the admin panel) receive data according to their own
+terms; the Software only sends to them what you configure.
+
+## 4. Your rights
+
+Where GDPR or similar law applies, you may ask for access to, correction of,
+or deletion of the personal data above, and object to processing based on
+legitimate interest, by writing to [privacy@ethora.com]. You may complain to
+your supervisory authority.
+
+## 5. Changes
+
+This notice ships with each release of the Software and applies to that
+release. The current version is published at [https://ethora.com/legal].

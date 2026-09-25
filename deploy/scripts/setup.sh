@@ -41,6 +41,8 @@
 #   --api-image REF --frontend-image REF   image refs for image mode (defaults: ghcr.io/dappros/ethora-{api,frontend}:2610)
 #   --ai-mode / --push-mode / --playground-mode / --mcp-mode / --ejabberd-mode source|image   the other services (default source)
 #   --all-modes source|image        set every service mode at once (individual flags still win)
+#   --edition core|full      core = API + admin panel + XMPP only (AI, push, playground, MCP, uptime,
+#                            monitoring, widget off; images default to docker.io/dappros); full = everything (default)
 #   --local                  localhost mode (starts from deploy-local.yml.template)
 #   --from FILE              start from an existing deploy.yml instead of the template
 #   --out FILE               where to write (default deploy/config/deploy.yml)
@@ -85,11 +87,12 @@ A_HOSTED_APPS="${ETHORA_SETUP_HOSTED_APPS:-}"
 A_TARGET="${ETHORA_SETUP_TARGET:-}"
 A_BACKEND_MODE="${ETHORA_SETUP_BACKEND_MODE:-}"
 A_FRONTEND_MODE="${ETHORA_SETUP_FRONTEND_MODE:-}"
-A_API_IMAGE="${ETHORA_SETUP_API_IMAGE:-}"
+A_API_IMAGE="${ETHORA_SETUP_API_IMAGE:-}"; A_XMPP_IMAGE="${ETHORA_SETUP_XMPP_IMAGE:-}"
 A_FRONTEND_IMAGE="${ETHORA_SETUP_FRONTEND_IMAGE:-}"
 A_AI_MODE="${ETHORA_SETUP_AI_MODE:-}"; A_PUSH_MODE="${ETHORA_SETUP_PUSH_MODE:-}"
 A_PLAYGROUND_MODE="${ETHORA_SETUP_PLAYGROUND_MODE:-}"; A_MCP_MODE="${ETHORA_SETUP_MCP_MODE:-}"; A_EJABBERD_MODE="${ETHORA_SETUP_EJABBERD_MODE:-}"
 A_ALL_MODES="${ETHORA_SETUP_ALL_MODES:-}"
+A_EDITION="${ETHORA_SETUP_EDITION:-}"
 
 MODE_LOCAL=false; FROM_FILE=""; OUT_FILE="$CANONICAL_OUT"; FORCE=false; YES=false
 DRY_RUN=false; VALIDATE=true; RUN_INSTALL=false
@@ -127,12 +130,14 @@ while [ $# -gt 0 ]; do
     --frontend-mode) A_FRONTEND_MODE="$2"; shift 2 ;;
     --api-image) A_API_IMAGE="$2"; shift 2 ;;
     --frontend-image) A_FRONTEND_IMAGE="$2"; shift 2 ;;
+    --xmpp-image) A_XMPP_IMAGE="$2"; shift 2 ;;
     --ai-mode) A_AI_MODE="$2"; shift 2 ;;
     --push-mode) A_PUSH_MODE="$2"; shift 2 ;;
     --playground-mode) A_PLAYGROUND_MODE="$2"; shift 2 ;;
     --mcp-mode) A_MCP_MODE="$2"; shift 2 ;;
     --ejabberd-mode) A_EJABBERD_MODE="$2"; shift 2 ;;
     --all-modes) A_ALL_MODES="$2"; shift 2 ;;
+    --edition) A_EDITION="$2"; shift 2 ;;
     --local) MODE_LOCAL=true; shift ;;
     --from) FROM_FILE="$2"; shift 2 ;;
     --out) OUT_FILE="$2"; shift 2 ;;
@@ -285,6 +290,17 @@ if [ "$A_SSL" = "provided" ]; then
 fi
 
 # Modules.
+# Edition. core = the three published images and their databases, nothing
+# else; everything optional is switched off so the installer never looks for
+# a module that is not there. Explicit flags given on the command line still
+# win for AI, blockchain and uptime.
+A_EDITION="${A_EDITION:-$(from_val '.edition')}"; A_EDITION="${A_EDITION:-full}"
+case "$A_EDITION" in core|full) ;; *) die "--edition must be core or full" ;; esac
+if [ "$A_EDITION" = "core" ]; then
+  [ -z "$A_AI" ] && A_AI="off"
+  [ -z "$A_UPTIME" ] && A_UPTIME="off"
+  [ -z "$A_BLOCKCHAIN" ] && A_BLOCKCHAIN="off"
+fi
 if [ -z "$A_AI" ]; then
   _from_ai="$(from_val '.features.ai_service')"
   [ -n "$_from_ai" ] && A_AI="$_from_ai"
@@ -347,14 +363,22 @@ for m in "$A_BACKEND_MODE" "$A_FRONTEND_MODE" "$A_AI_MODE" "$A_PUSH_MODE" "$A_PL
 done
 [ -z "$A_API_IMAGE" ] && A_API_IMAGE="$(from_val '.services.backend.image')"
 [ -z "$A_FRONTEND_IMAGE" ] && A_FRONTEND_IMAGE="$(from_val '.services.frontend.image')"
+[ -z "$A_XMPP_IMAGE" ] && A_XMPP_IMAGE="$(from_val '.services.ejabberd.image')"
+if [ "$A_EDITION" = "core" ]; then
+  # Public images live on Docker Hub; the template defaults point at GHCR.
+  case "$A_API_IMAGE" in ""|ghcr.io/*) A_API_IMAGE="docker.io/dappros/ethora-api:2610" ;; esac
+  case "$A_FRONTEND_IMAGE" in ""|ghcr.io/*) A_FRONTEND_IMAGE="docker.io/dappros/ethora-frontend:2610" ;; esac
+  case "$A_XMPP_IMAGE" in ""|ghcr.io/*) A_XMPP_IMAGE="docker.io/dappros/ethora-xmpp:2610" ;; esac
+fi
 A_API_IMAGE="${A_API_IMAGE:-ghcr.io/dappros/ethora-api:2610}"
 A_FRONTEND_IMAGE="${A_FRONTEND_IMAGE:-ghcr.io/dappros/ethora-frontend:2610}"
+A_XMPP_IMAGE="${A_XMPP_IMAGE:-ghcr.io/dappros/ethora-xmpp:2610}"
 [ "$A_TARGET" = "$SOURCE_ROOT" ] && die "--target must differ from the source checkout ($SOURCE_ROOT); in-place installs are refused by preflight-paths.sh"
 
 # ------------------------------------------------------------------ report --
 show_summary() {
   echo
-  echo "  Mode:            $([ "$MODE_LOCAL" = true ] && echo localhost || echo production)"
+  echo "  Mode:            $([ "$MODE_LOCAL" = true ] && echo localhost || echo production)    Edition: $A_EDITION"
   echo "  Hosts:           api=$A_API web=$A_WEB xmpp=$A_XMPP files=$A_FILES"
   echo "                   playground=$A_PLAYGROUND uptime=$A_UPTIME_HOST"
   echo "  Admin:           $A_ADMIN_EMAIL  ($([ "$GENERATED_PASSWORD" = true ] && echo "password generated" || echo "password supplied"))"
@@ -453,6 +477,18 @@ set_str '.services.push.mode' "$A_PUSH_MODE"
 set_str '.services.playground.mode' "$A_PLAYGROUND_MODE"
 set_str '.services.mcp.mode' "$A_MCP_MODE"
 set_str '.services.ejabberd.mode' "$A_EJABBERD_MODE"
+set_str '.services.ejabberd.image' "$A_XMPP_IMAGE"
+set_str '.edition' "$A_EDITION"
+if [ "$A_EDITION" = "core" ]; then
+  set_bool '.services.push.enabled' false
+  set_bool '.services.playground.enabled' false
+  set_bool '.services.mcp.enabled' false
+  set_bool '.services.widget.enabled' false
+  set_bool '.services.monitoring.enabled' false
+  set_bool '.services.hosted_apps.enabled' false
+  set_bool '.services.ai_service.enabled' false
+  set_bool '.services.crawler.enabled' false
+fi
 
 chmod 600 "$TMP"
 mv "$TMP" "$OUT_FILE"

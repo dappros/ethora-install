@@ -231,6 +231,32 @@ migrations), so no host Node.js is involved for any of these services.
 individually). The smallest image-mode install is the API, the frontend and
 ejabberd; everything else is optional per `deploy.yml`.
 
+## Editions, registries and versions
+
+`setup.sh --edition core` writes a `deploy.yml` with only the API, the
+frontend and ejabberd enabled (AI, push, playground, MCP, uptime,
+monitoring, widget and hosted apps off) and points the three image refs at
+Docker Hub (`docker.io/dappros/ethora-{api,frontend,xmpp}`). `--edition
+full` (the default) keeps everything and the GHCR refs. The same workflow
+builds both: the three Core images are pushed to Docker Hub as well as
+GHCR when the `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` secrets exist; the
+other four stay on GHCR (private packages, enterprise installs pull them
+with a token).
+
+Every run gets a build number `<line>.<n>` (`2610.4`): the release branch
+plus the next free number among this repository's git tags. Each image is
+tagged with the moving line tag (`2610`) and the build (`2610.4`), and a git
+tag `2610.4` is created on the monoserver commit once all seven images
+succeeded, so one number names the whole set. `promote_latest` on a manual
+run also moves Docker Hub `latest`; use it only for the production line.
+`/v1/ping` reports the build number as the version.
+
+The ejabberd image ships the Dappros modules as compiled beams only: debug
+information is stripped at build time (`beam_lib:strip_files`), the Erlang
+sources are deleted from the image, and `/ethora-dist` carries beams and
+config templates but no `custom_modules` sources. The smoke test asserts
+all three. Source-mode installs still compile from the checkout.
+
 Every job in `release-images.yml` scans the image it just smoke-tested with
 Trivy before pushing: fixable HIGH and CRITICAL findings are printed, a
 fixable CRITICAL fails the job. Unfixed findings in the base image are

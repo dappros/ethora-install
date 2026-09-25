@@ -50,7 +50,11 @@ ssl:
   # Uncomment the below params only if you need hosted tenant apps
   # hosted_apps_cert_path: /etc/letsencrypt/live/chat.example.com/fullchain.pem
   # hosted_apps_key_path: /etc/letsencrypt/live/chat.example.com/privkey.pem
-  # If method is 'provided', specify paths:
+  # If method is 'provided', specify # core = API + admin panel + XMPP only (written by setup.sh --edition core, which
+# also switches every optional module off); full = everything enabled below.
+edition: full
+
+paths:
   # cert_path: /path/to/cert.pem
   # key_path: /path/to/key.pem
   # Optional dedicated wildcard cert for hosted tenant apps.

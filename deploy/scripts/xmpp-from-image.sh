@@ -52,6 +52,10 @@ trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
 # docker cp merges into dest: rendered files that live next to the templates
 # (jwt.key, sitecert.pem, a rendered ejabberd-prod.yml) are overwritten only
 # where the image ships the same name, which is exactly the refresh we want.
+# The image ships compiled beams only. Clear any module sources a previous
+# source-mode install left in the mount directory so the entrypoint never
+# recompiles from stale sources, then copy the image's file set in.
+rm -rf "$dest/custom_modules" && mkdir -p "$dest/custom_modules"
 docker cp "$cid:/ethora-dist/." "$dest/" || error "the image has no /ethora-dist; it predates image mode"
 if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ] && id "$SUDO_USER" >/dev/null 2>&1; then
     chown -R "$SUDO_USER":"$SUDO_USER" "$dest" 2>/dev/null || true

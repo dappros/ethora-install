@@ -28,6 +28,15 @@ and `services.<name>.image` for `backend`, `frontend`, `ai_service`,
 unless you switch. Verified on our QA, not yet used on customer instances.
 Reference: [CONTAINER_IMAGES.md](CONTAINER_IMAGES.md).
 
+**Editions.** `deploy.yml` gains `edition: core | full`. Core (written by
+`setup.sh --edition core`) enables only the API, admin panel and XMPP and
+pulls the public Docker Hub images; it is what the public installer
+distributes. Existing files without the key are `full`.
+
+**Image versions.** Builds are numbered `<line>.<n>` (`2610.4`); the git tag
+of the same name marks the commit. `deploy.yml` can pin a build instead of
+the moving line tag.
+
 **Setup engine.** `deploy/scripts/setup.sh` writes `deploy.yml` from a few
 answers (root domain, admin email, license key, TLS, AI, modules) and can
 reconfigure an existing file with `--from`. Optional; hand-edited files

@@ -1282,6 +1282,7 @@ if [ -f "$RUNTIME_DEPLOY_DIR/docker-compose.enterprise.yml" ]; then
   entrypoint_hash="$(hash_file_sha256 "$EJABBERD_RUNTIME_DIR/docker/entrypoint.sh")"
   modules_hash="$(hash_ejabberd_modules_sha256 "$EJABBERD_RUNTIME_DIR/docker/custom_modules")"
   xmpp_hash="${dockerfile_hash}${entrypoint_hash}${modules_hash}"
+  [ "${EJABBERD_MODE:-source}" = "image" ] && xmpp_hash="image:${ETHORA_XMPP_IMAGE:-}:${entrypoint_hash}"
   xmpp_recreate="false"
   if [ -n "$xmpp_hash" ] && [ "$(cat "$xmpp_stamp" 2>/dev/null || echo '')" != "$xmpp_hash" ]; then
     if [ "${EJABBERD_MODE:-source}" = "image" ]; then

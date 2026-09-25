@@ -111,6 +111,16 @@ run --domain chat.example.com --admin-email a@b.co --all-modes image --push-mode
 [ "$(y .services.push.mode "$T/m5.yml")" = "source" ] && ok "individual flag beats --all-modes" || fail "flag beats all-modes"
 [ "$(y .services.ai_service.image "$T/m5.yml")" = "ghcr.io/dappros/ethora-ai:2610" ] && ok "ai image ref kept from template" || fail "ai image ref"
 
+echo "# editions"
+run --domain chat.example.com --admin-email a@b.co --edition core --all-modes image --yes --out "$T/ed1.yml"
+[ "$(y .edition "$T/ed1.yml")" = "core" ] && [ "$(y .features.ai_service "$T/ed1.yml")" = "false" ] && [ "$(y .services.push.enabled "$T/ed1.yml")" = "false" ] && [ "$(y .services.uptime.enabled "$T/ed1.yml")" = "false" ] && [ "$(y .services.mcp.enabled "$T/ed1.yml")" = "false" ] && ok "core edition switches optional modules off" || fail "core edition"
+[ "$(y .services.backend.image "$T/ed1.yml")" = "docker.io/dappros/ethora-api:2610" ] && [ "$(y .services.ejabberd.image "$T/ed1.yml")" = "docker.io/dappros/ethora-xmpp:2610" ] && ok "core edition defaults to Docker Hub images" || fail "core images" "$(y .services.backend.image "$T/ed1.yml")"
+run --domain chat.example.com --admin-email a@b.co --edition core --ai on --yes --out "$T/ed2.yml"
+[ "$(y .features.ai_service "$T/ed2.yml")" = "true" ] && ok "explicit --ai on beats the core preset" || fail "core ai override"
+run --domain chat.example.com --admin-email a@b.co --yes --out "$T/ed3.yml"
+[ "$(y .edition "$T/ed3.yml")" = "full" ] && [ "$(y .services.push.enabled "$T/ed3.yml")" = "true" ] && [ "$(y .services.backend.image "$T/ed3.yml")" = "ghcr.io/dappros/ethora-api:2610" ] && ok "full edition is the default and keeps GHCR images" || fail "full default"
+run --domain chat.example.com --admin-email a@b.co --edition weird --yes --out "$T/ed4.yml"; grep -q "must be core or full" "$T/err" && ok "bad edition refused" || fail "bad edition"
+
 echo "# dry run writes nothing"
 run --domain chat.example.com --admin-email a@b.co --yes --dry-run --out "$T/d.yml"
 [ ! -f "$T/d.yml" ] && grep -q "dry run" "$T/out" && ok "dry-run" || fail "dry-run"
