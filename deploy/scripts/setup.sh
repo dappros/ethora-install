@@ -387,6 +387,9 @@ show_summary() {
   echo "  TLS:             $A_SSL${A_CERT:+ ($A_CERT)}"
   echo "  AI:              $A_AI${A_AI_KEY:+ (key set)}${A_AI_URL:+ url=$A_AI_URL}${A_AI_MODEL:+ model=$A_AI_MODEL}"
   echo "  Blockchain:      $A_BLOCKCHAIN    Uptime: $A_UPTIME    Hosted apps: ${A_HOSTED_APPS:-off}"
+  echo
+  echo "  Installing accepts the Ethora Core Software License: docs/legal/ETHORA_CORE_LICENSE.md"
+  echo "  (editions and limits: docs/legal/FEATURE_SCHEDULE.md)."
   echo "  Run modes:       backend=$A_BACKEND_MODE$([ "$A_BACKEND_MODE" = image ] && echo " ($A_API_IMAGE)")  frontend=$A_FRONTEND_MODE$([ "$A_FRONTEND_MODE" = image ] && echo " ($A_FRONTEND_IMAGE)")"
   echo "                   ai=$A_AI_MODE  push=$A_PUSH_MODE  playground=$A_PLAYGROUND_MODE  mcp=$A_MCP_MODE  ejabberd=$A_EJABBERD_MODE"
   echo "  Source / target: $SOURCE_ROOT -> $A_TARGET"
