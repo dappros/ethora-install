@@ -1341,6 +1341,12 @@ fi
 replace_template \
     "$DEPLOY_DIR/templates/backend.env.template" \
     "$BACKEND_API_DIR/.env"
+# In image mode the build identity is baked into the image (2610.4 and the
+# commit it was built from); the date-based values rendered here would
+# override it through env_file, so drop them.
+if [ "${BACKEND_MODE:-source}" = "image" ]; then
+    sed -i '/^ETHORA_BUILD_\(VERSION\|COMMIT\|TIME\|BRANCH\)=/d' "$BACKEND_API_DIR/.env"
+fi
 
 # Generate centrifugo container config (mounted by docker-compose.enterprise.yml).
 # The file path here MUST match the volume mount in deploy/docker-compose.enterprise.yml
