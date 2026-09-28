@@ -34,7 +34,7 @@ variable "region" {
 }
 variable "instance_type" {
   type    = string
-  default = "t3.medium"
+  default = "t3.large" # only for the bake; buyers launch whatever size they like
 }
 variable "install_ref" {
   type        = string
@@ -162,9 +162,37 @@ build {
       "git clone --branch \"$INSTALL_REF\" --depth 1 \"$INSTALL_REPO\" /home/ubuntu/ethora-install-shared",
       "sudo chown -R ubuntu:ubuntu /home/ubuntu/ethora-install-shared",
       "git -C /home/ubuntu/ethora-install-shared log -1 --format='%h %s' | tee /home/ubuntu/ethora-install-shared/.ami-source",
-      # --- every image an install needs, so first boot touches no registry ---
-      "for i in $IMAGES; do sudo docker pull --quiet \"$i\"; done",
+    ]
+  }
+
+  # Image pulls run detached and are waited for from separate, disconnect-
+  # tolerant steps: several gigabytes of layers took the builder's SSH session
+  # down twice when pulled inside the provisioner itself.
+  provisioner "shell" {
+    inline_shebang = "/bin/bash -e"
+    environment_vars = ["IMAGES=${join(" ", var.images)}"]
+    inline = [
+      "rm -f /tmp/ethora-pulls.done /tmp/ethora-pulls.log",
+      "nohup bash -c 'for i in $IMAGES; do echo \"== $i\"; sudo docker pull \"$i\" || echo \"PULL FAILED: $i\"; done; echo done > /tmp/ethora-pulls.done' > /tmp/ethora-pulls.log 2>&1 &",
+      "echo 'pulls started in the background'",
+    ]
+  }
+  provisioner "shell" {
+    inline_shebang    = "/bin/bash -e"
+    expect_disconnect = true
+    valid_exit_codes  = [0, 2300218]
+    inline            = ["while [ ! -f /tmp/ethora-pulls.done ]; do sleep 15; tail -1 /tmp/ethora-pulls.log 2>/dev/null | cut -c1-100; done"]
+  }
+  provisioner "shell" {
+    inline_shebang = "/bin/bash -e"
+    pause_before   = "10s"
+    environment_vars = ["IMAGES=${join(" ", var.images)}"]
+    inline = [
+      "while [ ! -f /tmp/ethora-pulls.done ]; do sleep 15; done",
+      "grep 'PULL FAILED' /tmp/ethora-pulls.log && exit 1 || true",
+      "for i in $IMAGES; do sudo docker image inspect \"$i\" >/dev/null || { echo \"missing image: $i\"; exit 1; }; done",
       "sudo docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}'",
+      "rm -f /tmp/ethora-pulls.done /tmp/ethora-pulls.log",
       # --- first-boot setup page (single use, password = instance id) ---
       "sudo /home/ubuntu/ethora-install-shared/deploy/setup-web/install-setup-web.sh --no-enable",
       "sudo systemctl enable ethora-setup.service",
