@@ -303,19 +303,19 @@ image, and each can be switched independently in `deploy.yml`:
 
 | `deploy.yml` key | Image | Replaces |
 |---|---|---|
-| `services.backend.mode` | `ghcr.io/dappros/ethora-api` (optionally V8 bytecode) | PM2 `backend`, `backend-jobs`, `backend-bc-worker` |
-| `services.frontend.mode` | `ghcr.io/dappros/ethora-frontend` (one bundle, configured at runtime) | the host `vite build` |
+| `services.backend.mode` | `docker.io/dappros/ethora-api` (optionally V8 bytecode) | PM2 `backend`, `backend-jobs`, `backend-bc-worker` |
+| `services.frontend.mode` | `docker.io/dappros/ethora-frontend` (one bundle, configured at runtime) | the host `vite build` |
 | `services.ai_service.mode` | `ghcr.io/dappros/ethora-ai` (ai-service, docs-parse and the AI chat widget) | PM2 `ai-service`, `docs-parse`, the widget build |
 | `services.push.mode` | `ghcr.io/dappros/ethora-push` | PM2 `push`, `push-worker` |
 | `services.playground.mode` | `ghcr.io/dappros/ethora-playground` | PM2 `sdk-playground` |
 | `services.mcp.mode` | `ghcr.io/dappros/ethora-mcp` | PM2 `mcp` |
-| `services.ejabberd.mode` | `ghcr.io/dappros/ethora-xmpp` (ejabberd with the Ethora modules) | the host build of `ejabberd-docker` |
+| `services.ejabberd.mode` | `docker.io/dappros/ethora-xmpp` (ejabberd with the Ethora modules) | the host build of `ejabberd-docker` |
 
 ```yaml
 services:
   backend:
     mode: image          # source | image
-    image: ghcr.io/dappros/ethora-api:2610
+    image: docker.io/dappros/ethora-api:2610
 ```
 
 `setup.sh --all-modes image` (or `--backend-mode image` and friends) writes

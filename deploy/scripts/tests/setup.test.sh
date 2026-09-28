@@ -95,7 +95,7 @@ run --domain chat.example.com --admin-email a@b.co --license-server license.exam
 echo "# run modes"
 run --domain chat.example.com --admin-email a@b.co --yes --out "$T/m1.yml"
 [ "$(y .services.backend.mode "$T/m1.yml")" = "source" ] && [ "$(y .services.frontend.mode "$T/m1.yml")" = "source" ] && ok "modes default to source" || fail "mode defaults"
-[ "$(y .services.backend.image "$T/m1.yml")" = "ghcr.io/dappros/ethora-api:2610" ] && ok "default api image ref written" || fail "default api image"
+[ "$(y .services.backend.image "$T/m1.yml")" = "docker.io/dappros/ethora-api:2610" ] && ok "default api image ref written" || fail "default api image"
 run --domain chat.example.com --admin-email a@b.co --backend-mode image --frontend-mode image --api-image ghcr.io/x/api:1 --frontend-image ghcr.io/x/fe:1 --yes --out "$T/m2.yml"
 [ "$(y .services.backend.mode "$T/m2.yml")" = "image" ] && [ "$(y .services.backend.image "$T/m2.yml")" = "ghcr.io/x/api:1" ] && ok "backend image mode + ref" || fail "backend image mode"
 [ "$(y .services.frontend.mode "$T/m2.yml")" = "image" ] && [ "$(y .services.frontend.image "$T/m2.yml")" = "ghcr.io/x/fe:1" ] && ok "frontend image mode + ref" || fail "frontend image mode"
@@ -118,7 +118,7 @@ run --domain chat.example.com --admin-email a@b.co --edition core --all-modes im
 run --domain chat.example.com --admin-email a@b.co --edition core --ai on --yes --out "$T/ed2.yml"
 [ "$(y .features.ai_service "$T/ed2.yml")" = "true" ] && ok "explicit --ai on beats the core preset" || fail "core ai override"
 run --domain chat.example.com --admin-email a@b.co --yes --out "$T/ed3.yml"
-[ "$(y .edition "$T/ed3.yml")" = "full" ] && [ "$(y .services.push.enabled "$T/ed3.yml")" = "true" ] && [ "$(y .services.backend.image "$T/ed3.yml")" = "ghcr.io/dappros/ethora-api:2610" ] && ok "full edition is the default and keeps GHCR images" || fail "full default"
+[ "$(y .edition "$T/ed3.yml")" = "full" ] && [ "$(y .services.push.enabled "$T/ed3.yml")" = "true" ] && [ "$(y .services.backend.image "$T/ed3.yml")" = "docker.io/dappros/ethora-api:2610" ] && ok "full edition is the default and keeps GHCR images" || fail "full default"
 run --domain chat.example.com --admin-email a@b.co --edition weird --yes --out "$T/ed4.yml"; grep -q "must be core or full" "$T/err" && ok "bad edition refused" || fail "bad edition"
 
 echo "# dry run writes nothing"

@@ -9,11 +9,11 @@
 # changes. Re-run after every `setup-env.sh` (domains, toggles) or to move
 # to a new image tag.
 #
-#   ETHORA_FRONTEND_IMAGE=ghcr.io/dappros/ethora-frontend:2610 \
+#   ETHORA_FRONTEND_IMAGE=docker.io/dappros/ethora-frontend:2610 \
 #   deploy/scripts/frontend-from-image.sh
 #
 # Env:
-#   ETHORA_FRONTEND_IMAGE   image ref (default ghcr.io/dappros/ethora-frontend:2610)
+#   ETHORA_FRONTEND_IMAGE   image ref (default docker.io/dappros/ethora-frontend:2610)
 #   FRONTEND_ENV_FILE       rendered frontend env (default <root>/ethora-app-reactjs/.env)
 #   FRONTEND_BUILD_DIR      output dir (default <root>/ethora-app-reactjs/dist)
 #   DOCKER_ENV_FILE         where the docker-clean env copy is written
@@ -24,7 +24,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT_DIR="$(cd "$DEPLOY_DIR/.." && pwd)"
 
-IMAGE="${ETHORA_FRONTEND_IMAGE:-ghcr.io/dappros/ethora-frontend:2610}"
+IMAGE="${ETHORA_FRONTEND_IMAGE:-docker.io/dappros/ethora-frontend:2610}"
 ENV_FILE="${FRONTEND_ENV_FILE:-$ROOT_DIR/ethora-app-reactjs/.env}"
 OUT_DIR="${FRONTEND_BUILD_DIR:-$ROOT_DIR/ethora-app-reactjs/dist}"
 DOCKER_ENV="${DOCKER_ENV_FILE:-$DEPLOY_DIR/generated/frontend.image.env}"

@@ -384,9 +384,9 @@ if [ "$A_EDITION" = "core" ]; then
   case "$A_FRONTEND_IMAGE" in ""|ghcr.io/*) A_FRONTEND_IMAGE="docker.io/dappros/ethora-frontend:2610" ;; esac
   case "$A_XMPP_IMAGE" in ""|ghcr.io/*) A_XMPP_IMAGE="docker.io/dappros/ethora-xmpp:2610" ;; esac
 fi
-A_API_IMAGE="${A_API_IMAGE:-ghcr.io/dappros/ethora-api:2610}"
-A_FRONTEND_IMAGE="${A_FRONTEND_IMAGE:-ghcr.io/dappros/ethora-frontend:2610}"
-A_XMPP_IMAGE="${A_XMPP_IMAGE:-ghcr.io/dappros/ethora-xmpp:2610}"
+A_API_IMAGE="${A_API_IMAGE:-docker.io/dappros/ethora-api:2610}"
+A_FRONTEND_IMAGE="${A_FRONTEND_IMAGE:-docker.io/dappros/ethora-frontend:2610}"
+A_XMPP_IMAGE="${A_XMPP_IMAGE:-docker.io/dappros/ethora-xmpp:2610}"
 [ "$A_TARGET" = "$SOURCE_ROOT" ] && die "--target must differ from the source checkout ($SOURCE_ROOT); in-place installs are refused by preflight-paths.sh"
 
 # ------------------------------------------------------------------ report --

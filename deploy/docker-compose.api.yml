@@ -11,7 +11,7 @@
 # Nothing in the env rendering has to change between source mode and image
 # mode; the only difference is what runs the code.
 #
-#   ETHORA_API_IMAGE=ghcr.io/dappros/ethora-api:2610 \
+#   ETHORA_API_IMAGE=docker.io/dappros/ethora-api:2610 \
 #   ETHORA_BACKEND_ENV_FILE=/home/ubuntu/ethora/ethora-backend/services/api/.env \
 #   docker compose -f deploy/docker-compose.api.yml up -d
 #
@@ -34,7 +34,7 @@
 name: ethora-api
 
 x-api-common: &api-common
-  image: ${ETHORA_API_IMAGE:-ghcr.io/dappros/ethora-api:2610}
+  image: ${ETHORA_API_IMAGE:-docker.io/dappros/ethora-api:2610}
   env_file:
     - ${ETHORA_BACKEND_ENV_FILE:-../ethora-backend/services/api/.env}
   network_mode: host
@@ -153,7 +153,7 @@ services:
     logging: { driver: json-file, options: { max-size: "20m", max-file: "3" } }
 
   frontend:
-    image: ${ETHORA_FRONTEND_IMAGE:-ghcr.io/dappros/ethora-frontend:2610}
+    image: ${ETHORA_FRONTEND_IMAGE:-docker.io/dappros/ethora-frontend:2610}
     container_name: ethora-frontend
     profiles: ["frontend-container"]
     env_file:

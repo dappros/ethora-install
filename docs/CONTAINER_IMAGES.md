@@ -30,7 +30,8 @@ docker build --build-arg BYTECODE=1 -t ethora-api:dev .   # V8 bytecode
 
 Published by `.github/workflows/release-images.yml` (manual run, or push to
 a release branch that moves the `ethora-backend` pointer) as
-`ghcr.io/dappros/ethora-api:<release>` and `:<release>-<sha>`, for
+`docker.io/dappros/ethora-api:<release>` and `:<release>.<n>` (and the same
+on `ghcr.io/dappros/`, the canonical store for every image), for
 linux/amd64 and linux/arm64. The workflow boots the amd64 image with
 `CI_SMOKE_TEST=true` and checks `/v1/ping` before pushing anything, and for
 bytecode builds also asserts that no `.js` remains under `dist/src`.
@@ -93,7 +94,7 @@ Redis, MySQL and MinIO, and nginx already proxies to `127.0.0.1:8080`.
 # stop the PM2 processes the image replaces
 pm2 stop backend backend-jobs backend-bc-worker
 
-ETHORA_API_IMAGE=ghcr.io/dappros/ethora-api:2610 \
+ETHORA_API_IMAGE=docker.io/dappros/ethora-api:2610 \
 ETHORA_BACKEND_ENV_FILE=/home/ubuntu/ethora/ethora-backend/services/api/.env \
 docker compose -f /home/ubuntu/ethora/deploy/docker-compose.api.yml up -d
 
@@ -110,7 +111,7 @@ bundle plus an nginx runtime. Everything that used to be baked in through
 `VITE_*` at build time is read at runtime from `/config.js`
 (`src/config/env.ts`), and the Content-Security-Policy `connect-src` origins
 are filled in from the same environment, so the image is identical for every
-install. Published by the same workflow as `ghcr.io/dappros/ethora-frontend:<release>`.
+install. Published by the same workflow as `docker.io/dappros/ethora-frontend:<release>`.
 
 The container has three commands:
 
@@ -124,7 +125,7 @@ On a deploy-script host, nginx already serves `ethora-app-reactjs/dist`
 from disk, so the right move is `export`, not a second web server:
 
 ```bash
-ETHORA_FRONTEND_IMAGE=ghcr.io/dappros/ethora-frontend:2610 \
+ETHORA_FRONTEND_IMAGE=docker.io/dappros/ethora-frontend:2610 \
 deploy/scripts/frontend-from-image.sh
 ```
 
@@ -179,10 +180,10 @@ Image mode is a first-class install path. Set it in `deploy.yml` (or with
 services:
   backend:
     mode: image                                  # source | image
-    image: ghcr.io/dappros/ethora-api:2610
+    image: docker.io/dappros/ethora-api:2610
   frontend:
     mode: image
-    image: ghcr.io/dappros/ethora-frontend:2610
+    image: docker.io/dappros/ethora-frontend:2610
 ```
 
 Then run `install.sh` or `update.sh` as usual. What changes per mode:
