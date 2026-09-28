@@ -203,6 +203,18 @@ onoff() { case "$(printf '%s' "$1" | tr 'A-Z' 'a-z')" in on|true|yes|1) echo tru
 gen_password() { openssl rand -base64 30 | tr -dc 'A-Za-z0-9' | head -c 20; }
 
 # ------------------------------------------------------------ gather answers --
+# An existing deploy.yml is a running install's secrets. Re-running setup.sh
+# on it must reconfigure, never regenerate: switch to --from automatically so
+# passwords, keys and every unanswered value are kept. --force is the only way
+# to start over, and it says what it costs.
+if [ -z "$FROM_FILE" ] && [ -f "$OUT_FILE" ]; then
+  if [ "$FORCE" = true ]; then
+    echo "[setup] WARNING: --force regenerates every secret in $OUT_FILE; databases initialised with the old ones will refuse the new passwords. Only for a fresh install." >&2
+  else
+    FROM_FILE="$OUT_FILE"
+    log "$OUT_FILE exists: reconfiguring it (secrets and unanswered values kept; --force to start over)"
+  fi
+fi
 if [ -n "$FROM_FILE" ]; then
   [ -f "$FROM_FILE" ] || die "--from file not found: $FROM_FILE"
   log "starting from $FROM_FILE (its values are kept unless you answer differently)"
@@ -431,7 +443,7 @@ if [ -f "$OUT_FILE" ] && [ "$FORCE" != true ]; then
   if [ -n "$FROM_FILE" ] && [ "$(cd "$(dirname "$FROM_FILE")" && pwd)/$(basename "$FROM_FILE")" = "$(cd "$(dirname "$OUT_FILE")" && pwd)/$(basename "$OUT_FILE")" ]; then
     : # rewriting the file we imported from is the expected "reconfigure" flow
   else
-    die "$OUT_FILE exists; pass --force to overwrite, or --from $OUT_FILE to reconfigure it"
+    die "$OUT_FILE exists and differs from --from; pass --force to overwrite it"
   fi
 fi
 mkdir -p "$(dirname "$OUT_FILE")"
