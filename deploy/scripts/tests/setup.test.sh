@@ -88,7 +88,7 @@ run --domain chat.example.com --admin-email a@b.co --ssl provided --yes --out "$
 run --domain chat.example.com --admin-email a@b.co --ssl weird --yes --out "$T/e7.yml"; grep -q "must be certbot" "$T/err" && ok "bad ssl mode refused" || fail "bad ssl"
 run --domain chat.example.com --admin-email a@b.co --ai maybe --yes --out "$T/e8.yml"; grep -q "must be on or off" "$T/err" && ok "bad on/off refused" || fail "bad onoff"
 run --domain chat.example.com --admin-email a@b.co --target "$(cd "$HERE/../../.." && pwd)" --yes --out "$T/e9.yml"; grep -q "in-place installs are refused" "$T/err" && ok "in-place target refused" || fail "in-place"
-run --domain chat.example.com --admin-email a@b.co --yes --out "$T/a.yml"; grep -q "exists; pass --force" "$T/err" && ok "existing output refused without --force" || fail "overwrite refused"
+pw_a="$(y .admin.password "$T/a.yml")"; run --domain chat.example.com --admin-email a@b.co --yes --out "$T/a.yml"; [ "$(y .admin.password "$T/a.yml")" = "$pw_a" ] && grep -q "reconfiguring it" "$T/out" && ok "existing output is reconfigured, not regenerated" || fail "overwrite guard"
 run --domain chat.example.com --admin-email a@b.co --yes --force --out "$T/a.yml" && ok "--force overwrites" || fail "--force"
 run --domain chat.example.com --admin-email a@b.co --license-server license.example.com --yes --out "$T/e10.yml"; grep -q "http(s) URL" "$T/err" && ok "bad license server url refused" || fail "bad server url"
 
@@ -126,7 +126,7 @@ run --domain chat.example.com --admin-email a@b.co --yes --out "$T/rr.yml"
 pw1="$(y .admin.password "$T/rr.yml")"; my1="$(y .databases.mysql.root_password "$T/rr.yml")"
 run --domain chat2.example.com --admin-email a@b.co --yes --out "$T/rr.yml"
 [ "$(y .admin.password "$T/rr.yml")" = "$pw1" ] && [ "$(y .databases.mysql.root_password "$T/rr.yml")" = "$my1" ] && [ "$(y .domains.api "$T/rr.yml")" = "api.chat2.example.com" ] && ok "re-run reconfigures, secrets kept" || fail "re-run secrets" "$(y .admin.password "$T/rr.yml") vs $pw1"
-grep -q "reconfiguring it" "$T/err" && ok "re-run says it is reconfiguring" || fail "re-run message"
+grep -q "reconfiguring it" "$T/out" && ok "re-run says it is reconfiguring" || fail "re-run message"
 run --domain chat.example.com --admin-email a@b.co --yes --force --out "$T/rr.yml"
 [ "$(y .admin.password "$T/rr.yml")" != "$pw1" ] && grep -q "WARNING: --force regenerates" "$T/err" && ok "--force starts over with a warning" || fail "force"
 
