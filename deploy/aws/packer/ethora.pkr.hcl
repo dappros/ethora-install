@@ -126,6 +126,7 @@ build {
   sources = ["source.amazon-ebs.ethora"]
 
   provisioner "shell" {
+    inline_shebang = "/bin/bash -e"
     environment_vars = [
       "INSTALL_REF=${var.install_ref}",
       "INSTALL_REPO=${var.install_repo}",
@@ -165,6 +166,7 @@ build {
 
   # Marketplace hardening. Runs last; nothing after this may log in.
   provisioner "shell" {
+    inline_shebang = "/bin/bash -e"
     inline = [
       "set -eux",
       # SSH: keys only, no root, and host keys regenerated per instance
