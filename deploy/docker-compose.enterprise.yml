@@ -54,7 +54,8 @@ services:
     # MinIO withdrew its public images (Docker Hub in 2026-09, then Quay
     # returned 401 for everything). dappros/minio is our own copy of the exact
     # release our installs run (amd64 + arm64), unchanged, under MinIO's
-    # AGPL-3.0. Override with MINIO_IMAGE for a private mirror.
+    # AGPL-3.0. Set databases.minio.image in deploy.yml for a private mirror
+    # (setup-env.sh persists it as MINIO_IMAGE and the installer exports it).
     image: ${MINIO_IMAGE:-docker.io/dappros/minio:RELEASE.2025-09-07T16-13-09Z}
     ports:
       - "9000:9000"

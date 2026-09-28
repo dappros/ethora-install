@@ -857,6 +857,11 @@ export MONGO_DATA_DIR MINIO_DATA_DIR MYSQL_DATA_DIR REDIS_DATA_DIR
 
 # Persist so docker-compose / restart paths pick the same values on every
 # run, and migrate-data-paths.sh has a single place to update.
+MINIO_IMAGE="${MINIO_IMAGE:-$(yq eval '.databases.minio.image // ""' "$CONFIG_FILE" 2>/dev/null || echo "")}"
+[ "$MINIO_IMAGE" = "null" ] && MINIO_IMAGE=""
+MINIO_IMAGE="${MINIO_IMAGE:-docker.io/dappros/minio:RELEASE.2025-09-07T16-13-09Z}"
+export MINIO_IMAGE
+persist_env_var "MINIO_IMAGE" "$MINIO_IMAGE"
 persist_env_var "MONGO_DATA_DIR" "$MONGO_DATA_DIR"
 persist_env_var "MINIO_DATA_DIR" "$MINIO_DATA_DIR"
 persist_env_var "MYSQL_DATA_DIR" "$MYSQL_DATA_DIR"

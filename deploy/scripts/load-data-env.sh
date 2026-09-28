@@ -44,13 +44,13 @@ ethora_load_data_env() {
         persisted="$(
             # shellcheck disable=SC1090
             source "$env_file" >/dev/null 2>&1
-            printf '%s\n%s\n%s\n%s\n%s\n' \
+            printf '%s\n%s\n%s\n%s\n%s\n%s\n' \
                 "${DATA_DIR:-}" "${MONGO_DATA_DIR:-}" "${MINIO_DATA_DIR:-}" \
-                "${MYSQL_DATA_DIR:-}" "${REDIS_DATA_DIR:-}"
+                "${MYSQL_DATA_DIR:-}" "${REDIS_DATA_DIR:-}" "${MINIO_IMAGE:-}"
         )" || persisted=""
     fi
 
-    local names=(DATA_DIR MONGO_DATA_DIR MINIO_DATA_DIR MYSQL_DATA_DIR REDIS_DATA_DIR)
+    local names=(DATA_DIR MONGO_DATA_DIR MINIO_DATA_DIR MYSQL_DATA_DIR REDIS_DATA_DIR MINIO_IMAGE)
     while IFS= read -r line; do
         [ "$i" -lt "${#names[@]}" ] || break
         # Only fill in what the environment has not already set.
@@ -66,6 +66,7 @@ ethora_load_data_env() {
     : "${MYSQL_DATA_DIR:=$DATA_DIR/mysql}"
     : "${REDIS_DATA_DIR:=$DATA_DIR/redis}"
     export DATA_DIR MONGO_DATA_DIR MINIO_DATA_DIR MYSQL_DATA_DIR REDIS_DATA_DIR
+    export MINIO_IMAGE="${MINIO_IMAGE:-docker.io/dappros/minio:RELEASE.2025-09-07T16-13-09Z}"
 
     local var val
     for var in MONGO_DATA_DIR MINIO_DATA_DIR MYSQL_DATA_DIR REDIS_DATA_DIR; do
