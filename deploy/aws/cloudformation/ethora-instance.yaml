@@ -114,10 +114,10 @@ Resources:
             systemctl disable --now ethora-setup.service || true
             export ETHORA_SETUP_LICENSE_KEY='${LicenseKey}'
             export ETHORA_SETUP_AI_KEY='${AiApiKey}'
-            bash "$SRC/deploy/scripts/setup.sh" --yes --force \
+            bash "$SRC/deploy/scripts/setup.sh" --yes \
               --domain '${RootDomain}' --admin-email '${AdminEmail}' \
               --display-name '${DisplayName}' --ssl '${TlsMode}' --ai '${AiEnabled}' \
-              --backend-mode image --frontend-mode image \
+              --edition core --all-modes image \
               --target /home/ubuntu/ethora
             rc=$?
             if [ $rc -ne 0 ]; then echo "setup.sh failed ($rc); re-enabling the setup page"; systemctl enable --now ethora-setup.service; exit $rc; fi

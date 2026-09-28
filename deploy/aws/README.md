@@ -2,41 +2,44 @@
 
 Two pieces:
 
-- `packer/ethora.pkr.hcl` bakes the Marketplace AMI: Ubuntu 24.04, Docker,
-  Node 24, yq, the `ethora-install-shared` mirror at a release ref, the two
-  container images pre-pulled, and the first-boot setup page
-  (`deploy/setup-web`) enabled. Nothing is configured in the image.
+- `packer/ethora.pkr.hcl` bakes the Marketplace AMI: Ubuntu 24.04 with
+  security updates, Docker, Node 24, yq, the public installer
+  (`github.com/dappros/ethora-install` at a ref, `main` = current stable
+  line), every image an Ethora Core install needs pre-pulled from Docker Hub,
+  and the first-boot setup page (`deploy/setup-web`) enabled. Nothing is
+  configured in the image and nothing private is on it.
 - `cloudformation/ethora-instance.yaml` launches one instance from that AMI.
-  With `RootDomain` set it installs unattended from user-data (the six
-  answers become `setup.sh --yes` flags); with it empty the buyer finishes on
-  the setup page at `http://<ip>:8888` (user `admin`, password = instance id).
+  With `RootDomain` set it installs unattended from user-data (the answers
+  become `setup.sh --yes` flags); with it empty the buyer finishes on the
+  setup page at `http://<ip>:8888` (user `admin`, password = instance id).
 
 ## Build the AMI
 
 ```bash
 packer init  deploy/aws/packer
-packer build \
-  -var monoserver_ref=2610 \
-  -var git_ssh_key=~/.ssh/ethora-mirror-readonly \
-  deploy/aws/packer
+packer build -var region=us-east-2 -var install_ref=main deploy/aws/packer
 ```
 
-Without a GHCR token (the default) the builder compiles both images from the
-mirror's own source on the instance and tags them with the canonical names,
-so neither the bake nor the first boot needs registry access. Add
-`-var ghcr_user=<user> -var ghcr_token=<token with read:packages>` to pull
-the published images instead. The deploy key (a read-only deploy key on
-`ethora-install-shared`) and any token are used only during the build and
-are removed before the image is sealed. `packer-manifest.json` records the
-AMI id.
+No credentials of ours are involved: the installer repository and the
+images are public. `-var install_ref=2610` bakes a specific line; the
+`images` variable lists the tags pre-pulled and must match that line's
+`deploy.yml` defaults. `packer-manifest.json` records the AMI id.
 
 No local Packer install is needed:
 
 ```bash
 docker run --rm -v "$PWD/deploy/aws/packer:/work" -w /work \
-  -v ~/.aws:/root/.aws:ro -v ~/.ssh/ethora-mirror-readonly:/keys/mirror:ro \
-  -e AWS_PROFILE=<profile> hashicorp/packer:light build -var git_ssh_key=/keys/mirror .
+  -v ~/.aws:/root/.aws:ro -e AWS_PROFILE=ethora-ami-builder \
+  hashicorp/packer:light build -var region=us-east-2 .
 ```
+
+### Marketplace hardening (applied by the last build step)
+
+Password SSH login off, root login off, root account locked, SSH host keys
+removed (regenerated on first boot), no authorized keys (AWS injects the
+buyer's key pair), no Docker, git or npm credentials, apt cache, logs, shell
+history and cloud-init state cleared, machine-id reset. Every package is at
+its latest security update at bake time; rebake for a new listing version.
 
 ### AWS permissions
 

@@ -1,21 +1,23 @@
-# Bake the Ethora AMI for AWS Marketplace.
+# Bake the Ethora Core AMI for AWS Marketplace.
 #
 #   packer init  deploy/aws/packer
-#   packer build -var monoserver_ref=2610 \
-#                -var git_ssh_key=~/.ssh/ethora-mirror-readonly \
-#                deploy/aws/packer                       # images built on the builder
-#   ... add -var ghcr_user=<user> -var ghcr_token=<read:packages token> to pull instead
+#   packer build -var install_ref=main deploy/aws/packer
 #
-# What the image contains: Ubuntu 24.04, Docker, Node 24, yq, the
-# ethora-install-shared mirror at <monoserver_ref> under
-# /home/ubuntu/ethora-install-shared, the ethora-api and ethora-frontend
-# images pre-pulled, and the first-boot setup page enabled
-# (deploy/setup-web). Nothing is configured: the buyer answers six questions
-# on first boot, or passes them through CloudFormation user-data.
+# What the image contains: Ubuntu 24.04 with security updates applied,
+# Docker, Node 24 (for the first-boot page), yq, the public installer
+# (github.com/dappros/ethora-install at install_ref) under
+# /home/ubuntu/ethora-install-shared, every image an install needs
+# pre-pulled from Docker Hub (the three Ethora Core images, our MinIO copy,
+# MongoDB, MySQL, Redis, Centrifugo), and the first-boot setup page enabled
+# (deploy/setup-web). Nothing is configured and nothing private is on the
+# image: the buyer answers the setup page, or CloudFormation passes the
+# answers through user-data, and no registry is contacted at first boot.
 #
-# Marketplace rules applied at the end of the build: no SSH keys left behind
-# (AWS injects the buyer's key pair), no default passwords, password SSH
-# login off, shell history and cloud-init state cleared, machine-id reset.
+# Marketplace rules applied at the end of the build: no SSH keys or host
+# keys left behind (AWS injects the buyer's key pair; host keys regenerate
+# on first boot), no passwords, password SSH login off, root login off,
+# shell history, logs, apt cache and cloud-init state cleared, machine-id
+# reset.
 
 packer {
   required_plugins {
@@ -34,39 +36,30 @@ variable "instance_type" {
   type    = string
   default = "t3.medium"
 }
-variable "monoserver_ref" {
-  type    = string
-  default = "2610"
-}
-variable "mirror_repo" {
-  type    = string
-  default = "git@github.com:dappros/ethora-install-shared.git"
-}
-variable "git_ssh_key" {
+variable "install_ref" {
   type        = string
-  description = "path to a read-only deploy key for mirror_repo"
+  default     = "main"
+  description = "branch of dappros/ethora-install to bake: main = current stable line, or a line such as 2610"
 }
-# Image source. With a GHCR token the published images are pulled; without
-# one (default) both images are built from the mirror's own source on the
-# builder instance and tagged with the canonical names, so the AMI needs no
-# registry access at bake time and none at first boot.
-variable "ghcr_user" {
+variable "install_repo" {
   type    = string
-  default = ""
+  default = "https://github.com/dappros/ethora-install.git"
 }
-variable "ghcr_token" {
-  type        = string
-  default     = ""
-  sensitive   = true
-  description = "GitHub token with read:packages; empty = build images from source"
-}
-variable "api_image" {
-  type    = string
-  default = "docker.io/dappros/ethora-api:2610"
-}
-variable "frontend_image" {
-  type    = string
-  default = "docker.io/dappros/ethora-frontend:2610"
+# Everything an Ethora Core install pulls; pre-pulled so first boot works
+# with no registry access. The Ethora tags must match the installer's
+# deploy.yml defaults for install_ref.
+variable "images" {
+  type = list(string)
+  default = [
+    "docker.io/dappros/ethora-api:2610",
+    "docker.io/dappros/ethora-frontend:2610",
+    "docker.io/dappros/ethora-xmpp:2610",
+    "docker.io/dappros/minio:RELEASE.2025-09-07T16-13-09Z",
+    "mongo:6.0.8",
+    "mysql:8.1.0",
+    "redis:latest",
+    "centrifugo/centrifugo:v6",
+  ]
 }
 variable "ami_name_prefix" {
   type    = string
@@ -79,14 +72,14 @@ variable "volume_size_gb" {
 
 locals {
   ts       = formatdate("YYYYMMDD-hhmm", timestamp())
-  ami_name = "${var.ami_name_prefix}-${var.monoserver_ref}-${local.ts}"
+  ami_name = "${var.ami_name_prefix}-core-${var.install_ref}-${local.ts}"
 }
 
 source "amazon-ebs" "ethora" {
   region          = var.region
   instance_type   = var.instance_type
   ami_name        = local.ami_name
-  ami_description = "Ethora ${var.monoserver_ref}: chat, AI agents and admin panel. Open http://<ip>:8888 after launch (user admin, password = instance id)."
+  ami_description = "Ethora Core (${var.install_ref}): self-hosted chat server with API, web chat, admin panel and XMPP. Open http://<ip>:8888 after launch (user admin, password = instance id)."
   ssh_username    = "ubuntu"
 
   source_ami_filter {
@@ -110,9 +103,8 @@ source "amazon-ebs" "ethora" {
   ena_support = true
   tags = {
     Name          = local.ami_name
-    ethora_ref    = var.monoserver_ref
-    ethora_api    = var.api_image
-    ethora_web    = var.frontend_image
+    ethora_ref    = var.install_ref
+    ethora_images = join(",", var.images)
     base_ami_name = "{{ .SourceAMIName }}"
   }
 }
@@ -120,50 +112,36 @@ source "amazon-ebs" "ethora" {
 build {
   sources = ["source.amazon-ebs.ethora"]
 
-  # Temporary deploy key for the private mirror; removed before the image is sealed.
-  provisioner "file" {
-    source      = var.git_ssh_key
-    destination = "/tmp/ethora-deploy-key"
-  }
-
   provisioner "shell" {
     environment_vars = [
-      "MONOSERVER_REF=${var.monoserver_ref}",
-      "MIRROR_REPO=${var.mirror_repo}",
-      "GHCR_USER=${var.ghcr_user}",
-      "GHCR_TOKEN=${var.ghcr_token}",
-      "API_IMAGE=${var.api_image}",
-      "FRONTEND_IMAGE=${var.frontend_image}",
+      "INSTALL_REF=${var.install_ref}",
+      "INSTALL_REPO=${var.install_repo}",
+      "IMAGES=${join(" ", var.images)}",
       "DEBIAN_FRONTEND=noninteractive",
     ]
     inline = [
       "set -euxo pipefail",
-      # --- base packages ---
+      # --- base packages and every pending security update (Marketplace scans the AMI) ---
       "sudo apt-get update -y",
+      "sudo apt-get upgrade -y",
       "sudo apt-get install -y ca-certificates curl gnupg git jq unzip",
       # --- docker (official repo) ---
       "sudo install -m 0755 -d /etc/apt/keyrings",
       "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg",
       "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable\" | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null",
-      "sudo apt-get update -y && sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+      "sudo apt-get update -y && sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin",
       "sudo usermod -aG docker ubuntu",
-      # --- node 24 (same major install.sh pins) + yq ---
+      # --- node 24 (the first-boot page is a Node script) + yq v4 ---
       "curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -",
       "sudo apt-get install -y nodejs",
       "sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_$(dpkg --print-architecture) && sudo chmod +x /usr/local/bin/yq",
-      # --- the install mirror at the release ref ---
-      "chmod 600 /tmp/ethora-deploy-key",
-      "mkdir -p /home/ubuntu/.ssh && ssh-keyscan github.com >> /home/ubuntu/.ssh/known_hosts 2>/dev/null",
-      "GIT_SSH_COMMAND='ssh -i /tmp/ethora-deploy-key -o IdentitiesOnly=yes' git clone --branch \"$MONOSERVER_REF\" --depth 1 \"$MIRROR_REPO\" /home/ubuntu/ethora-install-shared",
+      # --- the public installer at the release ref ---
+      "git clone --branch \"$INSTALL_REF\" --depth 1 \"$INSTALL_REPO\" /home/ubuntu/ethora-install-shared",
       "sudo chown -R ubuntu:ubuntu /home/ubuntu/ethora-install-shared",
       "git -C /home/ubuntu/ethora-install-shared log -1 --format='%h %s' | tee /home/ubuntu/ethora-install-shared/.ami-source",
-      # --- the two images: pulled from GHCR when a token is given, else built
-      #     from the mirror source right here (amd64 native) and tagged with the
-      #     canonical names so deploy.yml's defaults resolve without a pull ---
-      "if [ -n \"$GHCR_TOKEN\" ]; then echo \"$GHCR_TOKEN\" | sudo docker login ghcr.io -u \"$GHCR_USER\" --password-stdin && sudo docker pull \"$API_IMAGE\" && sudo docker pull \"$FRONTEND_IMAGE\" && sudo docker logout ghcr.io; else M=/home/ubuntu/ethora-install-shared; S=$(git -C $M rev-parse --short HEAD); sudo docker build --build-arg BYTECODE=1 --build-arg ETHORA_BUILD_VERSION=$(date -u +%y.%m.%d)-$S --build-arg ETHORA_BUILD_COMMIT=$S --build-arg ETHORA_BUILD_TIME=$(date -u +%FT%TZ) --build-arg ETHORA_BUILD_BRANCH=$MONOSERVER_REF -t \"$API_IMAGE\" $M/ethora-backend/services/api && sudo docker build --build-arg VITE_BUILD_VERSION=$(date -u +%y.%m.%d)-$S --build-arg VITE_BUILD_COMMIT=$S --build-arg VITE_BUILD_BRANCH=$MONOSERVER_REF -t \"$FRONTEND_IMAGE\" $M/ethora-app-reactjs; fi",
+      # --- every image an install needs, so first boot touches no registry ---
+      "for i in $IMAGES; do sudo docker pull --quiet \"$i\"; done",
       "sudo docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}'",
-      # build cache is not part of the product
-      "sudo docker builder prune -af >/dev/null 2>&1 || true",
       # --- first-boot setup page (single use, password = instance id) ---
       "sudo /home/ubuntu/ethora-install-shared/deploy/setup-web/install-setup-web.sh --no-enable",
       "sudo systemctl enable ethora-setup.service",
@@ -176,18 +154,21 @@ build {
   provisioner "shell" {
     inline = [
       "set -eux",
-      "sudo rm -f /tmp/ethora-deploy-key",
+      # SSH: keys only, no root, and host keys regenerated per instance
       "sudo sed -i 's/^#\\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config",
-      "sudo sed -i 's/^#\\?PermitRootLogin .*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config",
-      "sudo rm -rf /root/.docker /home/ubuntu/.docker",
+      "sudo sed -i 's/^#\\?PermitRootLogin .*/PermitRootLogin no/' /etc/ssh/sshd_config",
+      "sudo rm -f /etc/ssh/ssh_host_*",
+      "sudo passwd -l root",
+      # no stored credentials of any kind
+      "sudo rm -rf /root/.docker /home/ubuntu/.docker /root/.ssh /home/ubuntu/.ssh/authorized_keys /home/ubuntu/.ssh/known_hosts",
+      "sudo rm -rf /root/.gitconfig /home/ubuntu/.gitconfig /root/.npm /home/ubuntu/.npm",
+      # caches, logs, identity
       "sudo apt-get clean",
       "sudo rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*",
       "sudo cloud-init clean --logs --seed",
       "sudo truncate -s 0 /etc/machine-id && sudo rm -f /var/lib/dbus/machine-id && sudo ln -s /etc/machine-id /var/lib/dbus/machine-id",
       "sudo find /var/log -type f -exec truncate -s 0 {} +",
-      "history -c; sudo rm -f /root/.bash_history /home/ubuntu/.bash_history",
-      # AWS injects the buyer's key pair at launch; the build key must not persist.
-      "sudo rm -f /root/.ssh/authorized_keys /home/ubuntu/.ssh/authorized_keys",
+      "sudo rm -f /root/.bash_history /home/ubuntu/.bash_history; history -c || true",
     ]
   }
 
