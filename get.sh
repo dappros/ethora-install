@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Ethora Core bootstrap: clone the installer and run it.
 #
-#   curl -fsSL https://raw.githubusercontent.com/dappros/ethora-install/2610/get.sh | bash -s -- --domain chat.example.com --admin-email you@example.com
+#   curl -fsSL https://get.ethora.com | bash -s -- --domain chat.example.com --admin-email you@example.com
+#   (get.ethora.com redirects to https://raw.githubusercontent.com/dappros/ethora-install/main/get.sh)
 #
 # Without arguments it asks for the domain and e-mail (needs a terminal).
 # Everything else is the documented two steps: setup.sh, then sudo install.sh.
@@ -9,7 +10,7 @@ set -euo pipefail
 
 main() {
 
-  BRANCH="${ETHORA_BRANCH:-2610}"
+  BRANCH="${ETHORA_BRANCH:-main}"   # main = current stable line; a line branch (2610, ...) pins a release
   DEST="${ETHORA_DIR:-$HOME/ethora-install-shared}"
   REPO="https://github.com/dappros/ethora-install.git"
 
