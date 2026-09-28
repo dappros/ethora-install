@@ -308,6 +308,14 @@ fi
 # else; everything optional is switched off so the installer never looks for
 # a module that is not there. Explicit flags given on the command line still
 # win for AI, blockchain and uptime.
+# A checkout without component sources next to deploy/ (the public
+# ethora-install repository) can only run from images: default to the Core
+# edition and image mode there, so the README command needs no flags. A
+# monoserver checkout keeps the full, source-mode defaults.
+if [ ! -d "$SOURCE_ROOT/ethora-backend/services/api" ] && [ ! -d "$SOURCE_ROOT/ethora-app-reactjs/src" ]; then
+  [ -z "$A_EDITION" ] && [ -z "$(from_val '.edition')" ] && A_EDITION="core"
+  [ -z "$A_ALL_MODES" ] && [ -z "$(from_val '.services.backend.mode')" ] && A_ALL_MODES="image"
+fi
 A_EDITION="${A_EDITION:-$(from_val '.edition')}"; A_EDITION="${A_EDITION:-full}"
 case "$A_EDITION" in core|full) ;; *) die "--edition must be core or full" ;; esac
 if [ "$A_EDITION" = "core" ]; then

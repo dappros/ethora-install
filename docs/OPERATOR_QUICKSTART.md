@@ -24,8 +24,7 @@ were given.
 git clone -b 2609 git@github.com:dappros/ethora-install-shared.git ~/ethora-install-shared
 cd ~/ethora-install-shared
 
-deploy/scripts/setup.sh --domain chat.example.com --admin-email ops@example.com \
-    --license-key 'ETHORA1....' --yes
+deploy/scripts/setup.sh --domain chat.example.com --admin-email ops@example.com --yes
 
 sudo deploy/scripts/install.sh
 deploy/scripts/health-check.sh
