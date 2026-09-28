@@ -23,6 +23,13 @@ sudo deploy/scripts/install.sh
 About 10 minutes later, open `https://app.chat.example.com` and sign in with
 your e-mail and the password `setup.sh` printed.
 
+Or, as one line (it clones this repository and runs the same two steps,
+asking for anything you leave out):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dappros/ethora-install/2610/get.sh | bash -s -- --domain chat.example.com --admin-email you@example.com
+```
+
 Before you run it, create four DNS records pointing at the server, all plain
 `A` (or `AAAA`) records, no proxy:
 
@@ -39,6 +46,15 @@ Before you run it, create four DNS records pointing at the server, all plain
 **No domain yet?** Use a magic DNS name for a test install: with server IP
 `203.0.113.10`, pass `--domain 203-0-113-10.sslip.io`. It resolves
 everywhere, gets a real Let's Encrypt certificate, and needs no DNS setup.
+
+## What it looks like
+
+The admin panel after a fresh install (`Ethora Core v2610.5 UNREGISTERED`
+in the corner) and the License page where you register for free:
+
+![Admin panel, Apps page](img/admin-apps.png)
+
+![License page](img/admin-license.png)
 
 ## What the two commands do
 
@@ -133,6 +149,8 @@ sudo deploy/scripts/install.sh --reinstall --yes   # wipe the install (keeps you
 - [docs/legal/](docs/legal/): licence, feature schedule, support policy, privacy notice, third-party notices.
 
 ## Support
+
+Security issues: see [SECURITY.md](SECURITY.md). Contributions: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Run `deploy/scripts/health-check.sh` first; it names the failing component.
 Open an issue in this repository, or e-mail
