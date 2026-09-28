@@ -178,6 +178,11 @@ ensure_submodules_present() {
     if [ ! -d "$repo_root/.git" ]; then
         return 0
     fi
+    # A checkout without submodules (the public installer repository, image
+    # mode) has nothing to initialise; the images carry the sources.
+    if [ ! -f "$repo_root/.gitmodules" ]; then
+        return 0
+    fi
 
     local name
     local missing="false"

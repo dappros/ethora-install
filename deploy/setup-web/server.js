@@ -188,13 +188,12 @@ function finish(code, error, a) {
     // on every later boot). SETUP_LINGER_SECONDS=0 disables the timer.
     const linger = Number(process.env.SETUP_LINGER_SECONDS ?? 900)
     if (linger > 0) {
-      appendLog(`[setup-web] install complete; this page switches itself off in ${Math.round(linger / 60)} minutes\n`)
+      appendLog(`[setup-web] setup complete; this page switches itself off in ${Math.round(linger / 60)} minutes and will not start again\n`)
       setTimeout(() => {
         try { require('child_process').spawn('systemctl', ['disable', '--now', 'ethora-setup.service'], { detached: true, stdio: 'ignore' }).unref() } catch (_) {}
+        setTimeout(() => process.exit(0), 30 * 1000).unref()
       }, linger * 1000).unref()
     }
-    appendLog('[setup-web] setup complete; this page shuts down in 10 minutes and will not start again\n')
-    setTimeout(() => process.exit(0), 10 * 60 * 1000).unref()
   }
 }
 
@@ -296,7 +295,7 @@ document.getElementById('progress').hidden=false;f.querySelectorAll('input,selec
 const es=new EventSource('/api/log');es.onmessage=(m)=>{logEl.textContent+=JSON.parse(m.data);logEl.scrollTop=logEl.scrollHeight};
 const poll=setInterval(async()=>{const s=await (await fetch('/api/state')).json();if(s.phase==='done'||s.phase==='failed'){clearInterval(poll);es.close();
 statusEl.textContent=s.phase==='done'?'Done':'Failed';statusEl.className=s.phase==='done'?'ok':'bad';
-let h='';if(s.phase==='done'){if(s.appUrl)h+='<b>Open <a href="'+s.appUrl+'">'+s.appUrl+'</a></b> and sign in as the admin email.<br>';if(s.adminPassword)h+='Generated admin password (shown once, also in deploy.yml): <code>'+s.adminPassword+'</code><br>';h+='This setup page shuts down in 10 minutes.'}else{h+=(s.error||'')+' Fix and submit again.';go.disabled=false;f.querySelectorAll('input,select,textarea').forEach(x=>x.disabled=false)}
+let h='';if(s.phase==='done'){if(s.appUrl)h+='<b>Open <a href="'+s.appUrl+'">'+s.appUrl+'</a></b> and sign in as the admin email.<br>';if(s.adminPassword)h+='Generated admin password (shown once, also in deploy.yml): <code>'+s.adminPassword+'</code><br>';h+='This setup page switches itself off in 15 minutes.'}else{h+=(s.error||'')+' Fix and submit again.';go.disabled=false;f.querySelectorAll('input,select,textarea').forEach(x=>x.disabled=false)}
 resultEl.innerHTML=h}},2000)});
 </script></main></body></html>`
 }

@@ -12,7 +12,7 @@ Metadata:
       - Label: { default: "Ethora setup (leave RootDomain empty to use the web page)" }
         Parameters: [RootDomain, AdminEmail, LicenseKey, TlsMode, AiEnabled, AiApiKey, DisplayName]
       - Label: { default: "Instance" }
-        Parameters: [AmiId, InstanceType, KeyName, VpcId, SubnetId, VolumeSizeGb, AdminCidr]
+        Parameters: [AmiId, InstanceType, KeyName, VpcId, SubnetId, VolumeSizeGb, AdminCidr, ElasticIpAllocationId]
 
 Parameters:
   AmiId:
@@ -71,8 +71,19 @@ Parameters:
     Type: String
     Default: Ethora
 
+  ElasticIpAllocationId:
+    Type: String
+    Default: ""
+    Description: >
+      Optional: allocation id (eipalloc-...) of an Elastic IP you already own.
+      It is attached at first boot, so the address is known before launch:
+      create the DNS records (or use <ip-with-dashes>.sslip.io as RootDomain)
+      and install unattended in one go. Leave empty for a dynamic address.
+    AllowedPattern: "^(eipalloc-[0-9a-f]+)?$"
+
 Conditions:
   Unattended: !Not [!Equals [!Ref RootDomain, ""]]
+  HasElasticIp: !Not [!Equals [!Ref ElasticIpAllocationId, ""]]
 
 Resources:
   SecurityGroup:
@@ -107,6 +118,22 @@ Resources:
             set -uo pipefail
             exec > /var/log/ethora-userdata.log 2>&1
             SRC=/home/ubuntu/ethora-install-shared
+            # With an Elastic IP the association lands a few seconds after boot;
+            # wait for the public address to change before anything asks for a
+            # certificate (the instance-id password of the setup page is unaffected).
+            public_ip() {
+              local t; t=$(curl -fs --max-time 5 -X PUT -H "X-aws-ec2-metadata-token-ttl-seconds: 60" http://169.254.169.254/latest/api/token || true)
+              curl -fs --max-time 5 -H "X-aws-ec2-metadata-token: $t" http://169.254.169.254/latest/meta-data/public-ipv4 || true
+            }
+            if [ -n "${ElasticIpAllocationId}" ]; then
+              ip0=$(public_ip)
+              for _ in $(seq 1 36); do
+                ip1=$(public_ip)
+                [ -n "$ip1" ] && [ "$ip1" != "$ip0" ] && break
+                sleep 5
+              done
+              echo "public address now: $ip1 (was $ip0)"
+            fi
             if [ -z "${RootDomain}" ]; then
               echo "no RootDomain given; leaving the setup page enabled"
               exit 0
@@ -127,12 +154,20 @@ Resources:
             exit $rc
           - {}
 
+  ElasticIpAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Condition: HasElasticIp
+    Properties:
+      AllocationId: !Ref ElasticIpAllocationId
+      InstanceId: !Ref Instance
+
 Outputs:
   PublicIp:
-    Value: !GetAtt Instance.PublicIp
+    Description: With ElasticIpAllocationId set, the address is the Elastic IP you attached.
+    Value: !If [HasElasticIp, !Sub "Elastic IP ${ElasticIpAllocationId}", !GetAtt Instance.PublicIp]
   SetupPage:
     Description: First-boot setup page (only when RootDomain was left empty). User admin, password = instance id below.
-    Value: !Sub "http://${Instance.PublicIp}:8888"
+    Value: !If [HasElasticIp, "http://<your Elastic IP>:8888", !Sub "http://${Instance.PublicIp}:8888"]
   InstanceId:
     Description: Also the setup page password
     Value: !Ref Instance
@@ -141,4 +176,7 @@ Outputs:
     Value: !Sub "https://app.${RootDomain}"
   DnsRecordsNeeded:
     Condition: Unattended
-    Value: !Sub "A records -> ${Instance.PublicIp}: api.${RootDomain}, app.${RootDomain}, xmpp.${RootDomain}, files.${RootDomain}"
+    Value: !If
+      - HasElasticIp
+      - !Sub "A records -> your Elastic IP: api.${RootDomain}, app.${RootDomain}, xmpp.${RootDomain}, files.${RootDomain}"
+      - !Sub "A records -> ${Instance.PublicIp}: api.${RootDomain}, app.${RootDomain}, xmpp.${RootDomain}, files.${RootDomain}"

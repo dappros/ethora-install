@@ -25,13 +25,15 @@ images are public. `-var install_ref=2610` bakes a specific line; the
 `images` variable lists the tags pre-pulled and must match that line's
 `deploy.yml` defaults. `packer-manifest.json` records the AMI id.
 
-No local Packer install is needed:
-
-```bash
-docker run --rm -v "$PWD/deploy/aws/packer:/work" -w /work \
-  -v ~/.aws:/root/.aws:ro -e AWS_PROFILE=ethora-ami-builder \
-  hashicorp/packer:light build -var region=us-east-2 .
-```
+Run Packer from an EC2 host in the target region (a small Ubuntu instance
+with Packer installed and the same IAM credentials, deleted or wiped after
+the bake). The bake keeps an SSH session open to the builder for about
+fifteen minutes while it pulls images; from an office or home network that
+session drops with "Script disconnected unexpectedly" and the build fails,
+while from inside the region it completes every time. Copy `packer/` and the
+credentials over, run the two commands above, then remove `~/.aws` from the
+host. `-var vpc_id=... -var subnet_id=...` pick the network for the builder
+when the account has no default VPC.
 
 ### Marketplace hardening (applied by the last build step)
 
@@ -66,8 +68,25 @@ aws cloudformation create-stack --stack-name ethora \
 ```
 
 Point `api.`, `app.`, `xmpp.` and `files.<RootDomain>` at the instance's
-public IP (or Elastic IP) before Let's Encrypt runs; with `TlsMode=none` the
-stack comes up over HTTP for testing.
+public IP before Let's Encrypt runs; with `TlsMode=none` the stack comes up
+over HTTP for testing.
+
+Because the address of a plain instance is only known after launch, the
+unattended path works best with an Elastic IP you allocate first: pass its
+allocation id as `ElasticIpAllocationId`, create the DNS records for that
+address (or use `<ip-with-dashes>.sslip.io` as `RootDomain` for a test
+install, which needs no DNS at all), and the stack attaches the address at
+first boot before anything asks for a certificate. Without the parameter,
+leave `RootDomain` empty, read `PublicIp` from the stack outputs, create the
+records, then finish on the setup page.
+
+The install itself takes about five minutes on the AMI (every image is
+pre-pulled). The setup page accepts one install: a second submit while it
+runs, or after it has finished, is refused with HTTP 409, and the page
+switches itself off fifteen minutes after a successful install and does not
+start again on later boots. Further changes go through `deploy.yml` and
+`update.sh` over SSH. Both paths were exercised end to end on 2026-09-28
+(bake on an EC2 helper, then the setup-page and the unattended launch).
 
 ## AWS Marketplace AMI checklist (what the Packer build already does)
 
@@ -86,6 +105,7 @@ pricing model (BYOL first, then contract dimensions). See
 `docs/CONTAINER_IMAGES.md` and `docs/LICENSING.md` for what the image runs and
 how the license key is enforced.
 
-Not yet exercised: these templates have not been run against an AWS account
-from this repo. The first `packer build` and stack launch are the acceptance
-test.
+When rebaking for a new listing version: the setup page and the installer
+in the image are whatever the public installer's `main` held at bake time;
+`update.sh` on the instance brings them forward, but the first-boot page
+only ever runs the baked copy.
