@@ -99,7 +99,7 @@ previous image build in `deploy.yml` and run `update.sh` on the same ref.
 - [docs/LICENSING.md](docs/LICENSING.md): how license keys work, the grace window, air-gapped installs.
 - [docs/CONTAINER_IMAGES.md](docs/CONTAINER_IMAGES.md): the images, versions, what each replaces.
 - [docs/runbooks/](docs/runbooks/): backup and restore, troubleshooting, migrations.
-- [docs/legal/](docs/legal/): Ethora Core license, feature schedule, support policy, privacy and telemetry notice.
+- [docs/legal/](docs/legal/): Ethora Core license, feature schedule, support policy, privacy and telemetry notice, third-party notices.
 
 ## Support
 
