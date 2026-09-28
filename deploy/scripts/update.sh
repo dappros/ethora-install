@@ -1036,16 +1036,28 @@ else
     exit 1
   fi
 
-  if [ ! -d "$SRC_ROOT/ethora-backend" ] || [ ! -d "$SRC_ROOT/ethora-app-reactjs" ]; then
+  # Run modes decide which component sources the checkout must carry. A
+  # service that runs from an image needs none (that is what a Docker Hub
+  # install is: ethora-install plus images); the sync loop below already
+  # skips directories that are absent.
+  _mode() { local v; v="$(yq eval "$1 // \"\"" "$CANONICAL_DEPLOY_CONFIG_FILE" 2>/dev/null || true)"; [ -z "$v" ] || [ "$v" = "null" ] && v="$2"; printf '%s' "${v:-source}"; }
+  if command -v yq >/dev/null 2>&1 && [ -f "$CANONICAL_DEPLOY_CONFIG_FILE" ]; then
+    UPD_BACKEND_MODE="$(_mode '.services.backend.mode' "${BACKEND_MODE:-source}")"
+    UPD_FRONTEND_MODE="$(_mode '.services.frontend.mode' "${FRONTEND_MODE:-source}")"
+  else
+    UPD_BACKEND_MODE="${BACKEND_MODE:-source}"; UPD_FRONTEND_MODE="${FRONTEND_MODE:-source}"
+  fi
+
+  if { [ "$UPD_BACKEND_MODE" != "image" ] && [ ! -d "$SRC_ROOT/ethora-backend" ]; } || { [ "$UPD_FRONTEND_MODE" != "image" ] && [ ! -d "$SRC_ROOT/ethora-app-reactjs" ]; }; then
     echo "[ERROR] Source repo does not look like an Ethora monoserver checkout: $SRC_ROOT" >&2
-    echo "[ERROR] Expected to find: $SRC_ROOT/ethora-backend and $SRC_ROOT/ethora-app-reactjs" >&2
+    echo "[ERROR] Expected to find: $SRC_ROOT/ethora-backend and $SRC_ROOT/ethora-app-reactjs (or services.<x>.mode: image in deploy.yml)" >&2
     exit 1
   fi
 
   # Checking the manifest rather than the directory: an uninitialized submodule
   # leaves an empty directory that would otherwise pass this preflight and be
   # synced forward, failing much later inside npm with an ENOENT.
-  if [ ! -f "$SRC_ROOT/ethora-chat-component/package.json" ]; then
+  if [ "$UPD_FRONTEND_MODE" != "image" ] && [ ! -f "$SRC_ROOT/ethora-chat-component/package.json" ]; then
     if [ -d "$SRC_ROOT/ethora-chat-component" ]; then
       echo "[ERROR] Source chat component at $SRC_ROOT/ethora-chat-component is an empty directory (submodule not initialized)." >&2
       echo "[ERROR] Run: git -C \"$SRC_ROOT\" submodule update --init ethora-chat-component" >&2
