@@ -307,10 +307,18 @@ else
     fi
 fi
 
-# Check if Docker is running
+# Check if Docker is running. On a bare host the installer installs Docker
+# itself, so before install.sh has run (setup.sh validates the config it just
+# wrote) a missing Docker is expected, not an error.
 log "Checking Docker..."
-if ! docker info > /dev/null 2>&1; then
-    error "Docker is not running. Please start Docker."
+if ! command -v docker >/dev/null 2>&1; then
+    warn "Docker is not installed yet; install.sh installs it."
+elif ! docker info > /dev/null 2>&1; then
+    if [ "${VALIDATE_PRE_INSTALL:-false}" = "true" ]; then
+        warn "Docker is installed but not running or not accessible; install.sh starts it."
+    else
+        error "Docker is not running. Please start Docker."
+    fi
 fi
 
 # Check if ports are available

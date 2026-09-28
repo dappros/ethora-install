@@ -522,7 +522,7 @@ fi
 # ---------------------------------------------------------------- validate --
 if [ "$VALIDATE" = true ] && [ "$OUT_FILE" = "$CANONICAL_OUT" ] && [ -x "$SCRIPT_DIR/validate.sh" ]; then
   log "running validate.sh"
-  if ! "$SCRIPT_DIR/validate.sh"; then
+  if ! VALIDATE_PRE_INSTALL=true "$SCRIPT_DIR/validate.sh"; then
     die "validate.sh reported problems; fix $OUT_FILE and re-run (or re-run setup.sh --from $OUT_FILE)"
   fi
 fi
