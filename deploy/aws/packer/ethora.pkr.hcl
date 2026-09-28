@@ -91,6 +91,7 @@ source "amazon-ebs" "ethora" {
   ami_name        = local.ami_name
   ami_description = "Ethora Core (${var.install_ref}): self-hosted chat server with API, web chat, admin panel and XMPP. Open http://<ip>:8888 after launch (user admin, password = instance id)."
   ssh_username    = "ubuntu"
+  ssh_keep_alive_interval     = "10s"
   vpc_id                      = var.vpc_id
   subnet_id                   = var.subnet_id
   associate_public_ip_address = true
@@ -132,9 +133,17 @@ build {
       "INSTALL_REPO=${var.install_repo}",
       "IMAGES=${join(" ", var.images)}",
       "DEBIAN_FRONTEND=noninteractive",
+      "NEEDRESTART_MODE=a",
+      "NEEDRESTART_SUSPEND=1",
     ]
     inline = [
       "set -euxo pipefail",
+      # --- a fresh Ubuntu image runs cloud-init and unattended-upgrades at boot;
+      #     both can restart sshd under us and drop the build. Wait, then stop them. ---
+      "cloud-init status --wait >/dev/null || true",
+      "sudo systemctl disable --now apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service >/dev/null 2>&1 || true",
+      "sudo systemctl kill --kill-who=all apt-daily.service apt-daily-upgrade.service >/dev/null 2>&1 || true",
+      "while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 3; done",
       # --- base packages and every pending security update (Marketplace scans the AMI) ---
       "sudo apt-get update -y",
       "sudo apt-get upgrade -y",
