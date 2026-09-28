@@ -1693,7 +1693,17 @@ main() {
     
     # Ask user if they want to clean up previous installations (unless --reset or --cleanup-only is used)
     # In non-interactive mode, skip prompts and proceed with defaults.
-    if [ "$RESET_DB" != "true" ] && [ "$CLEANUP_ONLY" != "true" ] && [ "${NON_INTERACTIVE:-false}" != "true" ]; then
+    # Only worth asking when there is something to clean and someone to answer:
+    # a bare host gets no question, and a run without a terminal (cloud-init,
+    # nohup, CI) keeps whatever is there instead of dying on read.
+    previous_install=false
+    if [ -d "$ROOT_DIR" ] && [ -n "$(ls -A "$ROOT_DIR" 2>/dev/null)" ]; then previous_install=true; fi
+    if command -v docker >/dev/null 2>&1 && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qE '^(deploy-|ethora-)'; then previous_install=true; fi
+    if [ "$RESET_DB" != "true" ] && [ "$CLEANUP_ONLY" != "true" ] && [ "${NON_INTERACTIVE:-false}" != "true" ] && [ "$previous_install" = true ] && [ ! -t 0 ]; then
+        log "Previous installation detected; keeping it (no terminal to ask). Use --reinstall or --reset for a clean start."
+    elif [ "$RESET_DB" != "true" ] && [ "$CLEANUP_ONLY" != "true" ] && [ "${NON_INTERACTIVE:-false}" != "true" ] && [ "$previous_install" = false ]; then
+        log "Fresh host: nothing to clean up"
+    elif [ "$RESET_DB" != "true" ] && [ "$CLEANUP_ONLY" != "true" ] && [ "${NON_INTERACTIVE:-false}" != "true" ]; then
         echo
         info "Do you want to clean up any previous installations?"
         info "This will:"
