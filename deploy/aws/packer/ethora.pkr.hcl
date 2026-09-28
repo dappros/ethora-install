@@ -61,6 +61,16 @@ variable "images" {
     "centrifugo/centrifugo:v6",
   ]
 }
+# Where the builder instance runs. Empty = the account's default VPC; set
+# both to build in a VPC without one (the builder needs a public IP).
+variable "vpc_id" {
+  type    = string
+  default = ""
+}
+variable "subnet_id" {
+  type    = string
+  default = ""
+}
 variable "ami_name_prefix" {
   type    = string
   default = "ethora"
@@ -81,6 +91,9 @@ source "amazon-ebs" "ethora" {
   ami_name        = local.ami_name
   ami_description = "Ethora Core (${var.install_ref}): self-hosted chat server with API, web chat, admin panel and XMPP. Open http://<ip>:8888 after launch (user admin, password = instance id)."
   ssh_username    = "ubuntu"
+  vpc_id                      = var.vpc_id
+  subnet_id                   = var.subnet_id
+  associate_public_ip_address = true
 
   source_ami_filter {
     filters = {
