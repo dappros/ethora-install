@@ -37,7 +37,7 @@ main() {
   # When piped from curl, stdin is the script; give setup.sh the terminal so it
   # can prompt for what was not passed as arguments. Without a usable terminal
   # (cloud-init, ssh without -t) setup.sh takes its defaults instead.
-  if [ ! -t 0 ] && ( : </dev/tty ) 2>/dev/null; then exec </dev/tty; fi
+  if [ ! -t 0 ] && [ -t 1 ] && sh -c 'exec </dev/tty' 2>/dev/null; then exec </dev/tty; fi
 
   # A second run must not regenerate the secrets of a working install:
   # reconfigure from the existing file instead (--from keeps every value not
