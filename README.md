@@ -27,7 +27,7 @@ Or, as one line (it clones this repository and runs the same two steps,
 asking for anything you leave out):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dappros/ethora-install/2610/get.sh | bash -s -- --domain chat.example.com --admin-email you@example.com
+curl -fsSL https://get.ethora.com | bash -s -- --domain chat.example.com --admin-email you@example.com
 ```
 
 Before you run it, create four DNS records pointing at the server, all plain
@@ -84,15 +84,16 @@ What you get:
 ```bash
 cd ~/ethora-install-shared
 git pull
-sudo deploy/scripts/update.sh --ref 2610
+sudo deploy/scripts/update.sh --ref main
 ```
 
-`2610` is the current release line (year and month); the branch you cloned
-has the same name. Running the update on the same line pulls the latest
-fixes. When a new line is announced, read
-[docs/RELEASE_NOTES_OPERATORS.md](docs/RELEASE_NOTES_OPERATORS.md) and pass
-the new line. Roll back with `--rollback <commit>` using the commit the
-update log printed at its start.
+`main` always is the current stable release line, so the same command keeps
+working across releases. Release lines are named by year and month
+(`2610`, `2611`, ...) and exist as branches: clone one with `-b 2610` and
+update with `--ref 2610` to stay pinned. Before a new line reaches `main`,
+its changes are in [docs/RELEASE_NOTES_OPERATORS.md](docs/RELEASE_NOTES_OPERATORS.md).
+Roll back with `--rollback <commit>` using the commit the update log printed
+at its start.
 
 ## Editions
 
