@@ -35,6 +35,11 @@ info() {
 
 # Source environment variables
 ENV_FILE="$DEPLOY_DIR/.deploy.env"
+# .deploy.env is root-only (it holds secrets); the docs run this script without
+# sudo, so re-run under sudo instead of failing on the first line.
+if [ -f "$ENV_FILE" ] && [ ! -r "$ENV_FILE" ] && [ "$(id -u)" != "0" ] && command -v sudo >/dev/null 2>&1; then
+    exec sudo -E "$0" "$@"
+fi
 if [ -f "$ENV_FILE" ]; then
     source "$ENV_FILE"
 else
@@ -322,14 +327,24 @@ if command -v pm2 &> /dev/null; then
     _lic_grace="$(printf '%s' "$_ping_json" | sed -n 's/.*"license":{[^}]*"graceEndsAt":"\([^"]*\)".*/\1/p')"
     _lic_exp="$(printf '%s' "$_ping_json" | sed -n 's/.*"license":{[^}]*"expiresAt":"\([^"]*\)".*/\1/p')"
     _lic_lid="$(printf '%s' "$_ping_json" | sed -n 's/.*"license":{[^}]*"lid":"\([^"]*\)".*/\1/p')"
+    _lic_tier="$(printf '%s' "$_ping_json" | sed -n 's/.*"license":{[^}]*"tier":"\([a-z-]*\)".*/\1/p')"
+    _lic_apps="$(printf '%s' "$_ping_json" | sed -n 's/.*"license":{[^}]*"limits":{"apps":\([0-9]*\).*/\1/p')"
+    _lic_users="$(printf '%s' "$_ping_json" | sed -n 's/.*"license":{[^}]*"limits":{[^}]*"users":\([0-9]*\).*/\1/p')"
+    _lic_caps=""; [ -n "$_lic_apps" ] && _lic_caps=", ${_lic_apps} apps / ${_lic_users:-?} users per server"
+    case "$_lic_state:$_lic_tier" in
+        licensed:core-registered)
+            info "✓ Edition: Ethora Core, registered (${_lic_lid:-?}${_lic_caps}, no expiry)" ;;
+        unlicensed:core)
+            info "✓ Edition: Ethora Core, unregistered (free${_lic_caps}; register on the admin panel License page to raise the caps)" ;;
+    esac
     case "$_lic_state" in
         licensed)
-            info "✓ License: licensed (${_lic_lid:-?}, expires ${_lic_exp:-?})" ;;
+            [ "$_lic_tier" = core-registered ] || info "✓ License: licensed (${_lic_lid:-?}, ${_lic_tier:-enterprise}, expires ${_lic_exp:-?})" ;;
         grace)
             warn "⚠ License: GRACE PERIOD until ${_lic_grace:-?} (${_lic_reason:-?}). Install a license key via deploy.yml license.key or the admin panel License page. See docs/LICENSING.md" ;;
         restricted)
             warn "✗ License: RESTRICTED (${_lic_reason:-?}). Chat works, but creating apps/users is disabled until a valid key is installed. See docs/LICENSING.md" ;;
-        "")
+        ""|unlicensed)
             ;;
         *)
             warn "License: state ${_lic_state}" ;;
