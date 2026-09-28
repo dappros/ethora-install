@@ -62,11 +62,11 @@ variable "ghcr_token" {
 }
 variable "api_image" {
   type    = string
-  default = "ghcr.io/dappros/ethora-api:2610"
+  default = "docker.io/dappros/ethora-api:2610"
 }
 variable "frontend_image" {
   type    = string
-  default = "ghcr.io/dappros/ethora-frontend:2610"
+  default = "docker.io/dappros/ethora-frontend:2610"
 }
 variable "ami_name_prefix" {
   type    = string

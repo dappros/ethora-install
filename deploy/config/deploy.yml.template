@@ -89,7 +89,7 @@ services:
     #            is built on the host and no Node.js is needed for the API.
     # Private images need `docker login ghcr.io` on the host before install.
     mode: source
-    image: ghcr.io/dappros/ethora-api:2610
+    image: docker.io/dappros/ethora-api:2610
     # Nginx request body limit for API uploads such as avatars and attachments.
     client_max_body_size: 50M
     # Email TLD validation policy (controls Joi `string().email()` strictness on
@@ -115,7 +115,7 @@ services:
     #          directory (deploy/scripts/frontend-from-image.sh); host nginx
     #          serves it exactly as before, configured at runtime from /config.js
     mode: source
-    image: ghcr.io/dappros/ethora-frontend:2610
+    image: docker.io/dappros/ethora-frontend:2610
   push:
     enabled: true
     port: 8098
@@ -237,7 +237,7 @@ services:
     screenshots: false
   ejabberd:
     mode: source                                  # source | image (published ethora-xmpp image with the custom modules)
-    image: ghcr.io/dappros/ethora-xmpp:2610
+    image: docker.io/dappros/ethora-xmpp:2610
     admin_password: # Auto-generated if not provided
     # Optional: full URLs for ejabberd tracking modules (mod_track_member /
     # mod_track_last_message / mod_track_message).
