@@ -110,7 +110,13 @@ function existingAnswers() {
 // ---------------------------------------------------------------- run ----
 function startSetup(a) {
   if (state.phase === 'running') return { ok: false, error: 'an install is already running' }
-  const args = ['--yes', '--force', '--out', CONFIG_FILE]
+  // Single use: once an install completed, this page must never run
+  // another (a second submit would reconfigure a live server). Changes go
+  // through deploy.yml and update.sh over SSH from here on.
+  if (fs.existsSync(DONE_FILE)) return { ok: false, error: 'setup already completed on this server; further changes: edit deploy/config/deploy.yml and run update.sh over SSH' }
+  // No --force: an existing deploy.yml (a retry after a failed install) is
+  // reconfigured with its secrets kept by setup.sh itself.
+  const args = ['--yes', '--out', CONFIG_FILE]
   const s = (v) => (typeof v === 'string' ? v.trim() : '')
   if (a.import_yaml && s(a.import_yaml)) {
     const tmp = path.join(require('os').tmpdir(), `ethora-import-${process.pid}.yml`)
@@ -177,6 +183,16 @@ function finish(code, error, a) {
   appendLog(`[setup-web] ${new Date().toISOString()} ${state.phase}${error ? ': ' + error : ''}\n`)
   if (code === 0 && !DRY_RUN && a && a.run_install !== 'off') {
     try { fs.mkdirSync(path.dirname(DONE_FILE), { recursive: true }); fs.writeFileSync(DONE_FILE, new Date().toISOString() + '\n') } catch (e) { appendLog(`[setup-web] could not write ${DONE_FILE}: ${e.message}\n`) }
+    // The page has done its job: keep it up long enough for the operator to
+    // read the summary, then switch it off for good (port 8888 stays closed
+    // on every later boot). SETUP_LINGER_SECONDS=0 disables the timer.
+    const linger = Number(process.env.SETUP_LINGER_SECONDS ?? 900)
+    if (linger > 0) {
+      appendLog(`[setup-web] install complete; this page switches itself off in ${Math.round(linger / 60)} minutes\n`)
+      setTimeout(() => {
+        try { require('child_process').spawn('systemctl', ['disable', '--now', 'ethora-setup.service'], { detached: true, stdio: 'ignore' }).unref() } catch (_) {}
+      }, linger * 1000).unref()
+    }
     appendLog('[setup-web] setup complete; this page shuts down in 10 minutes and will not start again\n')
     setTimeout(() => process.exit(0), 10 * 60 * 1000).unref()
   }
