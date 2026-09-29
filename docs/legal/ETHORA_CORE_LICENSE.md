@@ -1,12 +1,12 @@
 # Ethora Core Software License Agreement
 
-Version 1.0 draft. **Draft for legal review, 25 September 2026.** Not yet in force.
+Version 1.0. Effective 29 September 2026.
 
 This agreement governs use of the proprietary Ethora Core server software distributed by Dappros Ltd. It allows qualifying Core functionality to be used without a subscription for the release supplied under this agreement. Paid features and support require separate terms. Read it before installing or using the software.
 
 ## 1. Parties and acceptance
 
-This agreement is between Dappros Ltd, a company registered in England and Wales under company number 11455432 ("Dappros", "we", "us"), and the person or legal entity installing or using the Software ("you"). If you act for an organisation, you confirm you have authority to bind it. By downloading, installing, copying or using the Software, you accept this agreement. If you do not accept it, do not use the Software.
+This agreement is between Dappros Ltd, a company registered in England and Wales under company number 11455432, with its registered office at 38 Munden Grove, Watford, WD24 7EE, United Kingdom ("Dappros", "we", "us"), and the person or legal entity installing or using the Software ("you"). If you act for an organisation, you confirm you have authority to bind it. By downloading, installing, copying or using the Software, you accept this agreement. If you do not accept it, do not use the Software.
 
 The Software is intended for business and professional use. If you are a consumer, statutory consumer rights apply and prevail to the extent they cannot lawfully be excluded.
 
@@ -34,7 +34,7 @@ Dappros reserves the right to display a "Powered by Ethora" notice, with a link 
 
 ### Core Features and their limits
 
-The Core Features and the limits of each edition are published in the feature schedule that accompanies each Release (`docs/legal/FEATURE_SCHEDULE.md` in the installer repository). Registering an installation with Dappros (domain name and e-mail address) is optional, free, and raises the limits as the feature schedule states; it does not change the licence.
+The Core Features and the limits of each edition are published in the feature schedule that accompanies each Release (published at https://ethora.com/legal/feature-schedule and shipped as `docs/legal/FEATURE_SCHEDULE.md` in the installer repository). Registering an installation with Dappros (domain name and e-mail address) is optional, free, and raises the limits as the feature schedule states; it does not change the licence.
 
 ## 4. Paid Features and trials
 
@@ -82,16 +82,4 @@ You may end this agreement at any time by ceasing use and deleting copies of the
 
 This agreement is governed by the laws of England and Wales, and the courts of England and Wales have exclusive jurisdiction, subject to any mandatory rights that apply to you. If a provision is unenforceable, the remainder remains effective. Failure to enforce a provision is not a waiver. You may not assign this agreement without Dappros's prior written consent, except as part of a sale of substantially all of your relevant business and assets, provided the successor accepts this agreement. Dappros may assign it to a successor to the Ethora business. This agreement and any applicable separate order constitute the agreement about the Software; they do not override non-excludable statutory rights or the separate licences described in section 6.
 
-For licence notices and questions, contact Dappros through the contact details published at https://ethora.com/. The Release should include a copy of this agreement and identify the version of the licence that applies.
-
----
-
-## Publication checklist for Dappros and legal counsel
-
-1. Confirm the exact legal entity, contact address, support email and whether the licence should exclude consumer use entirely.
-2. Inventory every component in the images, including ejabberd, MongoDB, Redis, base images, packages and any copyleft or source-offer duties. Publish third-party notices and source offers as required.
-3. Define Core Features and limits in a versioned, public feature schedule. Verify that the shipped code actually implements permanent Core use and keeps basic administration available after trial expiry. The current behaviour described in the R&D notes does not yet match this draft.
-4. Decide whether the free licence permits commercial hosting for unrelated customers; this draft does, while restricting redistribution of the server image.
-5. Review the £1,000 cap, exclusions, cure period, assignment and consumer language with UK software counsel for enforceability and the intended customer base.
-6. Put this licence in the image and documentation, link it from the Docker Hub description, and label the image with the licence URL and release digest. Keep a copy of each historical licence with the corresponding release.
-7. Define separate Pro and Enterprise terms, including paid feature expiry, support, security updates, data processing and Marketplace order precedence. Do not claim uninterrupted messaging, air-gap support or no call-home until verified against every component.
+For licence notices and questions, contact Dappros at legal@ethora.com or at the registered office address above. The Release should include a copy of this agreement and identify the version of the licence that applies.

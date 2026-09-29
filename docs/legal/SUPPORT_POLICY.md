@@ -1,13 +1,13 @@
 # Ethora Server Support Policy
 
-**Draft for review.** Version 0.1, [date].
+Version 1.0, effective 29 September 2026.
 
 ## Editions and channels
 
 | Edition | How you got it | Support |
 |---|---|---|
-| Ethora Core, unregistered | self-installed from Docker Hub, GitHub or a marketplace image | community support: documentation, the public issue tracker, and the `#ethora` community channel. Best effort, no response-time commitment. |
-| Ethora Core, registered | registered the install for free from the admin panel | the above, plus e-mail support at [support@ethora.com] and the ticketing system, quoting the license id shown on the License page. Best effort, no response-time commitment. |
+| Ethora Core, unregistered | self-installed from Docker Hub, GitHub or a marketplace image | community support: documentation, the public issue tracker, and the community forum at https://forum.ethora.com/. Best effort, no response-time commitment. |
+| Ethora Core, registered | registered the install for free from the admin panel | the above, plus e-mail support at support@ethora.com and the ticketing system, quoting the license id shown on the License page. Best effort, no response-time commitment. |
 | Enterprise, including trials | a signed agreement or trial with Dappros | the support terms in that agreement, which take precedence over this policy |
 
 Marketplace subscriptions (AWS Marketplace, DigitalOcean) fall under the
@@ -33,8 +33,8 @@ contain every secret of your install.
 
 ## Security issues
 
-Report vulnerabilities privately to [security@ethora.com]. Do not open a
-public issue. We acknowledge reports within [3] business days and publish a
+Report vulnerabilities privately to security@ethora.com. Do not open a
+public issue. We acknowledge reports within 3 business days and publish a
 fix or mitigation before public disclosure where possible.
 
 ## Backups and data
@@ -49,4 +49,4 @@ Release lines are named by year and month (`2609`, `2610`). A line receives
 fixes for as long as it is the current or previous production line. Upgrade
 notes for operators are published with every line.
 
-Contact: [support@ethora.com].
+Contact: support@ethora.com.

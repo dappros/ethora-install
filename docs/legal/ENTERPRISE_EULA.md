@@ -1,11 +1,9 @@
 # Ethora Server End User License Agreement
 
-**Draft for legal review. Not yet in force.** Placeholders in square brackets
-must be completed and the text reviewed by counsel before it is published or
-attached to a listing.
-
-Version 0.1, [date]. Licensor: Dappros Ltd, [registered address], [company
-number] ("Dappros", "we"). Licensee: the person or organisation that
+Version 1.0, effective 29 September 2026. Licensor: Dappros Ltd, a company
+registered in England and Wales under company number 11455432, with its
+registered office at 38 Munden Grove, Watford, WD24 7EE, United Kingdom
+("Dappros", "we"). Licensee: the person or organisation that
 installs or runs the Software ("you").
 
 ## 1. What this agreement covers
@@ -13,7 +11,11 @@ installs or runs the Software ("you").
 This agreement governs your use of the Ethora Server software distributed as
 container images, installer scripts, AMIs and related files (the
 "Software"), including the API, admin panel, XMPP server with Dappros
-modules, and any optional modules you are licensed to run. It does not cover
+modules, and any optional modules you are licensed to run (the "Paid Features"). Use of the Software's
+Core functionality without a license key is governed by the Ethora Core
+Software License (https://ethora.com/legal/ethora-core-license); this
+agreement adds the rights described below for as long as you hold a valid
+license key. It does not cover
 the separately licensed open-source components listed in section 9, which
 remain under their own licenses.
 
@@ -42,9 +44,17 @@ breach of applicable law, including data protection and export control law;
 The Software checks the validity of the license key locally. Where call-home
 is enabled, it also reports the information described in the Privacy and
 Telemetry Notice to Dappros so that keys can be renewed and instance counts
-verified. Without a valid key the Software runs with reduced functionality
-after the grace period described in the documentation; chat functionality
-is not disabled.
+verified. If a key expires or stops being valid, the Paid Features it
+enables remain available for the grace period described in the
+documentation. After the grace period the installation continues to run as
+Ethora Core under the Ethora Core Software License. Core functionality is
+not reduced and has no time limit, but the Paid Features are no longer
+available and the Ethora Core limits per server apply: 5 apps and 500 end
+user accounts for an unregistered installation, and 10 apps and 5,000 end
+user accounts for an installation registered with Dappros free of charge
+(see the feature schedule at https://ethora.com/legal/feature-schedule).
+Reaching a limit prevents the creation of further apps or user accounts; it
+does not affect existing apps, accounts, messages or files.
 
 ## 5. Ownership
 
@@ -70,38 +80,42 @@ responsible for installing them.
 
 ## 8. Warranty and liability
 
-The Software is provided "as is" for trial and community use. To the extent
+Except as expressly stated in your enterprise agreement or order, the
+Software is provided "as is". To the extent
 permitted by law, Dappros disclaims all implied warranties, including
 merchantability, fitness for a particular purpose and non-infringement.
 Dappros is not liable for indirect, consequential or special damages, loss of
 data, loss of profit or loss of business. Dappros's total liability under
-this agreement is limited to the amounts you paid for the license in the
-twelve months before the claim, or [amount] where nothing was paid. Nothing
+this agreement is limited to the lesser of (a) the amounts you paid for the
+license in the twelve months before the claim and (b) 100,000 GBP. Nothing
 in this agreement limits liability that cannot be limited by law.
 
 ## 9. Open-source components
 
 The Software includes or depends on open-source software, including ejabberd
-(GNU GPL v2 with the ProcessOne exception for modules), MongoDB, MySQL,
+(GNU GPL v2), MongoDB, MySQL,
 Redis, MinIO, Node.js and the packages listed in the third-party notices file
-shipped with the Software. Those components are licensed under their own
+shipped with the Software and published at
+https://ethora.com/legal/third-party-notices. Those components are licensed under their own
 terms, which take precedence for those components.
 
 ## 10. Term and termination
 
-This agreement runs for as long as you hold a valid license key. Dappros may
-terminate it if you breach section 3 and do not cure the breach within 30
-days of notice. On termination you must stop running the Software and delete
-your copies, except that you may keep your own data. Sections 5, 6, 8 and 11
+This agreement runs for the term of your license key, including any grace
+period. Dappros may terminate it if you breach section 3 and do not cure the
+breach within 30 days of notice. When this agreement ends, your right to use
+the Paid Features ends. Your continued use of the Software's Core
+functionality is governed by the Ethora Core Software License, and you keep
+your own data. Sections 5, 6, 8 and 11
 survive termination.
 
 ## 11. General
 
-This agreement is governed by the laws of [England and Wales], and the courts
-of [England and Wales] have exclusive jurisdiction. It is the entire
+This agreement is governed by the laws of England and Wales, and the courts
+of England and Wales have exclusive jurisdiction. It is the entire
 agreement about the Software and replaces any earlier terms. If any provision
 is unenforceable, the rest remains in force. Dappros may update this
 agreement for future versions of the Software; the version shipped with a
 release applies to that release.
 
-Contact: [legal@ethora.com].
+Contact: legal@ethora.com.

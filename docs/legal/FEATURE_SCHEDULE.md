@@ -1,9 +1,9 @@
 # Ethora feature schedule
 
 What each edition of the Ethora server includes and the limits that apply.
-This schedule accompanies the [Ethora Core Software License](ETHORA_CORE_LICENSE.md)
+This schedule accompanies the [Ethora Core Software License](https://ethora.com/legal/ethora-core-license)
 and applies to the Release it ships with; a later Release may publish a
-different schedule. Version 1.0 draft, 25 September 2026.
+different schedule. Version 1.0, effective 29 September 2026.
 
 ## Editions
 
@@ -47,4 +47,4 @@ when it ends the installation continues as Ethora Core with the Core limits.
 Registering sends the installation's domain name, the e-mail address given,
 an optional company name, the installation identifier and the software
 version to `license.ethora.com`, once. Ethora Core installations do not
-otherwise contact Dappros. See the [Privacy and Telemetry Notice](PRIVACY_AND_TELEMETRY.md).
+otherwise contact Dappros. See the [Privacy and Telemetry Notice](https://ethora.com/legal/privacy-and-telemetry).

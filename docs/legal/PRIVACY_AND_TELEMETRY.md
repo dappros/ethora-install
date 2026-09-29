@@ -1,7 +1,8 @@
 # Ethora Server: Privacy and Telemetry Notice
 
-**Draft for review.** Version 0.1, [date]. Controller for the data described
-here: Dappros Ltd, [address], [privacy@ethora.com].
+Version 1.0, effective 29 September 2026. Controller for the data described
+here: Dappros Ltd (company number 11455432), 38 Munden Grove, Watford, WD24 7EE, United Kingdom,
+privacy@ethora.com.
 
 This notice describes what an Ethora Server install sends to Dappros. Your
 users' data (messages, files, accounts) is stored on your servers and is
@@ -16,7 +17,7 @@ install's random identifier and the software version to
 `license.ethora.com`, and receives the registration key. Purpose: to issue
 the key, apply the registered limits, and offer you support. Legal basis:
 performance of the licence agreement. Retention: for as long as the
-registration exists plus [12] months. An unregistered Core install sends
+registration exists plus 12 months. An unregistered Core install sends
 nothing to Dappros.
 
 ## 2. License call-home (enterprise keys)
@@ -37,7 +38,7 @@ Purpose: to renew keys automatically, enforce the instance limit in the
 license, and know which versions are in use. Legal basis: performance of the
 license agreement and Dappros's legitimate interest in operating the
 licensing service. Retention: instance records are kept for the life of the
-license plus [12] months.
+license plus 12 months.
 
 You can switch call-home off (`license.call_home: false`) or leave the server
 address empty; keys keep working offline. Core registration keys and keys
@@ -48,7 +49,7 @@ issued as offline keys never require call-home.
 Requesting a trial key on `license.ethora.com` sends the domain, e-mail
 address, optional company name and the IP address of the request. We use
 them to issue the key, prevent duplicate trials, e-mail you the key, and
-contact you about your trial. Retention: [24] months after the trial ends.
+contact you about your trial. Retention: 24 months after the trial ends.
 
 ## 4. What is not collected
 
@@ -62,10 +63,10 @@ terms; the Software only sends to them what you configure.
 
 Where GDPR or similar law applies, you may ask for access to, correction of,
 or deletion of the personal data above, and object to processing based on
-legitimate interest, by writing to [privacy@ethora.com]. You may complain to
+legitimate interest, by writing to privacy@ethora.com. You may complain to
 your supervisory authority.
 
 ## 6. Changes
 
 This notice ships with each release of the Software and applies to that
-release. The current version is published at [https://ethora.com/legal].
+release. The current version is published at https://ethora.com/legal.
