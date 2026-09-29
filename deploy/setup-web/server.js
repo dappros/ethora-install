@@ -11,7 +11,7 @@
 //   ETHORA_SOURCE_ROOT   monoserver checkout (default: two levels up from here)
 //   SETUP_PORT           default 8888
 //   SETUP_BIND           default 0.0.0.0
-//   SETUP_PASSWORD       basic-auth password; default: EC2 instance id via IMDSv2,
+//   SETUP_PASSWORD       basic-auth password; default: EC2 instance id via IMDSv2, else the DigitalOcean droplet id,
 //                        else a random one printed to the journal
 //   SETUP_USER           basic-auth user (default "admin")
 //   SETUP_TLS_CERT/KEY   serve https when both are set
@@ -60,6 +60,21 @@ async function imdsInstanceId() {
   } catch (_) {
     return null
   }
+}
+
+// DigitalOcean droplets: the metadata service answers without a token and
+// the droplet id plays the role the instance id plays on EC2.
+async function dropletId() {
+  return new Promise((resolve) => {
+    const r = http.request({ host: '169.254.169.254', path: '/metadata/v1/id', method: 'GET', timeout: 1500 }, (res) => {
+      let buf = ''
+      res.on('data', (c) => (buf += c))
+      res.on('end', () => resolve(res.statusCode === 200 && /^\d+$/.test(buf.trim()) ? buf.trim() : null))
+    })
+    r.on('error', () => resolve(null))
+    r.on('timeout', () => { r.destroy(); resolve(null) })
+    r.end()
+  })
 }
 
 let PASSWORD = process.env.SETUP_PASSWORD || ''
@@ -340,7 +355,10 @@ async function main() {
   if (!fs.existsSync(SETUP_SH)) { console.error(`[setup-web] not found: ${SETUP_SH}`); process.exit(2) }
   if (!PASSWORD) {
     const id = await imdsInstanceId()
-    if (id) { PASSWORD = id; passwordSource = 'EC2 instance id' } else { PASSWORD = crypto.randomBytes(9).toString('base64url'); passwordSource = 'generated' }
+    const did = id ? null : await dropletId()
+    if (id) { PASSWORD = id; passwordSource = 'EC2 instance id' }
+    else if (did) { PASSWORD = did; passwordSource = 'droplet id' }
+    else { PASSWORD = crypto.randomBytes(9).toString('base64url'); passwordSource = 'generated' }
   }
   try { fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true }) } catch (_) {}
   const tls = process.env.SETUP_TLS_CERT && process.env.SETUP_TLS_KEY
