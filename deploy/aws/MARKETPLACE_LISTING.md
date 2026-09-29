@@ -137,11 +137,10 @@ mobile sdk, react, ai agents.
 
 ## Legal and pricing
 
-- **EULA**: custom. URL: https://ethora.com/legal/ethora-core-license (the
-  Ethora Core Software License; the GitHub copy at
-  https://ethora.com/legal/ethora-core-license/
-  works until the page is up). The Standard Contract for AWS Marketplace is
-  not suitable: it grants broader rights than the Core license.
+- **EULA**: custom. URL: https://ethora.com/legal/ethora-core-license/ (the
+  Ethora Core Software License, published 2026-09-29). The Standard Contract
+  for AWS Marketplace is not suitable: it grants broader rights than the Core
+  license.
 - **Refund policy** (required text even for free products):
 
       Ethora Core is free software; there is no software charge to refund.
