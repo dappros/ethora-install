@@ -165,6 +165,9 @@ build {
   provisioner "shell" {
     inline = [
       "chmod +x /etc/update-motd.d/99-one-click",
+      # the base image ships DigitalOcean's droplet agent; their image check refuses it
+      "apt-get purge -y droplet-agent >/dev/null 2>&1 || true",
+      "rm -rf /opt/digitalocean",
       "rm -rf /root/.docker /root/.gitconfig /root/.npm /root/.cache",
       "cloud-init clean --logs --seed",
       "truncate -s 0 /etc/machine-id && rm -f /var/lib/dbus/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id",
@@ -177,9 +180,11 @@ build {
     scripts = ["${path.root}/scripts/90-cleanup.sh"]
   }
   provisioner "shell" {
+    inline_shebang = "/bin/bash -e"
     inline = [
+      "find /var/log -type f -exec truncate -s 0 {} +",
       "bash /root/ethora-install-shared/deploy/digitalocean/packer/scripts/99-img-check.sh 2>&1 | tee /tmp/img-check.log || true",
-      "! grep -q 'FAIL\\]' /tmp/img-check.log",
+      "if grep -q 'FAIL]' /tmp/img-check.log; then echo 'image check failed'; exit 1; fi",
       "rm -f /tmp/img-check.log",
     ]
   }
