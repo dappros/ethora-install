@@ -312,7 +312,7 @@ function handler(req, res) {
     return res.end('Authentication required. User "' + USER + '"; password: see the console/journal (on EC2 it is the instance id).\n')
   }
   const url = new URL(req.url, 'http://x')
-  if (req.method === 'GET' && url.pathname === '/') return send(res, 200, page(existingAnswers()), 'text/html; charset=utf-8')
+  if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) return send(res, 200, page(existingAnswers()), 'text/html; charset=utf-8')
   if (req.method === 'GET' && url.pathname === '/api/state') return send(res, 200, state)
   if (req.method === 'GET' && url.pathname === '/api/log') {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })
