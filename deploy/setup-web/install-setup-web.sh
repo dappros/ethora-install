@@ -16,7 +16,7 @@ systemctl daemon-reload
 if [ "$ENABLE" = true ]; then
   systemctl enable ethora-setup.service >/dev/null
   systemctl restart ethora-setup.service
-  echo "ethora-setup: enabled on port $PORT; password = EC2 instance id (or see: journalctl -u ethora-setup)"
+  echo "ethora-setup: enabled on port $PORT; password = EC2 instance id or droplet id (or see: journalctl -u ethora-setup)"
 else
   echo "ethora-setup: unit installed, not enabled"
 fi
