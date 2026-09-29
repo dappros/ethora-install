@@ -3,14 +3,14 @@
 Open-source software distributed with or used by the Ethora server images and
 installer, with the licence each is under. These components keep their own
 licences; the Ethora Core Software License does not apply to them. Version
-1.0 draft, 28 September 2026. The full inventory of npm and OS packages inside
+1.0, effective 29 September 2026. The full inventory of npm and OS packages inside
 each image is produced by the scanner at build time (`docker sbom` on the
 published image lists it).
 
 | Component | Licence | Source | Notes |
 |---|---|---|---|
 | MinIO (`dappros/minio`, unmodified copy of `RELEASE.2025-09-07T16-13-09Z`) | GNU AGPL v3.0 | https://github.com/minio/minio/tree/RELEASE.2025-09-07T16-13-09Z | Republished unmodified after MinIO withdrew its public images; MinIO is a trademark of MinIO, Inc. |
-| ejabberd 26.04 (base of `ethora-xmpp`) | GNU GPL v2, with the ProcessOne exception permitting proprietary modules | https://github.com/processone/ejabberd | The Ethora modules are separate works loaded under that exception. |
+| ejabberd 26.04 (base of `ethora-xmpp`) | GNU GPL v2 | https://github.com/processone/ejabberd | Base of the image; the Ethora ejabberd modules are added on top. |
 | MongoDB 6.0 | SSPL v1 | https://github.com/mongodb/mongo | Run unmodified as a service to the install itself. |
 | MySQL 8.1 | GNU GPL v2 | https://github.com/mysql/mysql-server | Unmodified. |
 | Redis 7 | BSD 3-clause (RSALv2/SSPL for 7.4+) | https://github.com/redis/redis | Unmodified. |
@@ -24,4 +24,4 @@ published image lists it).
 
 Source offers: for any GPL or AGPL component above, the source of the exact
 version distributed is at the linked repository; Dappros makes no
-modifications to them. Requests: [legal@ethora.com].
+modifications to them. Requests: legal@ethora.com.
