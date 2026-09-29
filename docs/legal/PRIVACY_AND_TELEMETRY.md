@@ -49,7 +49,7 @@ issued as offline keys never require call-home.
 Requesting a trial key on `license.ethora.com` sends the domain, e-mail
 address, optional company name and the IP address of the request. We use
 them to issue the key, prevent duplicate trials, e-mail you the key, and
-contact you about your trial. Retention: 24 months after the trial ends.
+contact you about your trial. Retention: 12 months after the trial ends.
 
 ## 4. What is not collected
 
