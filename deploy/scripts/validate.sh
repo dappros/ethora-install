@@ -543,12 +543,15 @@ if command -v node &> /dev/null; then
     if [ "$NODE_VERSION" -lt 24 ]; then
         warn "Node.js version should be 24 or higher. Current: $(node --version)"
     fi
+elif [ "${VALIDATE_PRE_INSTALL:-false}" = "true" ]; then
+    # setup.sh runs this before install.sh, which installs Node 24 itself.
+    warn "Node.js is not installed yet (install.sh installs Node 24)"
 else
     error "Node.js is not installed"
 fi
 
 # Check if PM2 is installed (warn if not, as it will be needed)
-if ! command -v pm2 &> /dev/null; then
+if ! command -v pm2 &> /dev/null && [ "${VALIDATE_PRE_INSTALL:-false}" != "true" ]; then
     warn "PM2 is not installed. It will be needed to run Node.js services."
 fi
 
