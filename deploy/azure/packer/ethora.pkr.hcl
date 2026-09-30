@@ -167,8 +167,9 @@ build {
       "wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_$(dpkg --print-architecture) && chmod +x /usr/local/bin/yq",
       # --- the public installer at the release ref ---
       "git clone --branch \"$INSTALL_REF\" --depth 1 \"$INSTALL_REPO\" /home/ubuntu/ethora-install-shared",
-      "chown -R ubuntu:ubuntu /home/ubuntu/ethora-install-shared",
+      # record the source before handing the tree to ubuntu (git refuses a root user in another user's repository)
       "git -C /home/ubuntu/ethora-install-shared log -1 --format='%h %s' | tee /home/ubuntu/ethora-install-shared/.image-source",
+      "chown -R ubuntu:ubuntu /home/ubuntu/ethora-install-shared",
     ]
   }
 
