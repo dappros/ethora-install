@@ -1,0 +1,64 @@
+# Reverse proxy of the compose bundle: TLS (Let's Encrypt) for the four
+# public hosts, routed like the host installer's nginx vhosts
+# (deploy/nginx/*.conf.template). Hosts and the ACME contact come from the
+# environment compose passes in; see docker-compose.yml.
+{
+	email {$ACME_EMAIL}
+	# Extra global options from .env (CADDY_GLOBAL_OPTIONS), e.g. `local_certs`
+	# for a LAN test, or `acme_ca https://acme-staging-v02.api.letsencrypt.org/directory`.
+	{$CADDY_GLOBAL_OPTIONS}
+}
+
+(security_headers) {
+	header {
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		X-XSS-Protection "1; mode=block"
+		-Server
+	}
+}
+
+# API (api.conf.template)
+{$API_DOMAIN} {
+	import security_headers
+	# Prometheus metrics stay internal.
+	@metrics path /metrics
+	respond @metrics 404
+	reverse_proxy api:8080
+}
+
+# Web chat and admin panel (web.conf.template)
+{$WEB_DOMAIN} {
+	import security_headers
+	header X-Robots-Tag "noindex, nofollow"
+	# Centrifugo real-time channel.
+	handle /connection/websocket {
+		reverse_proxy centrifugo:8000
+	}
+	handle {
+		reverse_proxy frontend:8080
+	}
+}
+
+# XMPP over WebSocket and BOSH (xmpp.conf.template). Only the client
+# endpoints: ejabberd trusts private-network peers for its admin API, and
+# every request through this proxy arrives from one, so /api and /admin are
+# never forwarded.
+{$XMPP_DOMAIN} {
+	import security_headers
+	handle /ws* {
+		reverse_proxy xmpp:5280
+	}
+	handle /bosh* {
+		reverse_proxy xmpp:5280
+	}
+	handle {
+		respond 404
+	}
+}
+
+# File storage (files.conf.template). Host is passed through unchanged, which
+# MinIO's presigned URLs depend on; Caddy sets no body size limit.
+{$FILES_DOMAIN} {
+	reverse_proxy minio:9000
+}
