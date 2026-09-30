@@ -2,7 +2,7 @@ manifestVersion: 1
 id: ethora
 category: social
 name: Ethora
-version: "2610.7"
+version: "2610.8"
 tagline: Your own chat server with a web app, admin panel and SDKs
 description: >-
   Ethora is a chat and messaging platform you run yourself: a web chat and

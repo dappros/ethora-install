@@ -9,7 +9,7 @@ services:
       APP_PORT: 80
       PROXY_AUTH_WHITELIST: /v1,/v1/*,/v2,/v2/*,/api-docs,/api-docs/*,/ws,/ws/*,/bosh,/bosh/*,/connection/*,/files/*
   config:
-    image: docker.io/dappros/ethora-compose-init:2610.7@sha256:PENDING
+    image: docker.io/dappros/ethora-compose-init:2610.8@sha256:5dec58c7b4157e88264d1266b3fcb0096f6703f74f7dce451adb8203fe88d295
     user: "0:0"
     entrypoint: ["/bin/sh", "/ethora/scripts/render-config.sh"]
     environment:
@@ -160,7 +160,7 @@ services:
         max-size: "20m"
         max-file: "5"
   xmpp:
-    image: docker.io/dappros/ethora-xmpp:2610.7@sha256:9dbfc54b0def01f016d1613baa012aa3edf77e4b02a99516f80d027dad0cf91d
+    image: docker.io/dappros/ethora-xmpp:2610.8@sha256:7ec6adae515b5ad62262a6c1917efc50723e0cd447ce0c5a891c0209d037bf31
     entrypoint: ["/bin/sh", "/ethora/config/scripts/xmpp-start.sh"]
     volumes:
       - ${APP_DATA_DIR}/data/config:/ethora/config:ro
@@ -182,7 +182,7 @@ services:
         max-size: "20m"
         max-file: "5"
   api:
-    image: docker.io/dappros/ethora-api:2610.7@sha256:410e263650e75342b99519a3c8dd903570bf11217b554bd36c91f6885bb04302
+    image: docker.io/dappros/ethora-api:2610.8@sha256:a9fcfa47df2a10de2da473e998ae49d507e5bd5d63751035145c50c2f5049ca6
     entrypoint: ["tini", "--", "bash", "/ethora/config/scripts/api-entrypoint.sh"]
     volumes:
       - ${APP_DATA_DIR}/data/config:/ethora/config:ro
@@ -211,7 +211,7 @@ services:
       retries: 3
       start_period: 40s
   jobs:
-    image: docker.io/dappros/ethora-api:2610.7@sha256:410e263650e75342b99519a3c8dd903570bf11217b554bd36c91f6885bb04302
+    image: docker.io/dappros/ethora-api:2610.8@sha256:a9fcfa47df2a10de2da473e998ae49d507e5bd5d63751035145c50c2f5049ca6
     entrypoint: ["tini", "--", "bash", "/ethora/config/scripts/api-entrypoint.sh"]
     volumes:
       - ${APP_DATA_DIR}/data/config:/ethora/config:ro
@@ -228,7 +228,7 @@ services:
     healthcheck:
       disable: true
   init:
-    image: docker.io/dappros/ethora-api:2610.7@sha256:410e263650e75342b99519a3c8dd903570bf11217b554bd36c91f6885bb04302
+    image: docker.io/dappros/ethora-api:2610.8@sha256:a9fcfa47df2a10de2da473e998ae49d507e5bd5d63751035145c50c2f5049ca6
     entrypoint: ["tini", "--", "bash", "/ethora/config/scripts/api-entrypoint.sh"]
     volumes:
       - ${APP_DATA_DIR}/data/config:/ethora/config:ro
@@ -246,7 +246,7 @@ services:
     healthcheck:
       disable: true
   frontend:
-    image: docker.io/dappros/ethora-frontend:2610.7@sha256:d1c648920cae7963e774ad30ee9daf912ed84753550135d07fa14f4d628a735d
+    image: docker.io/dappros/ethora-frontend:2610.8@sha256:dde2aa9831b3b3a311d3b18d8be9282d0af924fd586aff07884be9fad6a63460
     entrypoint: ["/bin/sh", "/ethora/config/scripts/frontend-start.sh"]
     command: ["serve"]
     volumes:
