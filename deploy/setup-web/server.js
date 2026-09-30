@@ -11,7 +11,7 @@
 //   ETHORA_SOURCE_ROOT   monoserver checkout (default: two levels up from here)
 //   SETUP_PORT           default 8888
 //   SETUP_BIND           default 0.0.0.0
-//   SETUP_PASSWORD       basic-auth password; default: EC2 instance id via IMDSv2, else the DigitalOcean droplet id,
+//   SETUP_PASSWORD       basic-auth password; default: EC2 instance id via IMDSv2, else the DigitalOcean droplet id, else the Azure VM id,
 //                        else a random one printed to the journal
 //   SETUP_USER           basic-auth user (default "admin")
 //   SETUP_TLS_CERT/KEY   serve https when both are set
@@ -70,6 +70,21 @@ async function dropletId() {
       let buf = ''
       res.on('data', (c) => (buf += c))
       res.on('end', () => resolve(res.statusCode === 200 && /^\d+$/.test(buf.trim()) ? buf.trim() : null))
+    })
+    r.on('error', () => resolve(null))
+    r.on('timeout', () => { r.destroy(); resolve(null) })
+    r.end()
+  })
+}
+
+// Azure: the instance metadata service answers with the header below; the
+// VM id is what the portal shows under the VM's properties.
+async function azureVmId() {
+  return new Promise((resolve) => {
+    const r = http.request({ host: '169.254.169.254', path: '/metadata/instance/compute/vmId?api-version=2021-02-01&format=text', method: 'GET', timeout: 1500, headers: { Metadata: 'true' } }, (res) => {
+      let buf = ''
+      res.on('data', (c) => (buf += c))
+      res.on('end', () => resolve(res.statusCode === 200 && /^[0-9a-f-]{36}$/i.test(buf.trim()) ? buf.trim() : null))
     })
     r.on('error', () => resolve(null))
     r.on('timeout', () => { r.destroy(); resolve(null) })
@@ -356,8 +371,10 @@ async function main() {
   if (!PASSWORD) {
     const id = await imdsInstanceId()
     const did = id ? null : await dropletId()
+    const vmid = id || did ? null : await azureVmId()
     if (id) { PASSWORD = id; passwordSource = 'EC2 instance id' }
     else if (did) { PASSWORD = did; passwordSource = 'droplet id' }
+    else if (vmid) { PASSWORD = vmid; passwordSource = 'Azure VM id' }
     else { PASSWORD = crypto.randomBytes(9).toString('base64url'); passwordSource = 'generated' }
   }
   try { fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true }) } catch (_) {}
