@@ -1,4 +1,4 @@
-# AWS Marketplace listing, revision 2 (after approval)
+# AWS Marketplace listing, revision 3 (after the Public review)
 
 Paste into Edit product information. Everything here is true of the product as shipped; no figures we have not measured.
 
@@ -18,7 +18,7 @@ Ethora Core is a self-hosted chat and messaging platform: you own the data, the 
 
 ### Running in five minutes
 
-First boot takes about five minutes. Open the setup page on port 8888, enter your domain and e-mail, and the instance configures itself, obtains certificates and creates your admin account. No domain yet? The page accepts a magic DNS name (for example 203-0-113-10.sslip.io) for an immediate test install. Unattended installs work through instance user data, and a CloudFormation template is provided.
+First boot takes about five minutes. Open the setup page on port 8888, enter your domain and e-mail, and the instance configures itself, obtains certificates and creates your admin account. No DNS records yet? The page accepts a magic DNS name (for example 203-0-113-10.sslip.io) that resolves to the instance without any DNS setup. Unattended installs work through instance user data, and a CloudFormation template is provided.
 
 ### Built for teams adding chat to their own products
 
