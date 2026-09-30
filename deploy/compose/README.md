@@ -174,6 +174,18 @@ WebSocket upgrades allowed:
 | `xmpp.<root>` | `xmpp:5280` | `/ws` and `/bosh` only; never `/api` or `/admin` |
 | `files.<root>` | `minio:9000` | all, with the original `Host` header |
 
+## Portainer
+
+Portainer users can add the bundle to their app templates: Settings > App
+Templates > URL, paste
+
+    https://raw.githubusercontent.com/dappros/ethora-install/main/deploy/compose/platforms/portainer-template.json
+
+and Ethora Core appears in the templates list with a field for every value
+`.env` needs. Portainer generates no secrets; paste long random strings
+(for example `openssl rand -hex 24`) into the secret fields. See
+[platforms/](platforms/) for the template and other platforms.
+
 ## Common questions
 
 - **Certificate failed.** DNS does not point at this server yet, or port 80
