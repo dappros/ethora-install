@@ -22,14 +22,17 @@
 #   docker build -t ethora-cloudron deploy/cloudron
 # The image ARGs are the release build pinned by pin.sh (tag@digest); override
 # them with --build-arg, e.g. to test a compose-init built from a branch.
-ARG API_IMAGE=docker.io/dappros/ethora-api:2610.8@sha256:a9fcfa47df2a10de2da473e998ae49d507e5bd5d63751035145c50c2f5049ca6
-ARG FRONTEND_IMAGE=docker.io/dappros/ethora-frontend:2610.8@sha256:dde2aa9831b3b3a311d3b18d8be9282d0af924fd586aff07884be9fad6a63460
-ARG INIT_IMAGE=docker.io/dappros/ethora-compose-init:2610.8@sha256:5dec58c7b4157e88264d1266b3fcb0096f6703f74f7dce451adb8203fe88d295
+ARG API_IMAGE=docker.io/dappros/ethora-api:2610.9@sha256:f102a4fd01abe1ba475333d5d4008bbf8ebd5442efd8b083026c2072adb581a3
+ARG FRONTEND_IMAGE=docker.io/dappros/ethora-frontend:2610.9@sha256:3efaca21960c4ffbc8c7ec311d813a50241a0f8a17808a466b1c215988b50c7d
+ARG INIT_IMAGE=docker.io/dappros/ethora-compose-init:2610.9@sha256:62cf76fd4e34060dc6416cc1732446385388ad90ed1d13736663ad4874844e63
 ARG MINIO_IMAGE=docker.io/dappros/minio:RELEASE.2025-09-07T16-13-09Z@sha256:624bad2fe79a8613aa3c5c9b765ebcab365080b8445cf1b05c357cc7753725f0
 ARG CENTRIFUGO_IMAGE=docker.io/centrifugo/centrifugo:v6.9.7@sha256:d014d3e99e0e9e58c45e656a7ea4ab97c3f79f96c82a3614ea0f810b4dd0e461
 ARG CADDY_IMAGE=docker.io/library/caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
 
 FROM ${API_IMAGE} AS api
+# The release's build identity (version, commit, time) is ENV in the API
+# image, which COPY --from does not carry; start.sh exports it again.
+RUN env | grep '^ETHORA_BUILD_' > /tmp/ethora-build.env
 FROM ${FRONTEND_IMAGE} AS frontend
 FROM ${MINIO_IMAGE} AS minio
 FROM ${CENTRIFUGO_IMAGE} AS centrifugo
@@ -52,6 +55,7 @@ FROM cloudron/base:6.0.0@sha256:9bed4c8fa880645f8e669041ee28febe941481d00e9445e3
 # scripts expect them (/app/data, Cloudron's storage, sits next to them).
 COPY --from=api /usr/local/bin/node /usr/local/bin/node
 COPY --from=api /app/ /app/
+COPY --from=api /tmp/ethora-build.env /app/code/ethora-build.env
 # The API writes request uploads here before they go to MinIO, and the base
 # app's token next to its code on start.
 RUN rm -rf /app/dist/uploads && ln -s /tmp/ethora-uploads /app/dist/uploads \

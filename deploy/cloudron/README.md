@@ -90,9 +90,9 @@ Later versions of the package install over the running app with
 image instead:
 
 ```sh
-docker build -t registry.example.com/ethora-cloudron:26.9.0 .
-docker push registry.example.com/ethora-cloudron:26.9.0
-cloudron install --location chat --image registry.example.com/ethora-cloudron:26.9.0
+docker build -t registry.example.com/ethora-cloudron:26.10.0 .
+docker push registry.example.com/ethora-cloudron:26.10.0
+cloudron install --location chat --image registry.example.com/ethora-cloudron:26.10.0
 ```
 
 (or `cloudron builder build --repository <repository>` against a Cloudron
@@ -126,12 +126,12 @@ as a community package that users install from a versions file you host.
 App Store:
 
 1. Push the image to a public registry (Docker Hub), e.g.
-   `docker.io/dappros/ethora-cloudron:26.9.0`.
+   `docker.io/dappros/ethora-cloudron:26.10.0`.
 2. `cloudron appstore login` with the publisher account, then
    `cloudron appstore verify-manifest`.
-3. `cloudron appstore upload --image docker.io/dappros/ethora-cloudron:26.9.0`
+3. `cloudron appstore upload --image docker.io/dappros/ethora-cloudron:26.10.0`
    uploads the version for testing; install it on a test Cloudron with
-   `cloudron install --appstore-id com.ethora.core@26.9.0` and run the checks
+   `cloudron install --appstore-id com.ethora.core@26.10.0` and run the checks
    below.
 4. `cloudron appstore submit` sends it for review, and
    `cloudron appstore notify` posts the submission in the Cloudron forum's

@@ -115,5 +115,11 @@ ETHORA_FRONTEND_ENV_FILE=/run/ethora/config/frontend/frontend.env \
 
 chown -R cloudron:cloudron /run/ethora /tmp/ethora-uploads /app/data/minio /app/data/ejabberd
 
-log "starting ${CLOUDRON_APP_ORIGIN}"
+# The release's build identity, which the API reports (ping, licence).
+set -a
+# shellcheck disable=SC1091
+. /app/code/ethora-build.env
+set +a
+
+log "starting ${CLOUDRON_APP_ORIGIN} (build ${ETHORA_BUILD_VERSION:-unknown})"
 exec /usr/bin/supervisord --configuration /etc/supervisor/supervisord.conf --nodaemon -i Ethora

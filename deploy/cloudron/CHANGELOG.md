@@ -1,2 +1,2 @@
-[26.9.0]
-* First package: Ethora Core 2610.8 (API, web app, ejabberd, Centrifugo, MinIO)
+[26.10.0]
+* First package: Ethora Core 2610.9 (API, web app, ejabberd, Centrifugo, MinIO)
