@@ -174,6 +174,9 @@ WebSocket upgrades allowed:
 | `xmpp.<root>` | `xmpp:5280` | `/ws` and `/bosh` only; never `/api` or `/admin` |
 | `files.<root>` | `minio:9000` | all, with the original `Host` header |
 
+For Coolify the exact steps (git-based application, and a draft one-click
+service template) are in `platforms/coolify/README.md`.
+
 ## Portainer
 
 Portainer users can add the bundle to their app templates: Settings > App

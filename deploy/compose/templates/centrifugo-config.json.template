@@ -14,6 +14,9 @@
     "http_api": {
         "key": "{{CENTRIFUGO_API_KEY}}"
     },
+    "health": {
+        "enabled": true
+    },
     "admin": {
         "password": "{{CENTRIFUGO_ADMIN_PASSWORD}}",
         "secret": "{{CENTRIFUGO_ADMIN_SECRET}}",

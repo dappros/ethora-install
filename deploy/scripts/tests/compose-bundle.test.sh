@@ -28,6 +28,29 @@ done
 # templates/ are verbatim copies of the installer's, checked above.
 grep -rn --exclude-dir=templates $'\xe2\x80\x94' "$BUNDLE" >/dev/null && fail "em dash in the bundle" "$(grep -rln --exclude-dir=templates $'\xe2\x80\x94' "$BUNDLE")" || ok "no em dashes in the bundle"
 
+echo "# platforms/coolify"
+CT="$BUNDLE/platforms/coolify/ethora-core.yaml"
+"$BUNDLE/platforms/coolify/build-template.sh" --check >/dev/null 2>"$T/tpl.err" && ok "coolify template regenerates identically" || fail "coolify template out of date" "run deploy/compose/platforms/coolify/build-template.sh"
+grep -q $'\xe2\x80\x94' "$CT" && fail "em dash in the coolify template" || ok "no em dashes in the coolify template"
+for f in scripts/api-entrypoint.sh scripts/init.sh scripts/verify.js scripts/render-config.sh scripts/mongo-init.sh scripts/xmpp-start.sh scripts/frontend-start.sh \
+         templates/backend.env.template templates/frontend.env.template templates/centrifugo-config.json.template; do
+  grep -q "source: ./$f$" "$CT" || fail "coolify template carries $f"
+done; ok "coolify template carries every script and template inline"
+grep -q "^# port: 8080" "$CT" && grep -q "^# slogan:" "$CT" && ok "coolify template header" || fail "coolify template header"
+grep -q "caddy" "$CT" && fail "coolify template must not include caddy" || ok "coolify template has no bundled proxy"
+if command -v python3 >/dev/null 2>&1 && python3 -c "import yaml" 2>/dev/null; then
+  python3 - "$CT" >"$T/tpl.out" 2>&1 <<'PY' && ok "coolify template parses: $(cat "$T/tpl.out")" || fail "coolify template does not parse" "$(cat "$T/tpl.out")"
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+svcs = d["services"]
+assert set(svcs) == {"config","mongo","mongo-init","mysql","redis","minio","centrifugo","xmpp","api","jobs","init","frontend"}, sorted(svcs)
+files = {(v["source"], len(v["content"])) for s in svcs.values() for v in s.get("volumes", []) if isinstance(v, dict) and "content" in v}
+assert len(files) == 10, files
+assert all(n > 0 for _, n in files)
+print(f"{len(svcs)} services, {len(files)} inline files, {sum(n for _, n in files)} bytes of content")
+PY
+else skip "coolify template parses (python3 + pyyaml not available)"; fi
+
 echo "# configure.sh"
 B="$T/bundle"; cp -r "$BUNDLE" "$B"; rm -f "$B/.env"
 cfg() { "$B/configure.sh" "$@" >"$T/out" 2>"$T/err"; }
