@@ -23,6 +23,12 @@ if [ -z "${XMPP_DOMAIN:-}" ]; then
   XMPP_DOMAIN="$(sed -n '/^hosts:/,/^[a-z]/{s/^  - //p;}' "$CONF_SRC/ejabberd.yml" | head -n 1)"
   export XMPP_DOMAIN
 fi
+# The password comes from the environment when compose passes it, else from
+# the file the config service rendered (it may have generated it).
+if [ -z "${XMPP_ADMIN_PASSWORD:-}" ] && [ -r "$CONF_SRC/admin-password" ]; then
+  XMPP_ADMIN_PASSWORD="$(cat "$CONF_SRC/admin-password")"
+  export XMPP_ADMIN_PASSWORD
+fi
 cp "$CONF_SRC/ejabberd.yml" "$CONF_DIR/ejabberd.yml"
 cp "$CONF_SRC/jwt.key" "$CONF_DIR/jwt.key"
 chmod 600 "$CONF_DIR/ejabberd.yml" "$CONF_DIR/jwt.key"

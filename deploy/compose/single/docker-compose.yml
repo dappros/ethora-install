@@ -1,28 +1,26 @@
-# Ethora Core as one compose project: copy this directory to any Docker host,
-# write .env (./configure.sh, or from .env.example), then `docker compose up -d`.
-# See README.md.
+# Ethora Core in one file. GENERATED from deploy/compose/docker-compose.yml by
+# deploy/compose/single/build.sh; edit those, not this.
 #
-# This is the development form: the config service reads the scripts,
-# templates and Caddyfile from this directory. single/docker-compose.yml is
-# generated from it (single/build.sh) and takes them from the
-# ethora-compose-init image instead, so it runs with no other file on disk.
+# Save this file as docker-compose.yml in an empty directory, next to a .env
+# with at least:
+#   ROOT_DOMAIN=chat.example.com     # api./app./xmpp./files. point at this host
+#   ADMIN_EMAIL=you@example.com
+# (or PUBLIC_URL=https://chat.example.com for everything on one address), then
+#   docker compose up -d
+# Every other setting of the bundle's .env.example may be added; secrets left
+# out are generated on the first start and kept in the `secrets` volume, and
+# the admin password is printed once by `docker compose logs config`.
+# Platforms that take variables instead of a .env file pass the same names.
 #
-# Start order, all enforced by depends_on:
-#   config      renders every config file from .env into the `config` volume
-#               and publishes the scripts every other service runs there
-#               (runs in the xmpp image, so the ejabberd template matches it)
-#   mongo-init  makes MongoDB a single-node replica set (idempotent)
-#   databases   mongo, mysql (ejabberd schema on first start), redis, minio
-#   xmpp        ejabberd; registers admin@<xmpp host> on start
-#   api, jobs   the API image (HTTP API, cron + queue workers)
-#   init        first-boot steps through the API image's script mode (idempotent)
-#   frontend    web chat and admin panel
-#   caddy       TLS + routing for api., app., xmpp., files. (profile `caddy`,
-#               on through COMPOSE_PROFILES in .env)
+# Caddy always runs here (ports 80 and 443, Let's Encrypt); behind a proxy of
+# your own, start with `docker compose up -d --scale caddy=0` and route the
+# hosts as the guide below describes.
 #
-# Only caddy publishes ports (80, 443). Data lives in named volumes
-# ethora_mongo, ethora_mysql, ethora_minio, ethora_redis, ethora_caddy-data,
-# and secrets left out of .env are generated into ethora_secrets.
+# The configuration is rendered by the ethora-compose-init image (the xmpp
+# image plus the bundle's scripts and templates), which also hands every
+# other service its start script through the `config` volume.
+# Guide: https://github.com/dappros/ethora-install/tree/main/deploy/compose
+
 name: ethora
 
 x-logging: &logging
@@ -42,7 +40,7 @@ x-api: &api
 services:
   # ---------------------------------------------------------------- config --
   config:
-    image: ${ETHORA_XMPP_IMAGE:-docker.io/dappros/ethora-xmpp:2610}
+    image: ${ETHORA_COMPOSE_INIT_IMAGE:-docker.io/dappros/ethora-compose-init:2610}
     user: "0:0"
     entrypoint: ["/bin/sh", "/ethora/scripts/render-config.sh"]
     # Every value in .env reaches the renderer, so any variable of the
@@ -86,9 +84,6 @@ services:
       - config:/out/config
       - mysql-initdb:/out/mysql-initdb
       - secrets:/out/secrets
-      - ./scripts:/ethora/scripts:ro
-      - ./templates:/ethora/templates:ro
-      - ./Caddyfile:/ethora/Caddyfile:ro
     restart: "no"
     <<: *logging
 
@@ -297,7 +292,6 @@ services:
   # ----------------------------------------------------------------- caddy --
   caddy:
     image: caddy:2.10-alpine
-    profiles: ["caddy"]
     # The Caddyfile is rendered by the config service (hosts or one origin).
     command: ["caddy", "run", "--config", "/ethora/config/caddy/Caddyfile", "--adapter", "caddyfile"]
     ports:

@@ -11,6 +11,8 @@
 #
 # Answers (flag, or env ETHORA_SETUP_<NAME>, or prompt):
 #   --domain ROOT            root domain: api./app./xmpp./files. derive from it
+#   --public-url URL         one origin instead: https://chat.example.com, or
+#                            http://<LAN address>:<port> (sets HTTP_PORT)
 #   --api/--web/--xmpp/--files HOST   explicit host overrides
 #   --admin-email EMAIL      platform admin, base app owner, Let's Encrypt contact
 #   --admin-password PASS    default: generated, printed once
@@ -37,6 +39,7 @@ warn() { echo "[configure] $*" >&2; }
 die()  { echo "[configure] ERROR: $*" >&2; exit 1; }
 
 A_DOMAIN="${ETHORA_SETUP_DOMAIN:-}"
+A_PUBLIC_URL="${ETHORA_SETUP_PUBLIC_URL:-}"
 A_API="${ETHORA_SETUP_API:-}"; A_WEB="${ETHORA_SETUP_WEB:-}"; A_XMPP="${ETHORA_SETUP_XMPP:-}"; A_FILES="${ETHORA_SETUP_FILES:-}"
 A_ADMIN_EMAIL="${ETHORA_SETUP_ADMIN_EMAIL:-}"
 A_ADMIN_PASSWORD="${ETHORA_SETUP_ADMIN_PASSWORD:-}"
@@ -51,6 +54,7 @@ usage() { sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --domain) A_DOMAIN="$2"; shift 2 ;;
+    --public-url) A_PUBLIC_URL="$2"; shift 2 ;;
     --api) A_API="$2"; shift 2 ;;
     --web) A_WEB="$2"; shift 2 ;;
     --xmpp) A_XMPP="$2"; shift 2 ;;
@@ -117,36 +121,50 @@ if [ -f "$OUT_FILE" ]; then
 fi
 
 # ------------------------------------------------------------ gather answers --
-[ -z "$A_DOMAIN" ] && A_DOMAIN="$(old ROOT_DOMAIN)"
-if [ "$YES" != true ] && is_tty && [ -z "$A_DOMAIN" ]; then
-  echo
-  echo "Ethora Core, compose bundle. Two questions; everything else is derived or generated."
-  echo "Root domain: the four service hosts derive from it, e.g. chat.example.com ->"
-  echo "  api.chat.example.com, app.chat.example.com, xmpp.chat.example.com, files.chat.example.com"
-  echo "No domain yet? Use <server IP with dashes>.sslip.io, e.g. 203-0-113-10.sslip.io."
-  echo
-fi
-prompt A_DOMAIN "Root domain" ""
-A_DOMAIN="$(norm_host "$A_DOMAIN")"
-[ -n "$A_DOMAIN" ] || die "a root domain is required (--domain chat.example.com)"
-[ "$A_DOMAIN" != "localhost" ] || die "the compose bundle needs a public domain (Caddy obtains certificates for it); try <IP with dashes>.sslip.io"
-valid_host "$A_DOMAIN" || die "not a valid domain: $A_DOMAIN"
+# One origin (PUBLIC_URL) or four hosts under a root domain.
+[ -z "$A_PUBLIC_URL" ] && [ -z "$A_DOMAIN" ] && A_PUBLIC_URL="$(old PUBLIC_URL)"
+PORT_FROM_URL=""
+if [ -n "$A_PUBLIC_URL" ]; then
+  A_PUBLIC_URL="${A_PUBLIC_URL%/}"
+  [[ "$A_PUBLIC_URL" =~ ^(https?)://([^/:]+)(:([0-9]+))?$ ]] || die "--public-url must be http(s)://host[:port] with no path (got: $A_PUBLIC_URL)"
+  _scheme="${BASH_REMATCH[1]}"; _host="$(norm_host "${BASH_REMATCH[2]}")"; _port="${BASH_REMATCH[4]}"
+  valid_host "$_host" || [[ "$_host" =~ ^[0-9]+(\.[0-9]+){3}$ ]] || [[ "$_host" =~ ^[a-z0-9-]+$ ]] || die "not a valid host in --public-url: $_host"
+  A_PUBLIC_URL="$_scheme://$_host${_port:+:$_port}"
+  if [ "$_scheme" = http ]; then PORT_FROM_URL="${_port:-80}"; elif [ -n "$_port" ]; then die "an https --public-url uses port 443; drop :$_port"; fi
+  A_DOMAIN=""; V_API=""; V_WEB=""; V_XMPP=""; V_FILES=""
+else
+  [ -z "$A_DOMAIN" ] && A_DOMAIN="$(old ROOT_DOMAIN)"
+  if [ "$YES" != true ] && is_tty && [ -z "$A_DOMAIN" ]; then
+    echo
+    echo "Ethora Core, compose bundle. Two questions; everything else is derived or generated."
+    echo "Root domain: the four service hosts derive from it, e.g. chat.example.com ->"
+    echo "  api.chat.example.com, app.chat.example.com, xmpp.chat.example.com, files.chat.example.com"
+    echo "No domain yet? Use <server IP with dashes>.sslip.io, e.g. 203-0-113-10.sslip.io."
+    echo "(One address instead of four hosts: re-run with --public-url.)"
+    echo
+  fi
+  prompt A_DOMAIN "Root domain" ""
+  A_DOMAIN="$(norm_host "$A_DOMAIN")"
+  [ -n "$A_DOMAIN" ] || die "a root domain is required (--domain chat.example.com), or --public-url"
+  [ "$A_DOMAIN" != "localhost" ] || die "the compose bundle needs a public domain (Caddy obtains certificates for it); try <IP with dashes>.sslip.io, or --public-url http://localhost:8420"
+  valid_host "$A_DOMAIN" || die "not a valid domain: $A_DOMAIN"
 
-# Host overrides: an answer wins, then a previous explicit override, then the
-# derived default (written empty, so it follows ROOT_DOMAIN).
-host_value() { # host_value <answer> <env key> <prefix>
-  local v="$1"
-  [ -z "$v" ] && v="$(old "$2")"
-  [ -z "$v" ] && { echo ""; return; }
-  v="$(norm_host "$v")"
-  valid_host "$v" || die "not a valid host: $v"
-  [ "$v" = "$3.$A_DOMAIN" ] && v=""
-  echo "$v"
-}
-V_API="$(host_value "$A_API" API_DOMAIN api)"
-V_WEB="$(host_value "$A_WEB" WEB_DOMAIN app)"
-V_XMPP="$(host_value "$A_XMPP" XMPP_DOMAIN xmpp)"
-V_FILES="$(host_value "$A_FILES" FILES_DOMAIN files)"
+  # Host overrides: an answer wins, then a previous explicit override, then the
+  # derived default (written empty, so it follows ROOT_DOMAIN).
+  host_value() { # host_value <answer> <env key> <prefix>
+    local v="$1"
+    [ -z "$v" ] && v="$(old "$2")"
+    [ -z "$v" ] && { echo ""; return; }
+    v="$(norm_host "$v")"
+    valid_host "$v" || die "not a valid host: $v"
+    [ "$v" = "$3.$A_DOMAIN" ] && v=""
+    echo "$v"
+  }
+  V_API="$(host_value "$A_API" API_DOMAIN api)"
+  V_WEB="$(host_value "$A_WEB" WEB_DOMAIN app)"
+  V_XMPP="$(host_value "$A_XMPP" XMPP_DOMAIN xmpp)"
+  V_FILES="$(host_value "$A_FILES" FILES_DOMAIN files)"
+fi
 
 prompt A_ADMIN_EMAIL "Admin email (platform admin, base app owner, TLS contact)" "$(old ADMIN_EMAIL)"
 [ -n "$A_ADMIN_EMAIL" ] || die "an admin email is required (--admin-email)"
@@ -183,12 +201,16 @@ done
 
 # ------------------------------------------------------------------ report --
 echo
-echo "  Hosts:           api=${V_API:-api.$A_DOMAIN} web=${V_WEB:-app.$A_DOMAIN}"
-echo "                   xmpp=${V_XMPP:-xmpp.$A_DOMAIN} files=${V_FILES:-files.$A_DOMAIN}"
+if [ -n "$A_PUBLIC_URL" ]; then
+  echo "  One origin:      $A_PUBLIC_URL (web app, API, XMPP and files routed by path)"
+else
+  echo "  Hosts:           api=${V_API:-api.$A_DOMAIN} web=${V_WEB:-app.$A_DOMAIN}"
+  echo "                   xmpp=${V_XMPP:-xmpp.$A_DOMAIN} files=${V_FILES:-files.$A_DOMAIN}"
+fi
 echo "  Admin:           $A_ADMIN_EMAIL  ($([ "$GENERATED_PASSWORD" = true ] && echo "password generated" || echo "password kept/supplied"))"
 echo "  Display name:    $A_DISPLAY_NAME"
 echo "  License:         $([ -n "$A_LICENSE_KEY" ] && echo "key ${A_LICENSE_KEY:0:24}..." || echo "none (Ethora Core; register from the admin panel)")  call-home=$A_CALL_HOME"
-echo "  Proxy:           $([ -n "$PROFILES" ] && echo "bundled Caddy (ports $(old HTTP_PORT | grep . || echo 80)/$(old HTTPS_PORT | grep . || echo 443))${CADDY_OPTS:+, $CADDY_OPTS}" || echo "none (route the four hosts yourself)")"
+echo "  Proxy:           $([ -n "$PROFILES" ] && echo "bundled Caddy (ports ${PORT_FROM_URL:-$(old HTTP_PORT | grep . || echo 80)}/$(old HTTPS_PORT | grep . || echo 443))${CADDY_OPTS:+, $CADDY_OPTS}" || echo "none (route the four hosts yourself)")"
 echo "  Output:          $OUT_FILE"
 echo
 echo "  Installing accepts the Ethora Core Software License:"
@@ -204,6 +226,8 @@ fi
 # The answered values, as NEW_<KEY>.
 set_new() { printf -v "NEW_$1" '%s' "$2"; }
 set_new ROOT_DOMAIN "$A_DOMAIN"
+set_new PUBLIC_URL "$A_PUBLIC_URL"
+[ -n "$PORT_FROM_URL" ] && set_new HTTP_PORT "$PORT_FROM_URL"
 set_new API_DOMAIN "$V_API"; set_new WEB_DOMAIN "$V_WEB"; set_new XMPP_DOMAIN "$V_XMPP"; set_new FILES_DOMAIN "$V_FILES"
 set_new ADMIN_EMAIL "$A_ADMIN_EMAIL"; set_new ADMIN_PASSWORD "$A_ADMIN_PASSWORD"
 set_new BASE_APP_DISPLAY_NAME "$A_DISPLAY_NAME"
