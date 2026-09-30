@@ -1,0 +1,42 @@
+apiVersion: v2
+name: ethora-core
+description: >-
+  Ethora Core, a self-hosted chat and messaging server: API, web chat and admin
+  panel, XMPP server (ejabberd with the Ethora modules) and file storage, with
+  MongoDB, MySQL, Redis, MinIO and Centrifugo.
+type: application
+# CalVer, YY.M.patch: the year and month the chart ships (see CLAUDE.md).
+version: 26.9.0
+# The image release line the chart runs by default (docker.io/dappros/ethora-*:2610).
+appVersion: "2610"
+kubeVersion: ">=1.25.0-0"
+home: https://ethora.com
+icon: https://cdn.jsdelivr.net/gh/dappros/ethora-install@main/deploy/compose/platforms/casaos/icon.svg
+sources:
+  - https://github.com/dappros/ethora-install
+keywords:
+  - chat
+  - messaging
+  - xmpp
+  - ejabberd
+  - self-hosted
+maintainers:
+  - name: Dappros
+    email: support@ethora.com
+    url: https://ethora.com
+annotations:
+  artifacthub.io/license: LicenseRef-Ethora-Core-1.0
+  artifacthub.io/links: |
+    - name: Documentation
+      url: https://github.com/dappros/ethora-install/tree/main/deploy/helm/ethora-core
+    - name: Ethora Core licence
+      url: https://ethora.com/legal/ethora-core-license/
+  artifacthub.io/images: |
+    - name: ethora-api
+      image: docker.io/dappros/ethora-api:2610
+    - name: ethora-frontend
+      image: docker.io/dappros/ethora-frontend:2610
+    - name: ethora-xmpp
+      image: docker.io/dappros/ethora-xmpp:2610
+    - name: ethora-compose-init
+      image: docker.io/dappros/ethora-compose-init:2610

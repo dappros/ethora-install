@@ -19,9 +19,17 @@ done
 state="$(mq 'try { rs.status().ok } catch (e) { e.codeName }' 2>/dev/null || true)"
 if [ "$state" = "1" ]; then
   echo "[mongo-init] replica set rs0 already initiated"
+elif [ "$state" = "InvalidReplicaSetConfig" ]; then
+  # The set exists but this mongod is not in it: the member's host name no
+  # longer resolves to it (a renamed service, an older layout). Keep the set,
+  # point its single member at $HOST.
+  echo "[mongo-init] replica set rs0 names another host; reconfiguring its member as $HOST"
+  mq "const c = rs.conf(); c.members[0].host = '$HOST'; rs.reconfig(c, { force: true }).ok"
 else
   echo "[mongo-init] initiating replica set rs0 ($state)"
-  mq "rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: '$HOST' }] }).ok"
+  # Tolerate a concurrent initiate (two pods starting at once): the loser
+  # sees AlreadyInitialized and simply waits for PRIMARY below.
+  mq "try { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: '$HOST' }] }).ok } catch (e) { e.codeName }"
 fi
 
 for i in $(seq 1 60); do

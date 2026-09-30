@@ -1,0 +1,48 @@
+# Ethora Core with managed databases instead of the bundled StatefulSets.
+#   helm install ethora oci://docker.io/dappros/ethora-core -f values-external-databases.yaml \
+#     --set rootDomain=chat.example.com --set admin.email=you@example.com
+#
+# What each service must be:
+#   MongoDB  a replica set (Atlas, DocumentDB with its limits, a self-managed
+#            rs); any connection string mongoose accepts.
+#   MySQL    8.x with a database named ejabberd_db that the user can create
+#            tables in. ejabberd creates its schema on first start; to load
+#            it yourself use mysql2.sql from the ethora-xmpp image
+#            (/ethora-dist/mysql2.sql).
+#   Redis    reachable without a password (the API does not send one), e.g.
+#            a private-network instance.
+#   Storage  S3-compatible over plain HTTP from inside the cluster (the API
+#            does not use TLS to it), e.g. a MinIO on the private network;
+#            buckets `files` (public read) and `secure-media` are created by
+#            the API. Files are served to clients through files.<rootDomain>.
+# This example has not been run against managed services; the rendered
+# manifests are checked in CI (helm template).
+mongo:
+  enabled: false
+mysql:
+  enabled: false
+redis:
+  enabled: false
+minio:
+  enabled: false
+
+external:
+  mongo:
+    uri: "mongodb+srv://ethora:CHANGE_ME@cluster0.example.mongodb.net/ethora_prod?retryWrites=true&w=majority"
+    chatUri: "mongodb+srv://ethora:CHANGE_ME@cluster0.example.mongodb.net/chat_archive?retryWrites=true&w=majority"
+  mysql:
+    host: mysql.internal.example.com
+    port: 3306
+    user: ejabberd
+  redis:
+    host: redis.internal.example.com
+    port: 6379
+  minio:
+    host: minio.internal.example.com
+    port: 9000
+
+secrets:
+  # The passwords of the managed MySQL user and the storage credentials.
+  mysqlRootPassword: CHANGE_ME
+  minioRootUser: CHANGE_ME
+  minioRootPassword: CHANGE_ME

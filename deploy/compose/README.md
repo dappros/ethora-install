@@ -241,6 +241,12 @@ paste a stack instead (Stacks > Add stack > Web editor), paste
 `ROOT_DOMAIN` and `ADMIN_EMAIL` as environment variables. See
 [platforms/](platforms/) for the template and other platforms.
 
+## Kubernetes
+
+The Helm chart [`deploy/helm/ethora-core`](../helm/ethora-core/) runs the same
+images and renders the same configuration with `ethora-compose-init`:
+`helm install ethora oci://docker.io/dappros/ethora-core --set rootDomain=... --set admin.email=...`.
+
 ## Umbrel and CasaOS
 
 App-store packages for home servers, generated from the single file and run

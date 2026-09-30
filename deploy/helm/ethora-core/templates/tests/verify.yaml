@@ -1,0 +1,29 @@
+{{- if .Values.tests.enabled -}}
+# `helm test <release>`: the compose bundle's end-to-end check
+# (deploy/compose/scripts/verify.js) through the public URLs: web app, API
+# docs, admin login, licence, a room created and a message round trip over
+# the XMPP WebSocket, a file uploaded and read back.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "ethora.fullname" . }}-verify
+  labels: {{- include "ethora.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  restartPolicy: Never
+  {{- include "ethora.podCommon" . | nindent 2 }}
+  initContainers:
+    {{- include "ethora.renderInit" (dict "root" .) | nindent 4 }}
+  containers:
+    - name: verify
+      image: {{ include "ethora.image" (dict "root" . "name" "api") }}
+      imagePullPolicy: {{ .Values.imagePullPolicy }}
+      command: ["tini", "--", "bash", "/ethora/config/scripts/api-entrypoint.sh"]
+      args: ["verify"]
+      env:
+        - { name: NODE_NO_WARNINGS, value: "1" }
+      volumeMounts: {{- include "ethora.configMount" . | nindent 8 }}
+  volumes: {{- include "ethora.configVolume" . | nindent 4 }}
+{{- end }}

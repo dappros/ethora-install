@@ -1,0 +1,8 @@
+# Artifact Hub repository metadata for oci://docker.io/dappros/ethora-core.
+# Pushed as the OCI artifact docker.io/dappros/ethora-core:artifacthub.io
+# (see ethora-core/README.md, "Publishing"). Fill in repositoryID with the ID
+# Artifact Hub shows after the repository is added there.
+repositoryID: ""
+owners:
+  - name: Dappros
+    email: support@ethora.com

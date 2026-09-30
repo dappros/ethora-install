@@ -1,0 +1,31 @@
+{{- $fn := include "ethora.fullname" . -}}
+{{- $hosts := include "ethora.hosts" . | fromYaml -}}
+{{- $scheme := ternary "https" "http" (or .Values.ingress.tls (hasPrefix "https://" .Values.publicUrl)) -}}
+Ethora Core is starting. The first start takes a few minutes; the init job
+creates the base app and the admin account when the API is up:
+
+  kubectl -n {{ .Release.Namespace }} logs -f job/{{ $fn }}-init-{{ .Release.Revision }} -c init
+
+{{ if .Values.publicUrl -}}
+Web app, API, XMPP and files, all on {{ .Values.publicUrl }}
+{{- else -}}
+Web app:  {{ $scheme }}://{{ $hosts.web }}
+API:      {{ $scheme }}://{{ $hosts.api }}  (Swagger at /api-docs/)
+XMPP:     wss://{{ $hosts.xmpp }}/ws
+Files:    {{ $scheme }}://{{ $hosts.files }}
+
+Point these four names at the ingress controller's address first
+(or one wildcard record for *.{{ .Values.rootDomain }}).
+{{- end }}
+
+Sign in as {{ .Values.admin.email }} with the admin password:
+
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "ethora.secretName" . }} -o jsonpath='{.data.ADMIN_PASSWORD}' | base64 -d; echo
+
+Check the install end to end (web app, login, a chat message, a file):
+
+  helm test -n {{ .Release.Namespace }} {{ .Release.Name }} --logs
+
+The secrets and the data volumes are kept by `helm uninstall`; delete the
+PVCs and {{ include "ethora.secretName" . }} to remove everything.
+Ethora Core licence: https://ethora.com/legal/ethora-core-license/

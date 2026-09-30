@@ -1,0 +1,63 @@
+{{- include "ethora.validate" . -}}
+{{- $fn := include "ethora.fullname" . -}}
+{{- $hosts := include "ethora.hosts" . | fromYaml -}}
+# Non-secret settings for the config renderer (the compose bundle's .env).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fn }}-settings
+  labels:
+    {{- include "ethora.labels" . | nindent 4 }}
+data:
+  {{- if .Values.publicUrl }}
+  PUBLIC_URL: {{ .Values.publicUrl | quote }}
+  {{- else }}
+  ROOT_DOMAIN: {{ .Values.rootDomain | quote }}
+  API_DOMAIN: {{ $hosts.api | quote }}
+  WEB_DOMAIN: {{ $hosts.web | quote }}
+  XMPP_DOMAIN: {{ $hosts.xmpp | quote }}
+  FILES_DOMAIN: {{ $hosts.files | quote }}
+  {{- end }}
+  ADMIN_EMAIL: {{ .Values.admin.email | quote }}
+  BASE_APP_DISPLAY_NAME: {{ .Values.displayName | quote }}
+  ETHORA_LICENSE_KEY: {{ .Values.license.key | quote }}
+  ETHORA_LICENSE_CALL_HOME: {{ .Values.license.callHome | toString | quote }}
+  ETHORA_LICENSE_SERVER_URL: {{ .Values.license.serverUrl | quote }}
+  MONGO_DB: {{ .Values.mongo.database | quote }}
+  # Internal endpoints (render-config.sh): the chart's Services, or external.*.
+  {{- if .Values.mongo.enabled }}
+  ETHORA_MONGO_URI: {{ printf "mongodb://%s-mongo:27017/%s?directConnection=true" $fn .Values.mongo.database | quote }}
+  ETHORA_CHAT_DATABASE_URI: {{ printf "mongodb://%s-mongo:27017/chat_archive?directConnection=true" $fn | quote }}
+  {{- else }}
+  ETHORA_MONGO_URI: {{ .Values.external.mongo.uri | quote }}
+  ETHORA_CHAT_DATABASE_URI: {{ default .Values.external.mongo.uri .Values.external.mongo.chatUri | quote }}
+  {{- end }}
+  {{- if .Values.redis.enabled }}
+  ETHORA_REDIS_HOST: {{ printf "%s-redis" $fn | quote }}
+  ETHORA_REDIS_PORT: "6379"
+  {{- else }}
+  ETHORA_REDIS_HOST: {{ .Values.external.redis.host | quote }}
+  ETHORA_REDIS_PORT: {{ .Values.external.redis.port | toString | quote }}
+  {{- end }}
+  {{- if .Values.mysql.enabled }}
+  ETHORA_MYSQL_HOST: {{ printf "%s-mysql" $fn | quote }}
+  ETHORA_MYSQL_PORT: "3306"
+  ETHORA_MYSQL_USER: root
+  {{- else }}
+  ETHORA_MYSQL_HOST: {{ .Values.external.mysql.host | quote }}
+  ETHORA_MYSQL_PORT: {{ .Values.external.mysql.port | toString | quote }}
+  ETHORA_MYSQL_USER: {{ .Values.external.mysql.user | quote }}
+  {{- end }}
+  {{- if .Values.minio.enabled }}
+  ETHORA_MINIO_HOST: {{ printf "%s-minio" $fn | quote }}
+  ETHORA_MINIO_PORT: "9000"
+  {{- else }}
+  ETHORA_MINIO_HOST: {{ .Values.external.minio.host | quote }}
+  ETHORA_MINIO_PORT: {{ .Values.external.minio.port | toString | quote }}
+  {{- end }}
+  ETHORA_CENTRIFUGO_URL: {{ printf "http://%s-centrifugo:8000" $fn | quote }}
+  ETHORA_XMPP_URL: {{ printf "http://%s-xmpp:5280" $fn | quote }}
+  ETHORA_API_URL: {{ printf "http://%s-api:8080" $fn | quote }}
+  {{- range $k, $v := .Values.extraSettings }}
+  {{ $k }}: {{ $v | toString | quote }}
+  {{- end }}

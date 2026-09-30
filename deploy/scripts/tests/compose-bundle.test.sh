@@ -238,6 +238,24 @@ else
     && grep -q '^  - chat.example.com$' "$R7/config/xmpp/ejabberd.yml" && ok "one origin over HTTPS: site block for the host, wss" || fail "one-origin Caddyfile (https)"
   rcfg "$T/r8" PUBLIC_URL=https://chat.example.com/app ADMIN_EMAIL=ops@example.com >/dev/null 2>&1 && fail "PUBLIC_URL with a path refused" || ok "PUBLIC_URL with a path refused"
 
+  # Internal endpoints (Helm chart, external databases).
+  R9="$T/r9"; mkdir -p "$R9"
+  rcfg "$R9" ROOT_DOMAIN=chat.example.com ADMIN_EMAIL=ops@example.com \
+    'ETHORA_MONGO_URI=mongodb://u:p@db.internal:27017/ethora?tls=true' ETHORA_CHAT_DATABASE_URI=mongodb://db.internal/chat_archive \
+    ETHORA_REDIS_HOST=cache.internal ETHORA_REDIS_PORT=6380 ETHORA_MYSQL_HOST=sql.internal ETHORA_MYSQL_PORT=3307 ETHORA_MYSQL_USER=ejabberd \
+    ETHORA_MINIO_HOST=s3.internal ETHORA_MINIO_PORT=9900 ETHORA_CENTRIFUGO_URL=http://rt.internal:8000 \
+    ETHORA_XMPP_URL=http://x.internal:5280 ETHORA_API_URL=http://a.internal:8080 >/dev/null 2>&1
+  be9="$R9/config/api/backend.env"; ej9="$R9/config/xmpp/ejabberd.yml"
+  for kv in 'MONGO_URI=mongodb://u:p@db.internal:27017/ethora?tls=true' 'CHAT_DATABASE=mongodb://db.internal/chat_archive' REDIS_HOST=cache.internal REDIS_PORT=6380 \
+            MAM_MYSQL_HOST=sql.internal MAM_MYSQL_PORT=3307 MAM_MYSQL_USER=ejabberd MINIO_HOST=s3.internal MINIO_PORT=9900 \
+            'CENTRIFUGO_API_URL=http://rt.internal:8000/api' 'XMPP_PATH=http://x.internal:5280/api' 'API_INTERNAL_URL=http://a.internal:8080'; do
+    grep -qxF "$kv" "$be9" && ok "endpoint override, backend.env: $kv" || fail "endpoint override, backend.env: $kv" "$(grep "^${kv%%=*}=" "$be9")"
+  done
+  grep -qxF 'sql_server: "sql.internal"' "$ej9" && grep -qxF 'sql_username: "ejabberd"' "$ej9" && grep -qxF 'sql_port: 3307' "$ej9" \
+    && grep -q 'url: "http://a.internal:8080/v1/chats/track-member"' "$ej9" && ok "endpoint override, ejabberd.yml: sql server/user/port, tracking URLs" \
+    || fail "endpoint override, ejabberd.yml" "$(grep -E '^sql_(server|username|port)' "$ej9")"
+  grep -qxF 'API_INTERNAL_URL=http://api:8080' "$be" && ok "default internal API URL is the compose service" || fail "default API_INTERNAL_URL"
+
   # ejabberd.yml must equal what setup-ejabberd-config.sh produces from the
   # same template and values (its production branch), except the tracking URLs
   # which point at the api service here (passed to both sides below).

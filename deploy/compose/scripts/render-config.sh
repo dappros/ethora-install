@@ -35,6 +35,17 @@
 #          app takes its API / XMPP / Centrifugo URLs from the address the
 #          browser used.
 #
+# Internal endpoints default to the compose service names; the Helm chart and
+# installs with external databases override them (all optional):
+#   ETHORA_MONGO_URI, ETHORA_CHAT_DATABASE_URI   Mongo, app data and chat archive
+#   ETHORA_REDIS_HOST, ETHORA_REDIS_PORT         Redis (no password: the API has none)
+#   ETHORA_MYSQL_HOST, ETHORA_MYSQL_PORT, ETHORA_MYSQL_USER
+#                                                ejabberd's SQL store; the password is
+#                                                MYSQL_ROOT_PASSWORD whatever the user
+#   ETHORA_MINIO_HOST, ETHORA_MINIO_PORT         S3-compatible storage over plain HTTP
+#   ETHORA_CENTRIFUGO_URL, ETHORA_XMPP_URL, ETHORA_API_URL
+#                                                http://centrifugo:8000, http://xmpp:5280, http://api:8080
+#
 # Differences from the host installer, all because the services talk over the
 # compose network instead of the host's loopback:
 #   - backend.env: MONGO_URI, CHAT_DATABASE, REDIS_HOST, MINIO_HOST,
@@ -153,8 +164,17 @@ export NODE_ENV="${NODE_ENV:-production}"
 export BACKEND_PORT=8080
 export MONGO_PORT=27017
 export MONGO_DB="${MONGO_DB:-ethora_prod}"
-export REDIS_PORT=6379
-export MYSQL_PORT=3306
+# Internal endpoints (see the header).
+ETHORA_REDIS_HOST="${ETHORA_REDIS_HOST:-redis}"
+ETHORA_MYSQL_HOST="${ETHORA_MYSQL_HOST:-mysql}"
+ETHORA_MYSQL_USER="${ETHORA_MYSQL_USER:-root}"
+ETHORA_MINIO_HOST="${ETHORA_MINIO_HOST:-minio}"
+ETHORA_CENTRIFUGO_URL="${ETHORA_CENTRIFUGO_URL:-http://centrifugo:8000}"
+ETHORA_XMPP_URL="${ETHORA_XMPP_URL:-http://xmpp:5280}"
+ETHORA_API_URL="${ETHORA_API_URL:-http://api:8080}"
+export REDIS_PORT="${ETHORA_REDIS_PORT:-6379}"
+export MYSQL_PORT="${ETHORA_MYSQL_PORT:-3306}"
+MINIO_PORT="${ETHORA_MINIO_PORT:-9000}"
 export CENTRIFUGO_PORT=8000
 export PUSH_PORT="${PUSH_PORT:-8098}"
 export AI_SERVICE_PORT="${AI_SERVICE_PORT:-8013}"
@@ -207,7 +227,7 @@ def DISABLE_CLARITY true
 # production (non-localhost) branch of setup-env.sh replace_template(), with
 # the compose service names where the installer uses 127.0.0.1.
 export ROOT_DOMAIN_PLACEHOLDER="ROOT_DOMAIN=$ROOT_DOMAIN"
-export XMPP_PATH_PLACEHOLDER="XMPP_PATH=http://xmpp:5280/api"
+export XMPP_PATH_PLACEHOLDER="XMPP_PATH=$ETHORA_XMPP_URL/api"
 export MINIO_SECURE_URL_PLACEHOLDER="MINIO_SECURE_URL=${SECURE_FILES_DOMAIN:+https://$SECURE_FILES_DOMAIN}"
 if [ -z "$PUBLIC_URL" ]; then
   web_url="https://$WEB_DOMAIN"; api_url="https://$API_DOMAIN"; files_url="https://$FILES_DOMAIN"
@@ -279,12 +299,14 @@ done
 
 # backend.env
 render "$TEMPLATES/backend.env.template" "$stage/api/backend.env"
-set_env_line "$stage/api/backend.env" MONGO_URI "mongodb://mongo:27017/$MONGO_DB?directConnection=true"
-set_env_line "$stage/api/backend.env" CHAT_DATABASE "mongodb://mongo:27017/chat_archive?directConnection=true"
-set_env_line "$stage/api/backend.env" REDIS_HOST redis
-set_env_line "$stage/api/backend.env" MAM_MYSQL_HOST mysql
-set_env_line "$stage/api/backend.env" MINIO_HOST minio
-set_env_line "$stage/api/backend.env" CENTRIFUGO_API_URL "http://centrifugo:8000/api"
+set_env_line "$stage/api/backend.env" MONGO_URI "${ETHORA_MONGO_URI:-mongodb://mongo:27017/$MONGO_DB?directConnection=true}"
+set_env_line "$stage/api/backend.env" CHAT_DATABASE "${ETHORA_CHAT_DATABASE_URI:-mongodb://mongo:27017/chat_archive?directConnection=true}"
+set_env_line "$stage/api/backend.env" REDIS_HOST "$ETHORA_REDIS_HOST"
+set_env_line "$stage/api/backend.env" MAM_MYSQL_HOST "$ETHORA_MYSQL_HOST"
+set_env_line "$stage/api/backend.env" MAM_MYSQL_USER "$ETHORA_MYSQL_USER"
+set_env_line "$stage/api/backend.env" MINIO_HOST "$ETHORA_MINIO_HOST"
+set_env_line "$stage/api/backend.env" MINIO_PORT "$MINIO_PORT"
+set_env_line "$stage/api/backend.env" CENTRIFUGO_API_URL "$ETHORA_CENTRIFUGO_URL/api"
 {
   echo "# Rendered by the compose bundle's config service from backend.env.template"
   echo "# on every 'docker compose up'. Edit .env, not this file."
@@ -295,6 +317,8 @@ set_env_line "$stage/api/backend.env" CENTRIFUGO_API_URL "http://centrifugo:8000
   echo "ETHORA_PUBLIC_API_URL=$api_url"
   echo "ETHORA_PUBLIC_FILES_URL=$files_url"
   echo "ETHORA_PUBLIC_XMPP_WS_URL=$xmpp_ws"
+  echo "# The API as the other services reach it (scripts/init.sh)."
+  echo "API_INTERNAL_URL=$ETHORA_API_URL"
 } > "$stage/api/backend.env.tmp" && mv "$stage/api/backend.env.tmp" "$stage/api/backend.env"
 
 # frontend.env
@@ -307,11 +331,11 @@ render "$TEMPLATES/centrifugo-config.json.template" "$stage/centrifugo/config.js
 [ -f "$DIST/ejabberd-prod.yml" ] || die "$DIST/ejabberd-prod.yml not found; the config service must run the ethora-xmpp image"
 cfg="$stage/xmpp/ejabberd.yml"
 cp "$DIST/ejabberd-prod.yml" "$cfg"
-export TRACK_MEMBER_URL="${TRACK_MEMBER_URL:-http://api:8080/v1/chats/track-member}"
-export TRACK_LAST_MESSAGE_URL="${TRACK_LAST_MESSAGE_URL:-http://api:8080/v1/chats/track-last-message}"
-export TRACK_MESSAGE_URL="${TRACK_MESSAGE_URL:-http://api:8080/v1/chats/archive-message}"
-export HISTORY_ACCESS_URL="${HISTORY_ACCESS_URL:-http://api:8080/v1/chats/history-access}"
-export MESSAGE_AUDIT_URL="${MESSAGE_AUDIT_URL:-http://api:8080/v1/chats/message-audit}"
+export TRACK_MEMBER_URL="${TRACK_MEMBER_URL:-$ETHORA_API_URL/v1/chats/track-member}"
+export TRACK_LAST_MESSAGE_URL="${TRACK_LAST_MESSAGE_URL:-$ETHORA_API_URL/v1/chats/track-last-message}"
+export TRACK_MESSAGE_URL="${TRACK_MESSAGE_URL:-$ETHORA_API_URL/v1/chats/archive-message}"
+export HISTORY_ACCESS_URL="${HISTORY_ACCESS_URL:-$ETHORA_API_URL/v1/chats/history-access}"
+export MESSAGE_AUDIT_URL="${MESSAGE_AUDIT_URL:-$ETHORA_API_URL/v1/chats/message-audit}"
 PUSH_COMMON_POST_URL="${PUSH_COMMON_POST_URL:-https://$API_DOMAIN/push/api/v2/push}"
 PUSH_VOIP_POST_URL="${PUSH_VOIP_POST_URL:-http://host.docker.internal:7778/api/v1/voippush}"
 push_token="${B2B_PUSH_SECRET:-$INTERNAL_REQUESTS_SECRET}"
@@ -343,6 +367,18 @@ sed -i \
   "$cfg"
 # sql password
 sed -i "s|^sql_password:.*|sql_password: \"$E_MYSQL_ROOT_PASSWORD\"|g" "$cfg"
+# sql server, user, port: only when they differ from the template's
+# (mysql, root, 3306), so the default rendering stays the installer's.
+if [ "$ETHORA_MYSQL_HOST" != mysql ]; then
+  sed -i "s|^sql_server:.*|sql_server: \"$(esc "$ETHORA_MYSQL_HOST")\"|" "$cfg"
+fi
+if [ "$ETHORA_MYSQL_USER" != root ]; then
+  sed -i "s|^sql_username:.*|sql_username: \"$(esc "$ETHORA_MYSQL_USER")\"|" "$cfg"
+fi
+if [ "$MYSQL_PORT" != 3306 ]; then
+  if grep -q '^sql_port:' "$cfg"; then sed -i "s|^sql_port:.*|sql_port: $MYSQL_PORT|" "$cfg"
+  else awk -v p="$MYSQL_PORT" '{ print } /^sql_server:/ { print "sql_port: " p }' "$cfg" > "$cfg.tmp" && mv "$cfg.tmp" "$cfg"; fi
+fi
 # tracking modules
 sed -i \
   -e "/^  mod_track_member:/,/^  [a-z_]/ s|^[ ]*url:.*|    url: \"$E_TRACK_MEMBER_URL\"|g" \
