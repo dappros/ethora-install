@@ -175,7 +175,9 @@ WebSocket upgrades allowed:
 | `files.<root>` | `minio:9000` | all, with the original `Host` header |
 
 For Coolify the exact steps (git-based application, and a draft one-click
-service template) are in `platforms/coolify/README.md`.
+service template) are in `platforms/coolify/README.md`; for Dokploy
+(Compose service from git, and a template in the format of Dokploy's
+templates repository) in `platforms/dokploy/README.md`.
 
 ## Portainer
 

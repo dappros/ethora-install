@@ -51,6 +51,43 @@ print(f"{len(svcs)} services, {len(files)} inline files, {sum(n for _, n in file
 PY
 else skip "coolify template parses (python3 + pyyaml not available)"; fi
 
+echo "# platforms/dokploy"
+DT="$BUNDLE/platforms/dokploy"
+"$DT/build-template.sh" --check >/dev/null 2>"$T/dtpl.err" && ok "dokploy blueprint regenerates identically" || fail "dokploy blueprint out of date" "run deploy/compose/platforms/dokploy/build-template.sh"
+for f in scripts/api-entrypoint.sh scripts/init.sh scripts/verify.js scripts/render-config.sh scripts/mongo-init.sh scripts/xmpp-start.sh scripts/frontend-start.sh \
+         templates/backend.env.template templates/frontend.env.template templates/centrifugo-config.json.template; do
+  grep -q "^filePath = \"/$f\"$" "$DT/template.toml" || fail "dokploy blueprint carries $f"
+done; ok "dokploy blueprint carries every script and template as a mount"
+DC="$DT/docker-compose.yml"
+grep -qE '^  caddy:' "$DC" && fail "dokploy compose must not include caddy" || ok "dokploy compose has no bundled proxy"
+grep -qE '^\s+(ports|container_name|networks):' "$DC" && fail "dokploy compose has ports/container_name/networks (the templates repository rejects them)" || ok "dokploy compose has no ports, container_name or networks"
+grep -qE '\./(scripts|templates):' "$DC" && fail "dokploy compose still mounts ./scripts or ./templates" || ok "dokploy compose mounts ../files/scripts and ../files/templates"
+grep -qE '^name:' "$DC" && fail "dokploy compose sets a project name" || ok "dokploy compose leaves the project name to Dokploy"
+python3 -c 'import json,sys,os; d=json.load(open(sys.argv[1])); assert d["id"]=="ethora-core" and all(k in d for k in ("name","version","description","links","logo","tags")); assert os.path.exists(os.path.join(os.path.dirname(sys.argv[1]), d["logo"]))' "$DT/meta.json" 2>"$T/meta.err" && ok "dokploy meta.json complete, logo present" || fail "dokploy meta.json" "$(cat "$T/meta.err")"
+if command -v python3 >/dev/null 2>&1 && python3 -c "import tomllib" 2>/dev/null; then
+  python3 - "$DT/template.toml" "$BUNDLE" >"$T/dtpl.out" 2>&1 <<'PY' && ok "dokploy template.toml parses: $(cat "$T/dtpl.out")" || fail "dokploy template.toml" "$(cat "$T/dtpl.out")"
+import sys, tomllib, re
+d = tomllib.load(open(sys.argv[1], "rb")); bundle = sys.argv[2]
+c = d["config"]
+doms = {(x["serviceName"], x["port"], x["host"], x.get("path", "/")) for x in c["domains"]}
+assert doms == {("api", 8080, "api.${root_domain}", "/"), ("frontend", 8080, "app.${root_domain}", "/"),
+                ("centrifugo", 8000, "app.${root_domain}", "/connection/websocket"), ("xmpp", 5280, "xmpp.${root_domain}", "/ws"),
+                ("xmpp", 5280, "xmpp.${root_domain}", "/bosh"), ("minio", 9000, "files.${root_domain}", "/")}, doms
+assert d["variables"]["root_domain"] == "${domain}"
+for m in c["mounts"]:
+    assert m["content"] == open(bundle + m["filePath"]).read(), m["filePath"]
+env = dict(l.split("=", 1) for l in c["env"])
+example = [l.split("=", 1)[0] for l in open(bundle + "/.env.example") if re.match(r"^[A-Z_]+=", l)]
+skipped = {"API_DOMAIN", "WEB_DOMAIN", "XMPP_DOMAIN", "FILES_DOMAIN", "ACME_EMAIL", "CADDY_GLOBAL_OPTIONS", "HTTP_PORT", "HTTPS_PORT"}
+assert [k for k in example if k not in skipped] == list(env), list(env)
+assert env["COMPOSE_PROFILES"] == "" and env["ROOT_DOMAIN"] == "${root_domain}"
+secrets = [k for k in env if k.endswith(("_SECRET", "_PASSWORD", "_KEY")) and k != "ETHORA_LICENSE_KEY"] + ["MINIO_ROOT_USER"]
+for k in secrets:
+    v = re.fullmatch(r"(ethora)?\$\{([a-z_]+)\}", env[k]); assert v and "${password:" in d["variables"][v.group(2)], (k, env[k])
+print(f"{len(c['domains'])} domains, {len(c['mounts'])} mounts, {len(env)} env keys, {len(secrets)} generated secrets")
+PY
+else skip "dokploy template.toml parses (python3 3.11+ with tomllib not available)"; fi
+
 echo "# configure.sh"
 B="$T/bundle"; cp -r "$BUNDLE" "$B"; rm -f "$B/.env"
 cfg() { "$B/configure.sh" "$@" >"$T/out" 2>"$T/err"; }
