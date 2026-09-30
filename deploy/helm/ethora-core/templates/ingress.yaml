@@ -1,0 +1,80 @@
+{{- if .Values.ingress.enabled -}}
+{{- $fn := include "ethora.fullname" . -}}
+{{- $hosts := include "ethora.hosts" . | fromYaml -}}
+{{- $ing := .Values.ingress -}}
+{{- $tls := and $ing.tls (or (not .Values.publicUrl) (hasPrefix "https://" .Values.publicUrl)) -}}
+{{- /*
+One ingress per public host, routed like the compose bundle's Caddyfile:
+  api.   -> api (/metrics goes to the web app, so the API's metrics stay internal)
+  app.   -> frontend, /connection/websocket -> centrifugo
+  xmpp.  -> xmpp, /ws and /bosh only (never ejabberd's /api or /admin)
+  files. -> minio
+With publicUrl, one ingress routes all of them by path.
+*/ -}}
+{{- $routes := list
+  (dict "role" "api" "extra" $ing.uploadAnnotations "paths" (list
+    (dict "path" "/metrics" "type" "Exact" "svc" "frontend")
+    (dict "path" "/" "type" "Prefix" "svc" "api")))
+  (dict "role" "web" "extra" $ing.websocketAnnotations "paths" (list
+    (dict "path" "/connection/websocket" "type" "Exact" "svc" "centrifugo" "port" 8000)
+    (dict "path" "/" "type" "Prefix" "svc" "frontend")))
+  (dict "role" "xmpp" "extra" $ing.websocketAnnotations "paths" (list
+    (dict "path" "/ws" "type" "Prefix" "svc" "xmpp" "port" 5280)
+    (dict "path" "/bosh" "type" "Prefix" "svc" "xmpp" "port" 5280)))
+  (dict "role" "files" "extra" $ing.uploadAnnotations "paths" (list
+    (dict "path" "/" "type" "Prefix" "svc" "minio" "port" 9000)))
+-}}
+{{- if .Values.publicUrl -}}
+{{- $routes = list (dict "role" "web" "extra" (merge (dict) $ing.websocketAnnotations $ing.uploadAnnotations) "paths" (list
+    (dict "path" "/metrics" "type" "Exact" "svc" "frontend")
+    (dict "path" "/v1" "type" "Prefix" "svc" "api")
+    (dict "path" "/v2" "type" "Prefix" "svc" "api")
+    (dict "path" "/api-docs" "type" "Prefix" "svc" "api")
+    (dict "path" "/ws" "type" "Prefix" "svc" "xmpp" "port" 5280)
+    (dict "path" "/bosh" "type" "Prefix" "svc" "xmpp" "port" 5280)
+    (dict "path" "/connection/websocket" "type" "Exact" "svc" "centrifugo" "port" 8000)
+    (dict "path" "/files" "type" "Prefix" "svc" "minio" "port" 9000)
+    (dict "path" "/" "type" "Prefix" "svc" "frontend"))) -}}
+{{- end -}}
+{{- range $i, $r := $routes }}
+{{- $host := index $hosts $r.role }}
+{{- if $i }}
+---
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ printf "%s-%s" $fn $r.role }}
+  labels: {{- include "ethora.labels" $ | nindent 4 }}
+  {{- $ann := merge (dict) $r.extra $ing.annotations }}
+  {{- if $ing.clusterIssuer }}
+  {{- $_ := set $ann "cert-manager.io/cluster-issuer" $ing.clusterIssuer }}
+  {{- end }}
+  {{- with $ann }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $ing.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if $tls }}
+  tls:
+    - hosts: [{{ $host | quote }}]
+      secretName: {{ printf "%s-%s-tls" $fn $r.role }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          {{- range $r.paths }}
+          - path: {{ .path }}
+            pathType: {{ .type }}
+            backend:
+              service:
+                name: {{ printf "%s-%s" $fn .svc }}
+                port:
+                  number: {{ default 8080 .port }}
+          {{- end }}
+{{- end }}
+{{- end }}

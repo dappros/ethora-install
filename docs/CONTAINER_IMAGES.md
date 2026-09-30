@@ -250,6 +250,8 @@ the ejabberd template it renders always matches the xmpp release. The
 `compose-init` job of `release-images.yml` builds it after the xmpp job, FROM
 the xmpp image that run pushed, and publishes it next to the three Core
 images (GHCR and Docker Hub, `<line>` and `<line>.<n>`).
+The Helm chart (`deploy/helm/ethora-core`) runs it as the init container of
+every pod that needs configuration.
 
 ## Editions, registries and versions
 

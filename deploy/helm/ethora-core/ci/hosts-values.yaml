@@ -1,0 +1,6 @@
+# Four hosts, cert-manager TLS (chart-testing fixture).
+rootDomain: chat.example.com
+admin:
+  email: ops@example.com
+ingress:
+  clusterIssuer: letsencrypt-prod

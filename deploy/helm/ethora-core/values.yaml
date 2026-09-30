@@ -1,0 +1,186 @@
+# Ethora Core on Kubernetes. The settings are the compose bundle's
+# (deploy/compose/.env.example); the chart renders every service's
+# configuration with the same ethora-compose-init image.
+#
+# Minimal install:
+#   helm install ethora oci://docker.io/dappros/ethora-core \
+#     --set rootDomain=chat.example.com --set admin.email=you@example.com \
+#     --set ingress.clusterIssuer=letsencrypt-prod
+
+# ---------------------------------------------------------------- hosts --
+# Four hosts derive from rootDomain: api., app., xmpp., files.<rootDomain>.
+rootDomain: ""
+# Per-host overrides (default: derived from rootDomain).
+hosts:
+  api: ""
+  web: ""
+  xmpp: ""
+  files: ""
+# Or everything on one address, routed by path (the ingress then has one host):
+# e.g. https://chat.example.com. Set rootDomain or publicUrl, not both.
+publicUrl: ""
+
+# ---------------------------------------------------------------- admin --
+admin:
+  # Platform admin and owner of the base app. Required.
+  email: ""
+  # Initial password of that account; generated when empty (see NOTES).
+  password: ""
+# Product name shown in the web app.
+displayName: Ethora
+
+# -------------------------------------------------------------- licence --
+# Empty key = Ethora Core, unregistered. https://ethora.com/legal/ethora-core-license/
+license:
+  key: ""
+  callHome: true
+  serverUrl: ""
+
+# Any other variable of the installer's service templates
+# (deploy/compose/templates/*.template), e.g. POSTMARK_ENABLED: "true".
+extraSettings: {}
+
+# -------------------------------------------------------------- secrets --
+secrets:
+  # Name of an existing Secret holding the keys below (ADMIN_PASSWORD,
+  # JWT_SECRET, ...). When empty the chart creates <release>-ethora-core-secrets:
+  # a value given here wins, otherwise it is generated on the first install and
+  # kept on upgrades and after uninstall (resource-policy keep), because the
+  # databases are initialised with it.
+  existingSecret: ""
+  jwtSecret: ""
+  refreshSecret: ""
+  xmppSecret: ""
+  xmppJwtSecret: ""
+  xmppAdminPassword: ""
+  internalRequestsSecret: ""
+  mysqlRootPassword: ""
+  minioRootUser: ""
+  minioRootPassword: ""
+  centrifugoApiKey: ""
+  centrifugoHmacSecret: ""
+  centrifugoAdminPassword: ""
+  centrifugoAdminSecret: ""
+
+# --------------------------------------------------------------- images --
+# An empty tag means the chart's appVersion (the release line, e.g. 2610).
+images:
+  api: { repository: docker.io/dappros/ethora-api, tag: "" }
+  frontend: { repository: docker.io/dappros/ethora-frontend, tag: "" }
+  xmpp: { repository: docker.io/dappros/ethora-xmpp, tag: "" }
+  composeInit: { repository: docker.io/dappros/ethora-compose-init, tag: "" }
+  mongo: { repository: docker.io/library/mongo, tag: "6.0.8" }
+  mysql: { repository: docker.io/library/mysql, tag: "8.1.0" }
+  redis: { repository: docker.io/library/redis, tag: "7.4-alpine" }
+  minio: { repository: docker.io/dappros/minio, tag: "RELEASE.2025-09-07T16-13-09Z" }
+  centrifugo: { repository: docker.io/centrifugo/centrifugo, tag: "v6.9.7" }
+imagePullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# -------------------------------------------------------------- ingress --
+ingress:
+  enabled: true
+  className: nginx
+  # cert-manager ClusterIssuer; adds cert-manager.io/cluster-issuer to every
+  # ingress. Empty: bring your own certificates in the tls secrets.
+  clusterIssuer: ""
+  tls: true
+  # Added to every ingress.
+  annotations: {}
+  # Added to the ingresses that carry WebSockets (app: Centrifugo, xmpp: /ws).
+  websocketAnnotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  # Added to the ingresses that take uploads (api, files).
+  uploadAnnotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+
+# ------------------------------------------------------------ databases --
+# Bundled StatefulSets. Set enabled: false and fill external.* to use a
+# managed service instead (see values-external-databases.yaml).
+mongo:
+  enabled: true
+  database: ethora_prod
+  persistence: { size: 10Gi, storageClass: "" }
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+mysql:
+  enabled: true
+  persistence: { size: 5Gi, storageClass: "" }
+  resources:
+    requests: { cpu: 100m, memory: 384Mi }
+    limits: { memory: 1Gi }
+redis:
+  enabled: true
+  persistence: { size: 1Gi, storageClass: "" }
+  resources:
+    requests: { cpu: 20m, memory: 32Mi }
+    limits: { memory: 256Mi }
+minio:
+  enabled: true
+  persistence: { size: 20Gi, storageClass: "" }
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
+external:
+  mongo:
+    # Full connection strings, e.g. mongodb+srv://user:pass@cluster.example.net/ethora_prod
+    uri: ""
+    chatUri: ""
+  mysql:
+    host: ""
+    port: 3306
+    # The password is secrets.mysqlRootPassword whatever the user.
+    user: root
+  redis:
+    # No password: the API does not support one.
+    host: ""
+    port: 6379
+  minio:
+    # S3-compatible storage reached over plain HTTP (the API does not use TLS
+    # to it), e.g. a MinIO on the private network. Credentials:
+    # secrets.minioRootUser / minioRootPassword.
+    host: ""
+    port: 9000
+
+# ------------------------------------------------------------- services --
+centrifugo:
+  resources:
+    requests: { cpu: 20m, memory: 32Mi }
+    limits: { memory: 256Mi }
+xmpp:
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+api:
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 384Mi }
+    limits: { memory: 1536Mi }
+jobs:
+  resources:
+    requests: { cpu: 50m, memory: 256Mi }
+    limits: { memory: 1Gi }
+frontend:
+  replicas: 1
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { memory: 128Mi }
+
+# First-boot steps (base app, admin account, XMPP accounts, migrations), run
+# as a Job after every install and upgrade; idempotent.
+init:
+  enabled: true
+  backoffLimit: 10
+  resources:
+    requests: { cpu: 50m, memory: 256Mi }
+
+# `helm test <release>`: the bundle's end-to-end check through the public URLs.
+tests:
+  enabled: true
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

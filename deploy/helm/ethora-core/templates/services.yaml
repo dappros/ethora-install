@@ -1,0 +1,236 @@
+{{- $fn := include "ethora.fullname" . -}}
+{{- /* ------------------------------------------------------- centrifugo */ -}}
+{{- $c := dict "root" . "component" "centrifugo" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ethora.cname" $c }}
+  labels: {{- include "ethora.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "ethora.selectorLabels" $c | nindent 4 }}
+  ports:
+    - { name: http, port: 8000, targetPort: 8000 }
+---
+# Real-time counters for the admin panel; in memory, so a Deployment.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ethora.cname" $c }}
+  labels: {{- include "ethora.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {{- include "ethora.selectorLabels" $c | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "ethora.selectorLabels" $c | nindent 8 }}
+      annotations:
+        checksum/settings: {{ include (print $.Template.BasePath "/settings.yaml") . | sha256sum }}
+    spec:
+      {{- include "ethora.podCommon" . | nindent 6 }}
+      initContainers:
+        {{- include "ethora.renderInit" (dict "root" .) | nindent 8 }}
+      containers:
+        - name: centrifugo
+          image: {{ include "ethora.image" (dict "root" . "name" "centrifugo") }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: ["centrifugo", "-c", "/ethora/config/centrifugo/config.json"]
+          ports:
+            - { name: http, containerPort: 8000 }
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 15
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources: {{- toYaml .Values.centrifugo.resources | nindent 12 }}
+          volumeMounts: {{- include "ethora.configMount" . | nindent 12 }}
+      volumes: {{- include "ethora.configVolume" . | nindent 8 }}
+---
+{{- /* ------------------------------------------------------------- xmpp */ -}}
+{{- $c = dict "root" . "component" "xmpp" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ethora.cname" $c }}
+  labels: {{- include "ethora.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "ethora.selectorLabels" $c | nindent 4 }}
+  ports:
+    - { name: http, port: 5280, targetPort: 5280 }
+---
+# ejabberd with the Ethora modules. One replica: its state is in MySQL, and
+# the image is not set up for an ejabberd cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ethora.cname" $c }}
+  labels: {{- include "ethora.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: {{- include "ethora.selectorLabels" $c | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "ethora.selectorLabels" $c | nindent 8 }}
+      annotations:
+        checksum/settings: {{ include (print $.Template.BasePath "/settings.yaml") . | sha256sum }}
+    spec:
+      {{- include "ethora.podCommon" . | nindent 6 }}
+      initContainers:
+        {{- include "ethora.renderInit" (dict "root" .) | nindent 8 }}
+        {{- $mysqlHost := ternary (printf "%s-mysql" $fn) .Values.external.mysql.host .Values.mysql.enabled }}
+        {{- include "ethora.waitFor" (dict "root" . "name" "mysql" "host" $mysqlHost "port" (ternary 3306 .Values.external.mysql.port .Values.mysql.enabled)) | nindent 8 }}
+      containers:
+        - name: xmpp
+          image: {{ include "ethora.image" (dict "root" . "name" "xmpp") }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          # Installs the rendered config and registers admin@<xmpp host>, then
+          # runs the image's entrypoint (deploy/compose/scripts/xmpp-start.sh).
+          command: ["/bin/sh", "/ethora/config/scripts/xmpp-start.sh"]
+          env:
+            # Cap Erlang's port table. It is sized from the open-files limit,
+            # which containerd nodes set to about a billion; every `erl` the
+            # image starts would then reserve gigabytes and be OOM-killed.
+            - { name: ERL_FLAGS, value: "+Q 65536" }
+          ports:
+            - { name: http, containerPort: 5280 }
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "test -f /tmp/ethora-admin-ready && /opt/ejabberd/bin/ejabberdctl status >/dev/null"]
+            periodSeconds: 10
+            timeoutSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["/opt/ejabberd/bin/ejabberdctl", "status"]
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            timeoutSeconds: 10
+          resources: {{- toYaml .Values.xmpp.resources | nindent 12 }}
+          volumeMounts: {{- include "ethora.configMount" . | nindent 12 }}
+      volumes: {{- include "ethora.configVolume" . | nindent 8 }}
+---
+{{- /* -------------------------------------------------------- api, jobs */ -}}
+{{- $c = dict "root" . "component" "api" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ethora.cname" $c }}
+  labels: {{- include "ethora.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "ethora.selectorLabels" $c | nindent 4 }}
+  ports:
+    - { name: http, port: 8080, targetPort: 8080 }
+{{- range $proc := list "api" "jobs" }}
+{{- $c := dict "root" $ "component" $proc }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ethora.cname" $c }}
+  labels: {{- include "ethora.labels" $ | nindent 4 }}
+spec:
+  replicas: {{ ternary $.Values.api.replicas 1 (eq $proc "api") }}
+  selector:
+    matchLabels: {{- include "ethora.selectorLabels" $c | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "ethora.selectorLabels" $c | nindent 8 }}
+      annotations:
+        checksum/settings: {{ include (print $.Template.BasePath "/settings.yaml") $ | sha256sum }}
+    spec:
+      {{- include "ethora.podCommon" $ | nindent 6 }}
+      initContainers:
+        {{- include "ethora.renderInit" (dict "root" $) | nindent 8 }}
+        {{- if $.Values.mongo.enabled }}
+        # Makes MongoDB a single-node replica set (idempotent) and waits for PRIMARY.
+        - name: mongo-init
+          image: {{ include "ethora.image" (dict "root" $ "name" "mongo") }}
+          imagePullPolicy: {{ $.Values.imagePullPolicy }}
+          command: ["bash", "/ethora/config/scripts/mongo-init.sh"]
+          env:
+            # The pod's own DNS name (headless service), see databases.yaml.
+            - { name: MONGO_HOST, value: {{ printf "%s-mongo-0.%s-mongo:27017" $fn $fn | quote }} }
+          volumeMounts: {{- include "ethora.configMount" $ | nindent 12 }}
+          resources:
+            requests: { cpu: 10m, memory: 64Mi }
+        {{- end }}
+      containers:
+        - name: {{ $proc }}
+          image: {{ include "ethora.image" (dict "root" $ "name" "api") }}
+          imagePullPolicy: {{ $.Values.imagePullPolicy }}
+          # Loads the rendered backend.env, then runs the image's start.js.
+          command: ["tini", "--", "bash", "/ethora/config/scripts/api-entrypoint.sh"]
+          args: [{{ $proc | quote }}]
+          {{- if eq $proc "api" }}
+          ports:
+            - { name: http, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: /v1/ping, port: 8080 }
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: { path: /v1/ping, port: 8080 }
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+          resources: {{- toYaml $.Values.api.resources | nindent 12 }}
+          {{- else }}
+          resources: {{- toYaml $.Values.jobs.resources | nindent 12 }}
+          {{- end }}
+          volumeMounts: {{- include "ethora.configMount" $ | nindent 12 }}
+      volumes: {{- include "ethora.configVolume" $ | nindent 8 }}
+{{- end }}
+---
+{{- /* --------------------------------------------------------- frontend */ -}}
+{{- $c = dict "root" . "component" "frontend" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ethora.cname" $c }}
+  labels: {{- include "ethora.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "ethora.selectorLabels" $c | nindent 4 }}
+  ports:
+    - { name: http, port: 8080, targetPort: 8080 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ethora.cname" $c }}
+  labels: {{- include "ethora.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector:
+    matchLabels: {{- include "ethora.selectorLabels" $c | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "ethora.selectorLabels" $c | nindent 8 }}
+      annotations:
+        checksum/settings: {{ include (print $.Template.BasePath "/settings.yaml") . | sha256sum }}
+    spec:
+      {{- include "ethora.podCommon" . | nindent 6 }}
+      initContainers:
+        {{- include "ethora.renderInit" (dict "root" .) | nindent 8 }}
+      containers:
+        - name: frontend
+          image: {{ include "ethora.image" (dict "root" . "name" "frontend") }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          # Exports the rendered frontend.env, then the image renders config.js.
+          command: ["/bin/sh", "/ethora/config/scripts/frontend-start.sh"]
+          args: ["serve"]
+          ports:
+            - { name: http, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 15
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources: {{- toYaml .Values.frontend.resources | nindent 12 }}
+          volumeMounts: {{- include "ethora.configMount" . | nindent 12 }}
+      volumes: {{- include "ethora.configVolume" . | nindent 8 }}

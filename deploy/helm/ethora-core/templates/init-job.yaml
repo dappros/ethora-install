@@ -1,0 +1,39 @@
+{{- if .Values.init.enabled -}}
+{{- $fn := include "ethora.fullname" . -}}
+# First-boot steps (deploy/compose/scripts/init.sh): base app and platform
+# admin, the base app's XMPP accounts, data migrations, translation
+# languages. Each step is idempotent. A plain Job named after the release
+# revision, not a Helm hook: every install and upgrade starts a new one that
+# waits for the API itself, so `helm install` never times out on the first
+# image pulls. The previous revision's Job is removed by the upgrade.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $fn }}-init-{{ .Release.Revision }}
+  labels: {{- include "ethora.labels" . | nindent 4 }}
+spec:
+  backoffLimit: {{ .Values.init.backoffLimit }}
+  template:
+    metadata:
+      labels: {{- include "ethora.selectorLabels" (dict "root" . "component" "init") | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      {{- include "ethora.podCommon" . | nindent 6 }}
+      initContainers:
+        {{- include "ethora.renderInit" (dict "root" .) | nindent 8 }}
+        - name: wait-api
+          image: {{ include "ethora.image" (dict "root" . "name" "api") }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: ["sh", "-c", "until curl -fsS -o /dev/null http://{{ $fn }}-api:8080/v1/ping; do echo waiting for the API; sleep 5; done"]
+          resources:
+            requests: { cpu: 5m, memory: 16Mi }
+      containers:
+        - name: init
+          image: {{ include "ethora.image" (dict "root" . "name" "api") }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: ["tini", "--", "bash", "/ethora/config/scripts/api-entrypoint.sh"]
+          args: ["init"]
+          resources: {{- toYaml .Values.init.resources | nindent 12 }}
+          volumeMounts: {{- include "ethora.configMount" . | nindent 12 }}
+      volumes: {{- include "ethora.configVolume" . | nindent 8 }}
+{{- end }}

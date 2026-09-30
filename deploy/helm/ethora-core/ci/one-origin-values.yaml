@@ -1,0 +1,9 @@
+# Everything on one address, routed by path (chart-testing fixture).
+publicUrl: https://chat.example.com
+admin:
+  email: ops@example.com
+  password: fixed-for-ci
+ingress:
+  clusterIssuer: letsencrypt-prod
+extraSettings:
+  POSTMARK_ENABLED: "false"
