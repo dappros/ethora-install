@@ -1,0 +1,37 @@
+{
+    "client": {
+        "token": {
+            "hmac_secret_key": "{{CENTRIFUGO_HMAC_SECRET}}"
+        },
+        "allowed_origins": [
+            "*"
+        ],
+        "subscribe_to_user_personal_channel": {
+            "enabled": true,
+            "single_connection": false
+        }
+    },
+    "http_api": {
+        "key": "{{CENTRIFUGO_API_KEY}}"
+    },
+    "admin": {
+        "password": "{{CENTRIFUGO_ADMIN_PASSWORD}}",
+        "secret": "{{CENTRIFUGO_ADMIN_SECRET}}",
+        "enabled": true
+    },
+    "channel": {
+        "without_namespace": {
+            "allow_subscribe_for_client": true
+        },
+
+        "namespaces": [
+            {
+                "name": "public",
+                "presence": true,
+                "allow_subscribe_for_client": true,
+                "join_leave": true,
+                "force_push_join_leave": true
+            }
+        ]
+    }
+}
