@@ -8,7 +8,9 @@ PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); echo "  ok   $1"; }
 fail() { FAIL=$((FAIL+1)); echo "  FAIL $1"; [ -n "${2:-}" ] && echo "       $2"; }
 y() { yq eval "$1" "$2"; }
-run() { "$SETUP" "$@" --no-validate 2>"$T/err" >"$T/out"; }
+# The tests describe a monoserver checkout (component sources present) unless
+# a test says otherwise; CI checks out without submodule contents.
+run() { ETHORA_SETUP_COMPONENT_SOURCES="${SOURCES:-present}" "$SETUP" "$@" --no-validate 2>"$T/err" >"$T/out"; }
 
 echo "# derivation from a root domain"
 run --domain Chat.Example.com --admin-email ops@example.com --yes --out "$T/a.yml"
@@ -120,6 +122,12 @@ run --domain chat.example.com --admin-email a@b.co --edition core --ai on --yes 
 run --domain chat.example.com --admin-email a@b.co --yes --out "$T/ed3.yml"
 [ "$(y .edition "$T/ed3.yml")" = "full" ] && [ "$(y .services.push.enabled "$T/ed3.yml")" = "true" ] && [ "$(y .services.backend.image "$T/ed3.yml")" = "docker.io/dappros/ethora-api:2610" ] && ok "full edition is the default and keeps GHCR images" || fail "full default"
 run --domain chat.example.com --admin-email a@b.co --edition weird --yes --out "$T/ed4.yml"; grep -q "must be core or full" "$T/err" && ok "bad edition refused" || fail "bad edition"
+
+echo "# a checkout without component sources defaults to Core in image mode"
+SOURCES=absent run --domain chat.example.com --admin-email ops@example.com --yes --out "$T/nosrc.yml"
+[ "$(y .edition "$T/nosrc.yml")" = "core" ] && [ "$(y .services.backend.mode "$T/nosrc.yml")" = "image" ] && [ "$(y .services.frontend.mode "$T/nosrc.yml")" = "image" ] && ok "no sources: core edition, image mode" || fail "no sources default" "$(y '.edition, .services.backend.mode' "$T/nosrc.yml" | tr '\n' ' ')"
+SOURCES=absent run --domain chat.example.com --admin-email ops@example.com --yes --edition full --out "$T/nosrc2.yml"
+[ "$(y .edition "$T/nosrc2.yml")" = "full" ] && ok "no sources: explicit --edition wins" || fail "no sources: explicit edition"
 
 echo "# re-run on an existing file keeps its secrets"
 run --domain chat.example.com --admin-email a@b.co --yes --out "$T/rr.yml"
