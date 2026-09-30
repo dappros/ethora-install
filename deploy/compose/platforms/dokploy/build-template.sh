@@ -41,7 +41,7 @@ render_compose() {
 HDR
   sed -n '/^x-logging:/,$p' "$BUNDLE/docker-compose.yml" \
     | sed -e '/^  # -* caddy --$/,/^volumes:$/{/^volumes:$/!d}' \
-          -e '/^  caddy-data:/d' -e '/^  caddy-config:/d' \
+          -e '/^  caddy-data:/d' -e '/^  caddy-config:/d' -e '/^      - \.\/Caddyfile:/d' \
           -e 's#\./scripts:#../files/scripts:#g; s#\./templates:#../files/templates:#g'
 }
 

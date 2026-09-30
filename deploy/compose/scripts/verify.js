@@ -19,13 +19,25 @@ const { client, xml } = require('/app/node_modules/@xmpp/client')
 
 const env = process.env
 const hostOf = (url, fallback) => { try { return new URL(url).host } catch { return fallback } }
-const WEB = env.VERIFY_WEB_DOMAIN || hostOf(env.DEFAULT_APP_URL, '')
-const API = env.VERIFY_API_DOMAIN || hostOf((env.OAUTH_ISSUER || ''), '') || (env.ETHORA_LICENSED_HOSTS || '').split(',')[0]
-const FILES = env.VERIFY_FILES_DOMAIN || hostOf(env.MINIO_URL, '')
+// Public entry points as the config service rendered them (ETHORA_PUBLIC_*
+// in backend.env): four https hosts, or one origin (PUBLIC_URL). VERIFY_*
+// overrides them, e.g. to reach a LAN install by IP from this container.
+const origin = (u) => String(u || '').replace(/\/+$/, '')
+const WEB_URL = origin(env.VERIFY_WEB_URL || env.ETHORA_PUBLIC_WEB_URL)
+const API_URL = origin(env.VERIFY_API_URL || env.ETHORA_PUBLIC_API_URL)
+const FILES_URL = origin(env.VERIFY_FILES_URL || env.ETHORA_PUBLIC_FILES_URL)
+const XMPP_WS = env.VERIFY_XMPP_WS_URL || env.ETHORA_PUBLIC_XMPP_WS_URL
+const WEB = hostOf(WEB_URL, '')
+const API = hostOf(API_URL, '')
+const FILES = hostOf(FILES_URL, '')
 const XMPP = env.XMPP_HOST
+const ONE_ORIGIN = WEB_URL === API_URL
 const EMAIL = env.VERIFY_EMAIL || env.PLATFORM_ACCOUNT_EMAIL
 const PASSWORD = env.VERIFY_PASSWORD || env.PLATFORM_ACCOUNT_PASSWORD
 const SLUG = env.BASE_APP_DOMAIN_NAME
+// VERIFY_SKIP=web skips the web page check, for a web UI behind a platform
+// login (Umbrel's app_proxy); the other checks use the API and XMPP paths.
+const SKIP = new Set(String(env.VERIFY_SKIP || '').split(',').map((x) => x.trim()).filter(Boolean))
 
 let failures = 0
 const ok = (msg) => console.log(`  ok    ${msg}`)
@@ -59,7 +71,7 @@ async function xmppRoundTrip({ username, token, roomJid }) {
   // the web client joins).
   const nick = username
   const body = `verify message ${new Date().toISOString()}`
-  const xmpp = client({ service: `wss://${XMPP}/ws`, domain: XMPP, username, password: token, resource: `verify-${Date.now()}` })
+  const xmpp = client({ service: XMPP_WS, domain: XMPP, username, password: token, resource: `verify-${Date.now()}` })
   xmpp.on('error', () => {})
   const waitFor = (what, match) => new Promise((resolve, reject) => {
     const t = setTimeout(() => { xmpp.removeListener('stanza', on); reject(new Error(`${what}: no answer within 20 s`)) }, 20000)
@@ -71,7 +83,7 @@ async function xmppRoundTrip({ username, token, roomJid }) {
     xmpp.on('stanza', on)
   })
   await xmpp.start()
-  ok(`xmpp login over wss://${XMPP}/ws as ${nick}`)
+  ok(`xmpp login over ${XMPP_WS} as ${nick}`)
   try {
     // Join, and wait for our own presence back (MUC status 110).
     const joined = waitFor(`join ${roomJid}`, (st) => st.is('presence') && st.attrs.from === `${roomJid}/${nick}`)
@@ -87,21 +99,22 @@ async function xmppRoundTrip({ username, token, roomJid }) {
 }
 
 async function main() {
-  console.log(`Ethora Core compose bundle: verify (web=${WEB} api=${API} xmpp=${XMPP} files=${FILES})\n`)
-  if (!WEB || !API || !XMPP || !FILES || !EMAIL || !PASSWORD) die('could not derive the hosts or admin credentials from backend.env')
+  console.log(`Ethora Core compose bundle: verify (web=${WEB_URL} api=${API_URL} xmpp=${XMPP_WS} files=${FILES_URL})\n`)
+  if (!WEB_URL || !API_URL || !XMPP_WS || !FILES_URL || !XMPP || !EMAIL || !PASSWORD) die('could not derive the public URLs or admin credentials from backend.env')
 
   // 1. public endpoints and certificates
-  await expect200('web app', `https://${WEB}/`)
-  await expect200('API docs', `https://${API}/api-docs/`)
-  await expect200('API ping', `https://${API}/v1/ping`)
-  await expect200('file storage', `https://${FILES}/minio/health/live`)
+  if (!SKIP.has('web')) await expect200('web app', `${WEB_URL}/`)
+  await expect200('API docs', `${API_URL}/api-docs/`)
+  await expect200('API ping', `${API_URL}/v1/ping`)
+  // One origin routes only /files/ to MinIO; the upload below covers it.
+  if (!ONE_ORIGIN) await expect200('file storage', `${FILES_URL}/minio/health/live`)
   if (failures) summary()
 
   // 2. login + licence
-  const cfg = await http(`https://${API}/v1/apps/get-config?domainName=${encodeURIComponent(SLUG)}`)
+  const cfg = await http(`${API_URL}/v1/apps/get-config?domainName=${encodeURIComponent(SLUG)}`)
   const appToken = cfg.json && cfg.json.result && cfg.json.result.appToken
   if (!appToken) die(`get-config for base app "${SLUG}" returned no appToken (HTTP ${cfg.status})`)
-  const login = await http(`https://${API}/v2/users/login-with-email`, {
+  const login = await http(`${API_URL}/v2/users/login-with-email`, {
     method: 'POST',
     headers: { Authorization: appToken, 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
@@ -113,7 +126,7 @@ async function main() {
   ok(`admin login as ${EMAIL}`)
   const auth = { Authorization: token }
 
-  const lic = await http(`https://${API}/v2/license`, { headers: auth })
+  const lic = await http(`${API_URL}/v2/license`, { headers: auth })
   const l = lic.json && lic.json.license
   if (lic.status === 200 && l) {
     const desc = [l.edition, l.tier, l.state, l.registered === false ? 'unregistered' : l.registered ? 'registered' : ''].filter(Boolean).join(', ')
@@ -121,7 +134,7 @@ async function main() {
   } else fail(`GET /v2/license -> HTTP ${lic.status}`)
 
   // 3. chat room + message over XMPP
-  const created = await http(`https://${API}/v2/chats`, {
+  const created = await http(`${API_URL}/v2/chats`, {
     method: 'POST',
     headers: { ...auth, 'Content-Type': 'application/json' },
     body: JSON.stringify({ title: `verify ${new Date().toISOString()}`, description: 'created by the compose bundle verify check', type: 'public' }),
@@ -141,7 +154,7 @@ async function main() {
   const payload = `verify ${Date.now()}\n`
   const form = new FormData()
   form.append('files', new Blob([payload], { type: 'text/plain' }), 'verify.txt')
-  const up = await http(`https://${API}/v2/files`, { method: 'POST', headers: auth, body: form })
+  const up = await http(`${API_URL}/v2/files`, { method: 'POST', headers: auth, body: form })
   const file = up.json && ((up.json.results && up.json.results[0]) || (up.json.result && up.json.result[0]) || up.json.result)
   const location = file && (file.location || file.url)
   if (up.status !== 200 && up.status !== 201) fail(`file upload -> HTTP ${up.status} ${up.text.slice(0, 200)}`)
@@ -152,7 +165,7 @@ async function main() {
     if (host !== FILES) fail(`uploaded file is served from ${host}, expected ${FILES}`)
     else if (got.status === 200 && got.text === payload) ok(`file uploaded and read back from ${location}`)
     else fail(`uploaded file at ${location} -> HTTP ${got.status}`)
-    if (file._id) await http(`https://${API}/v2/files/${file._id}`, { method: 'DELETE', headers: auth }).catch(() => {})
+    if (file._id) await http(`${API_URL}/v2/files/${file._id}`, { method: 'DELETE', headers: auth }).catch(() => {})
   }
 
   summary()

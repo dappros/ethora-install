@@ -241,6 +241,16 @@ renders the service configuration from the same templates as the installer
 (a test asserts the templates are identical) and runs the first-boot steps
 through the API image's script mode. See its README.
 
+Its single-file form (`deploy/compose/single/docker-compose.yml`, and the
+Umbrel and CasaOS apps generated from it) needs no file next to it: the
+configuration is rendered by `ethora-compose-init`
+(`deploy/docker/compose-init.Dockerfile`), which is the `ethora-xmpp` image of
+the same build plus the bundle's `scripts/`, `templates/` and `Caddyfile`, so
+the ejabberd template it renders always matches the xmpp release. The
+`compose-init` job of `release-images.yml` builds it after the xmpp job, FROM
+the xmpp image that run pushed, and publishes it next to the three Core
+images (GHCR and Docker Hub, `<line>` and `<line>.<n>`).
+
 ## Editions, registries and versions
 
 `setup.sh --edition core` writes a `deploy.yml` with only the API, the
@@ -248,7 +258,7 @@ frontend and ejabberd enabled (AI, push, playground, MCP, uptime,
 monitoring, widget and hosted apps off) and points the three image refs at
 Docker Hub (`docker.io/dappros/ethora-{api,frontend,xmpp}`). `--edition
 full` (the default) keeps everything and the GHCR refs. The same workflow
-builds both: the three Core images are pushed to Docker Hub as well as
+builds both: the three Core images (and `ethora-compose-init`) are pushed to Docker Hub as well as
 GHCR when the `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` secrets exist; the
 other four stay on GHCR (private packages, enterprise installs pull them
 with a token).
@@ -256,7 +266,7 @@ with a token).
 Every run gets a build number `<line>.<n>` (`2610.4`): the release branch
 plus the next free number among this repository's git tags. Each image is
 tagged with the moving line tag (`2610`) and the build (`2610.4`), and a git
-tag `2610.4` is created on the monoserver commit once all seven images
+tag `2610.4` is created on the monoserver commit once all eight images
 succeeded, so one number names the whole set. `promote_latest` on a manual
 run also moves Docker Hub `latest`; use it only for the production line.
 `/v1/ping` reports the build number as the version.

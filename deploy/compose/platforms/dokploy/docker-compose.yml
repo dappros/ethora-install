@@ -17,10 +17,9 @@ x-logging: &logging
 
 x-api: &api
   image: ${ETHORA_API_IMAGE:-docker.io/dappros/ethora-api:2610}
-  entrypoint: ["tini", "--", "bash", "/ethora/scripts/api-entrypoint.sh"]
+  entrypoint: ["tini", "--", "bash", "/ethora/config/scripts/api-entrypoint.sh"]
   volumes:
     - config:/ethora/config:ro
-    - ../files/scripts:/ethora/scripts:ro
   <<: *logging
 
 services:
@@ -31,19 +30,45 @@ services:
     entrypoint: ["/bin/sh", "/ethora/scripts/render-config.sh"]
     # Every value in .env reaches the renderer, so any variable of the
     # installer's templates (POSTMARK_*, EMAIL_TLD_*, RATE_LIMIT_*, ...) can
-    # be set there. The hosts are derived here once, for caddy and xmpp too.
+    # be set there. The settings of .env.example are also listed here, for
+    # platforms that pass variables without writing a .env file. Only
+    # ROOT_DOMAIN (or PUBLIC_URL) and ADMIN_EMAIL are required: empty
+    # secrets are generated into the secrets volume.
     env_file:
       - path: .env
         required: false
     environment:
-      ROOT_DOMAIN: ${ROOT_DOMAIN:?ROOT_DOMAIN is not set; run ./configure.sh or fill in .env}
-      API_DOMAIN: ${API_DOMAIN:-api.${ROOT_DOMAIN}}
-      WEB_DOMAIN: ${WEB_DOMAIN:-app.${ROOT_DOMAIN}}
-      XMPP_DOMAIN: ${XMPP_DOMAIN:-xmpp.${ROOT_DOMAIN}}
-      FILES_DOMAIN: ${FILES_DOMAIN:-files.${ROOT_DOMAIN}}
+      ROOT_DOMAIN: ${ROOT_DOMAIN:-}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      API_DOMAIN: ${API_DOMAIN:-}
+      WEB_DOMAIN: ${WEB_DOMAIN:-}
+      XMPP_DOMAIN: ${XMPP_DOMAIN:-}
+      FILES_DOMAIN: ${FILES_DOMAIN:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      BASE_APP_DISPLAY_NAME: ${BASE_APP_DISPLAY_NAME:-Ethora}
+      ETHORA_LICENSE_KEY: ${ETHORA_LICENSE_KEY:-}
+      ETHORA_LICENSE_CALL_HOME: ${ETHORA_LICENSE_CALL_HOME:-true}
+      ETHORA_LICENSE_SERVER_URL: ${ETHORA_LICENSE_SERVER_URL:-}
+      JWT_SECRET: ${JWT_SECRET:-}
+      REFRESH_SECRET: ${REFRESH_SECRET:-}
+      XMPP_SECRET: ${XMPP_SECRET:-}
+      XMPP_JWT_SECRET: ${XMPP_JWT_SECRET:-}
+      XMPP_ADMIN_PASSWORD: ${XMPP_ADMIN_PASSWORD:-}
+      INTERNAL_REQUESTS_SECRET: ${INTERNAL_REQUESTS_SECRET:-}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
+      CENTRIFUGO_API_KEY: ${CENTRIFUGO_API_KEY:-}
+      CENTRIFUGO_HMAC_SECRET: ${CENTRIFUGO_HMAC_SECRET:-}
+      CENTRIFUGO_ADMIN_PASSWORD: ${CENTRIFUGO_ADMIN_PASSWORD:-}
+      CENTRIFUGO_ADMIN_SECRET: ${CENTRIFUGO_ADMIN_SECRET:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      CADDY_GLOBAL_OPTIONS: ${CADDY_GLOBAL_OPTIONS:-}
     volumes:
       - config:/out/config
       - mysql-initdb:/out/mysql-initdb
+      - secrets:/out/secrets
       - ../files/scripts:/ethora/scripts:ro
       - ../files/templates:/ethora/templates:ro
     restart: "no"
@@ -67,10 +92,12 @@ services:
 
   mongo-init:
     image: mongo:6.0.8
-    entrypoint: ["bash", "/ethora/scripts/mongo-init.sh"]
+    entrypoint: ["bash", "/ethora/config/scripts/mongo-init.sh"]
     volumes:
-      - ../files/scripts:/ethora/scripts:ro
+      - config:/ethora/config:ro
     depends_on:
+      config:
+        condition: service_completed_successfully
       mongo:
         condition: service_healthy
     restart: "no"
@@ -80,18 +107,19 @@ services:
     image: mysql:8.1.0
     command: ["--default-authentication-plugin=mysql_native_password"]
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is not set}
+      MYSQL_ROOT_PASSWORD_FILE: /ethora/config/mysql/root-password
       # ejabberd connects as root from its own container (as on a host install).
       MYSQL_ROOT_HOST: "%"
     volumes:
       - mysql:/var/lib/mysql
       - mysql-initdb:/docker-entrypoint-initdb.d:ro
+      - config:/ethora/config:ro
     depends_on:
       config:
         condition: service_completed_successfully
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$(cat /ethora/config/mysql/root-password)\" --silent"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -116,10 +144,14 @@ services:
     image: ${MINIO_IMAGE:-docker.io/dappros/minio:RELEASE.2025-09-07T16-13-09Z}
     command: ["server", "/data"]
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is not set}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is not set}
+      MINIO_ROOT_USER_FILE: /ethora/config/minio/root-user
+      MINIO_ROOT_PASSWORD_FILE: /ethora/config/minio/root-password
     volumes:
       - minio:/data
+      - config:/ethora/config:ro
+    depends_on:
+      config:
+        condition: service_completed_successfully
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/live"]
@@ -152,13 +184,10 @@ services:
   # ------------------------------------------------------------------ xmpp --
   xmpp:
     image: ${ETHORA_XMPP_IMAGE:-docker.io/dappros/ethora-xmpp:2610}
-    entrypoint: ["/bin/sh", "/ethora/scripts/xmpp-start.sh"]
-    environment:
-      XMPP_DOMAIN: ${XMPP_DOMAIN:-xmpp.${ROOT_DOMAIN}}
-      XMPP_ADMIN_PASSWORD: ${XMPP_ADMIN_PASSWORD:?XMPP_ADMIN_PASSWORD is not set}
+    # The xmpp host and admin password come from the rendered config.
+    entrypoint: ["/bin/sh", "/ethora/config/scripts/xmpp-start.sh"]
     volumes:
       - config:/ethora/config:ro
-      - ../files/scripts:/ethora/scripts:ro
     # Native XMPP clients (port 5222) are not exposed by default; web and SDK
     # clients connect over wss://xmpp.<root>/ws through caddy. See README.md.
     depends_on:
@@ -193,7 +222,14 @@ services:
       xmpp:
         condition: service_started
     restart: unless-stopped
-    # Healthcheck: the image's own (GET /v1/ping).
+    # The image's own check (GET /v1/ping), spelled out for tools that read
+    # only the compose file.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/v1/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
 
   jobs:
     <<: *api
@@ -230,11 +266,10 @@ services:
   # -------------------------------------------------------------- frontend --
   frontend:
     image: ${ETHORA_FRONTEND_IMAGE:-docker.io/dappros/ethora-frontend:2610}
-    entrypoint: ["/bin/sh", "/ethora/scripts/frontend-start.sh"]
+    entrypoint: ["/bin/sh", "/ethora/config/scripts/frontend-start.sh"]
     command: ["serve"]
     volumes:
       - config:/ethora/config:ro
-      - ../files/scripts:/ethora/scripts:ro
     depends_on:
       config:
         condition: service_completed_successfully
@@ -247,6 +282,7 @@ volumes:
   mysql:
   minio:
   redis:
+  secrets:         # secrets generated for values left out of .env
   # Regenerated on every start; safe to delete.
   mongo-config:
   config:

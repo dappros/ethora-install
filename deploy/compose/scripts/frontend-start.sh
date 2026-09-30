@@ -22,4 +22,25 @@ while IFS= read -r line || [ -n "$line" ]; do
   esac
 done < "$ENV_FILE"
 
+# One-origin installs (PUBLIC_URL) carry __ETHORA_ORIGIN__ / __ETHORA_ORIGIN_WS__
+# in their URLs. Render as `serve` would, then append a resolver to config.js
+# that replaces them with the page's own origin, so the app works under
+# whatever address it was opened by, then run nginx as `serve` does.
+if [ "${1:-serve}" = "serve" ] && env | grep -q '^VITE_[A-Z_]*=.*__ETHORA_ORIGIN'; then
+  html="${HTML_DIR:-/usr/share/nginx/html}"
+  /usr/local/bin/ethora-frontend render "$html"
+  cat >> "$html/config.js" <<'JS'
+// compose bundle, one-origin install: URLs follow the address in the browser.
+(function (c, l) {
+  var o = l.origin, w = o.replace(/^http/, "ws");
+  for (var k in c) {
+    if (typeof c[k] === "string") {
+      c[k] = c[k].split("__ETHORA_ORIGIN_WS__").join(w).split("__ETHORA_ORIGIN__").join(o);
+    }
+  }
+})(window.__ETHORA_CONFIG__ = window.__ETHORA_CONFIG__ || {}, window.location);
+JS
+  exec nginx -g 'daemon off;'
+fi
+
 exec /usr/local/bin/ethora-frontend "$@"

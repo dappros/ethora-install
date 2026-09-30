@@ -12,6 +12,7 @@
 #   api-entrypoint.sh verify          end-to-end check (scripts/verify.js)
 set -euo pipefail
 
+HERE="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="${ETHORA_BACKEND_ENV_FILE:-/ethora/config/api/backend.env}"
 [ -r "$ENV_FILE" ] || { echo "[api] $ENV_FILE is missing or unreadable; the config service did not run" >&2; exit 1; }
 
@@ -31,10 +32,10 @@ eval "$exports"
 
 if [ "${1:-}" = "init" ]; then
   shift
-  exec bash /ethora/scripts/init.sh "$@"
+  exec bash "$HERE/init.sh" "$@"
 fi
 if [ "${1:-}" = "verify" ]; then
   shift
-  exec node /ethora/scripts/verify.js "$@"
+  exec node "$HERE/verify.js" "$@"
 fi
 exec node /app/dist/start.js "$@"

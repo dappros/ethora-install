@@ -28,7 +28,7 @@
         },
         {
           "name": "ADMIN_PASSWORD",
-          "label": "Admin password"
+          "label": "Admin password (leave empty to generate; printed by the config service log)"
         },
         {
           "name": "COMPOSE_PROFILES",
@@ -37,55 +37,55 @@
         },
         {
           "name": "MYSQL_ROOT_PASSWORD",
-          "label": "MySQL root password (any long random string)"
+          "label": "MySQL root password (leave empty to generate)"
         },
         {
           "name": "MINIO_ROOT_USER",
-          "label": "MinIO access key (any random string)"
+          "label": "MinIO access key (leave empty to generate)"
         },
         {
           "name": "MINIO_ROOT_PASSWORD",
-          "label": "MinIO secret key (any long random string)"
+          "label": "MinIO secret key (leave empty to generate)"
         },
         {
           "name": "XMPP_ADMIN_PASSWORD",
-          "label": "ejabberd admin password (any long random string)"
+          "label": "ejabberd admin password (leave empty to generate)"
         },
         {
           "name": "JWT_SECRET",
-          "label": "JWT secret (any long random string)"
+          "label": "JWT secret (leave empty to generate)"
         },
         {
           "name": "REFRESH_SECRET",
-          "label": "Refresh token secret (any long random string)"
+          "label": "Refresh token secret (leave empty to generate)"
         },
         {
           "name": "XMPP_SECRET",
-          "label": "XMPP secret (any long random string)"
+          "label": "XMPP secret (leave empty to generate)"
         },
         {
           "name": "XMPP_JWT_SECRET",
-          "label": "XMPP JWT secret (any long random string)"
+          "label": "XMPP JWT secret (leave empty to generate)"
         },
         {
           "name": "INTERNAL_REQUESTS_SECRET",
-          "label": "Internal requests secret (any long random string)"
+          "label": "Internal requests secret (leave empty to generate)"
         },
         {
           "name": "CENTRIFUGO_API_KEY",
-          "label": "Centrifugo API key (any long random string)"
+          "label": "Centrifugo API key (leave empty to generate)"
         },
         {
           "name": "CENTRIFUGO_HMAC_SECRET",
-          "label": "Centrifugo HMAC secret (any long random string)"
+          "label": "Centrifugo HMAC secret (leave empty to generate)"
         },
         {
           "name": "CENTRIFUGO_ADMIN_PASSWORD",
-          "label": "Centrifugo admin password (any long random string)"
+          "label": "Centrifugo admin password (leave empty to generate)"
         },
         {
           "name": "CENTRIFUGO_ADMIN_SECRET",
-          "label": "Centrifugo admin secret (any long random string)"
+          "label": "Centrifugo admin secret (leave empty to generate)"
         }
       ]
     }

@@ -1,7 +1,10 @@
-# Reverse proxy of the compose bundle: TLS (Let's Encrypt) for the four
-# public hosts, routed like the host installer's nginx vhosts
-# (deploy/nginx/*.conf.template). Hosts and the ACME contact come from the
-# environment compose passes in; see docker-compose.yml.
+# Reverse proxy of the compose bundle, routed like the host installer's nginx
+# vhosts (deploy/nginx/*.conf.template). This is a template: the config
+# service fills in the {$NAME} placeholders (Caddy's own syntax) and writes
+# the result to the config volume, where the caddy service reads it. The site
+# blocks in {$ETHORA_SITES} depend on the routing mode (render-config.sh):
+# four hosts, each importing one of the role snippets below, or one origin
+# importing single_origin.
 {
 	email {$ACME_EMAIL}
 	# Extra global options from .env (CADDY_GLOBAL_OPTIONS), e.g. `local_certs`
@@ -19,7 +22,7 @@
 }
 
 # API (api.conf.template)
-{$API_DOMAIN} {
+(api) {
 	import security_headers
 	# Prometheus metrics stay internal.
 	@metrics path /metrics
@@ -28,7 +31,7 @@
 }
 
 # Web chat and admin panel (web.conf.template)
-{$WEB_DOMAIN} {
+(web) {
 	import security_headers
 	header X-Robots-Tag "noindex, nofollow"
 	# Centrifugo real-time channel.
@@ -44,7 +47,7 @@
 # endpoints: ejabberd trusts private-network peers for its admin API, and
 # every request through this proxy arrives from one, so /api and /admin are
 # never forwarded.
-{$XMPP_DOMAIN} {
+(xmpp) {
 	import security_headers
 	handle /ws* {
 		reverse_proxy xmpp:5280
@@ -59,6 +62,37 @@
 
 # File storage (files.conf.template). Host is passed through unchanged, which
 # MinIO's presigned URLs depend on; Caddy sets no body size limit.
-{$FILES_DOMAIN} {
+(files) {
 	reverse_proxy minio:9000
 }
+
+# Everything on one origin (PUBLIC_URL), routed by path. The web app owns
+# every path the others do not: its routes are /, /login, /register and
+# /app/...; the public files bucket is /files/.
+(single_origin) {
+	import security_headers
+	header X-Robots-Tag "noindex, nofollow"
+	@metrics path /metrics
+	respond @metrics 404
+	@api path /v1 /v1/* /v2 /v2/* /api-docs /api-docs/*
+	handle @api {
+		reverse_proxy api:8080
+	}
+	handle /ws* {
+		reverse_proxy xmpp:5280
+	}
+	handle /bosh* {
+		reverse_proxy xmpp:5280
+	}
+	handle /connection/websocket {
+		reverse_proxy centrifugo:8000
+	}
+	handle /files/* {
+		reverse_proxy minio:9000
+	}
+	handle {
+		reverse_proxy frontend:8080
+	}
+}
+
+{$ETHORA_SITES}
