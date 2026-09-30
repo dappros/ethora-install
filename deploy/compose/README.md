@@ -247,6 +247,13 @@ The Helm chart [`deploy/helm/ethora-core`](../helm/ethora-core/) runs the same
 images and renders the same configuration with `ethora-compose-init`:
 `helm install ethora oci://docker.io/dappros/ethora-core --set rootDomain=... --set admin.email=...`.
 
+## Cloudron
+
+The Cloudron package [`deploy/cloudron`](../cloudron/) runs the stack as one
+Cloudron app: the same payloads, copied out of the release images, under
+supervisord, on Cloudron's MongoDB, MySQL and Redis addons, rendered by this
+bundle's `render-config.sh` in one-origin mode behind Cloudron's proxy.
+
 ## Umbrel and CasaOS
 
 App-store packages for home servers, generated from the single file and run

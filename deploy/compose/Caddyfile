@@ -1,10 +1,15 @@
 # Reverse proxy of the compose bundle, routed like the host installer's nginx
 # vhosts (deploy/nginx/*.conf.template). This is a template: the config
-# service fills in the {$NAME} placeholders (Caddy's own syntax) and writes
-# the result to the config volume, where the caddy service reads it. The site
-# blocks in {$ETHORA_SITES} depend on the routing mode (render-config.sh):
-# four hosts, each importing one of the role snippets below, or one origin
-# importing single_origin.
+# service fills in the placeholders (Caddy's own environment syntax, a dollar
+# sign and a NAME in braces) and writes the result to the config volume,
+# where the caddy service reads it. The site blocks in ETHORA_SITES depend on
+# the routing mode (render-config.sh): four hosts, each importing one of the
+# role snippets below, or one origin importing single_origin. The upstreams
+# (UPSTREAM_API and the like) are the compose services (api:8080, ...)
+# unless the internal endpoints are overridden; ETHORA_EXTRA_SITES carries
+# any site a host adds (the Cloudron package serves the web bundle from one).
+# Comments name the placeholders without braces: Caddy substitutes its own
+# environment everywhere in the file, comments included.
 {
 	email {$ACME_EMAIL}
 	# Extra global options from .env (CADDY_GLOBAL_OPTIONS), e.g. `local_certs`
@@ -27,7 +32,7 @@
 	# Prometheus metrics stay internal.
 	@metrics path /metrics
 	respond @metrics 404
-	reverse_proxy api:8080
+	reverse_proxy {$UPSTREAM_API}
 }
 
 # Web chat and admin panel (web.conf.template)
@@ -36,10 +41,10 @@
 	header X-Robots-Tag "noindex, nofollow"
 	# Centrifugo real-time channel.
 	handle /connection/websocket {
-		reverse_proxy centrifugo:8000
+		reverse_proxy {$UPSTREAM_CENTRIFUGO}
 	}
 	handle {
-		reverse_proxy frontend:8080
+		reverse_proxy {$UPSTREAM_FRONTEND}
 	}
 }
 
@@ -50,10 +55,10 @@
 (xmpp) {
 	import security_headers
 	handle /ws* {
-		reverse_proxy xmpp:5280
+		reverse_proxy {$UPSTREAM_XMPP}
 	}
 	handle /bosh* {
-		reverse_proxy xmpp:5280
+		reverse_proxy {$UPSTREAM_XMPP}
 	}
 	handle {
 		respond 404
@@ -63,7 +68,7 @@
 # File storage (files.conf.template). Host is passed through unchanged, which
 # MinIO's presigned URLs depend on; Caddy sets no body size limit.
 (files) {
-	reverse_proxy minio:9000
+	reverse_proxy {$UPSTREAM_MINIO}
 }
 
 # Everything on one origin (PUBLIC_URL), routed by path. The web app owns
@@ -76,23 +81,24 @@
 	respond @metrics 404
 	@api path /v1 /v1/* /v2 /v2/* /api-docs /api-docs/*
 	handle @api {
-		reverse_proxy api:8080
+		reverse_proxy {$UPSTREAM_API}
 	}
 	handle /ws* {
-		reverse_proxy xmpp:5280
+		reverse_proxy {$UPSTREAM_XMPP}
 	}
 	handle /bosh* {
-		reverse_proxy xmpp:5280
+		reverse_proxy {$UPSTREAM_XMPP}
 	}
 	handle /connection/websocket {
-		reverse_proxy centrifugo:8000
+		reverse_proxy {$UPSTREAM_CENTRIFUGO}
 	}
 	handle /files/* {
-		reverse_proxy minio:9000
+		reverse_proxy {$UPSTREAM_MINIO}
 	}
 	handle {
-		reverse_proxy frontend:8080
+		reverse_proxy {$UPSTREAM_FRONTEND}
 	}
 }
 
 {$ETHORA_SITES}
+{$ETHORA_EXTRA_SITES}

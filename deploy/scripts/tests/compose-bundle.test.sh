@@ -244,17 +244,37 @@ else
     'ETHORA_MONGO_URI=mongodb://u:p@db.internal:27017/ethora?tls=true' ETHORA_CHAT_DATABASE_URI=mongodb://db.internal/chat_archive \
     ETHORA_REDIS_HOST=cache.internal ETHORA_REDIS_PORT=6380 ETHORA_MYSQL_HOST=sql.internal ETHORA_MYSQL_PORT=3307 ETHORA_MYSQL_USER=ejabberd \
     ETHORA_MINIO_HOST=s3.internal ETHORA_MINIO_PORT=9900 ETHORA_CENTRIFUGO_URL=http://rt.internal:8000 \
-    ETHORA_XMPP_URL=http://x.internal:5280 ETHORA_API_URL=http://a.internal:8080 >/dev/null 2>&1
+    ETHORA_XMPP_URL=http://x.internal:5280 ETHORA_API_URL=http://a.internal:8080 \
+    ETHORA_MYSQL_DATABASE=ejdb ETHORA_FRONTEND_URL=http://web.internal:8081 >/dev/null 2>&1
   be9="$R9/config/api/backend.env"; ej9="$R9/config/xmpp/ejabberd.yml"
   for kv in 'MONGO_URI=mongodb://u:p@db.internal:27017/ethora?tls=true' 'CHAT_DATABASE=mongodb://db.internal/chat_archive' REDIS_HOST=cache.internal REDIS_PORT=6380 \
             MAM_MYSQL_HOST=sql.internal MAM_MYSQL_PORT=3307 MAM_MYSQL_USER=ejabberd MINIO_HOST=s3.internal MINIO_PORT=9900 \
-            'CENTRIFUGO_API_URL=http://rt.internal:8000/api' 'XMPP_PATH=http://x.internal:5280/api' 'API_INTERNAL_URL=http://a.internal:8080'; do
+            'CENTRIFUGO_API_URL=http://rt.internal:8000/api' 'XMPP_PATH=http://x.internal:5280/api' 'API_INTERNAL_URL=http://a.internal:8080' \
+            MAM_MYSQL_DATABASE=ejdb; do
     grep -qxF "$kv" "$be9" && ok "endpoint override, backend.env: $kv" || fail "endpoint override, backend.env: $kv" "$(grep "^${kv%%=*}=" "$be9")"
   done
   grep -qxF 'sql_server: "sql.internal"' "$ej9" && grep -qxF 'sql_username: "ejabberd"' "$ej9" && grep -qxF 'sql_port: 3307' "$ej9" \
     && grep -q 'url: "http://a.internal:8080/v1/chats/track-member"' "$ej9" && ok "endpoint override, ejabberd.yml: sql server/user/port, tracking URLs" \
     || fail "endpoint override, ejabberd.yml" "$(grep -E '^sql_(server|username|port)' "$ej9")"
+  grep -qxF 'sql_database: "ejdb"' "$ej9" && grep -qxF 'sql_database: "ejabberd_db"' "$R/config/xmpp/ejabberd.yml" \
+    && ok "endpoint override, ejabberd.yml: sql_database (default kept otherwise)" || fail "sql_database" "$(grep '^sql_database' "$ej9")"
   grep -qxF 'API_INTERNAL_URL=http://api:8080' "$be" && ok "default internal API URL is the compose service" || fail "default API_INTERNAL_URL"
+  proxies() { grep -o 'reverse_proxy [^ ]*' "$1" | sort -u | tr '\n' ' '; }
+  [ "$(proxies "$R/config/caddy/Caddyfile")" = "reverse_proxy api:8080 reverse_proxy centrifugo:8000 reverse_proxy frontend:8080 reverse_proxy minio:9000 reverse_proxy xmpp:5280 " ] \
+    && ok "Caddyfile upstreams default to the compose services" || fail "default Caddyfile upstreams" "$(proxies "$R/config/caddy/Caddyfile")"
+  [ "$(proxies "$R9/config/caddy/Caddyfile")" = "reverse_proxy a.internal:8080 reverse_proxy rt.internal:8000 reverse_proxy s3.internal:9900 reverse_proxy web.internal:8081 reverse_proxy x.internal:5280 " ] \
+    && ok "endpoint override, Caddyfile upstreams follow the internal URLs" || fail "Caddyfile upstream overrides" "$(proxies "$R9/config/caddy/Caddyfile")"
+  # A host that is not compose (the Cloudron package): its own site address
+  # behind a TLS-terminating proxy, and an extra site of its own.
+  R10="$T/r10"; mkdir -p "$R10"
+  rcfg "$R10" PUBLIC_URL=https://chat.example.com ADMIN_EMAIL=ops@example.com ETHORA_SITE_ADDRESS=:3000 \
+    "$(printf 'ETHORA_EXTRA_SITES=:8081 {\n\tbind 127.0.0.1\n\troot * /srv\n\tfile_server\n}')" \
+    API_UID=4242 XMPP_UID=4242 CENTRIFUGO_UID=4242 MYSQL_UID=4242 MINIO_UID=4242 FRONTEND_UID=4242 >"$T/out10" 2>&1
+  grep -q '^:3000 {$' "$R10/config/caddy/Caddyfile" && grep -q '^:8081 {$' "$R10/config/caddy/Caddyfile" && ! grep -q '^chat.example.com {$' "$R10/config/caddy/Caddyfile" \
+    && grep -qxF 'XMPP_SERVICE=wss://chat.example.com/ws' "$R10/config/api/backend.env" \
+    && ok "ETHORA_SITE_ADDRESS and ETHORA_EXTRA_SITES shape the Caddyfile" || fail "site address / extra sites" "$(cat "$T/out10")"
+  # Caddy substitutes its environment everywhere in the file, comments included.
+  grep -nE '^[[:space:]]*#.*\{\$' "$BUNDLE/Caddyfile" >"$T/cc" && fail "placeholder syntax in a Caddyfile comment" "$(head -n 3 "$T/cc")" || ok "no placeholder syntax in Caddyfile comments"
 
   # ejabberd.yml must equal what setup-ejabberd-config.sh produces from the
   # same template and values (its production branch), except the tracking URLs
@@ -330,7 +350,7 @@ if have_docker; then
   (cd "$S" && rm .env && ROOT_DOMAIN=chat.example.com ADMIN_EMAIL=ops@example.com docker compose config 2>/dev/null) | grep -q 'ADMIN_EMAIL: ops@example.com' \
     && ok "single file takes the settings from the environment too (no .env)" || fail "single file without .env"
   if docker image inspect caddy:2.10-alpine >/dev/null 2>&1 || docker pull -q caddy:2.10-alpine >/dev/null 2>&1; then
-    for r in r r6 r7; do
+    for r in r r6 r7 r9 r10; do
       [ -f "$T/$r/config/caddy/Caddyfile" ] || { skip "Caddyfile $r (not rendered)"; continue; }
       docker run --rm -v "$T/$r/config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.10-alpine \
         caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >"$T/cv" 2>&1 \
@@ -372,6 +392,31 @@ if command -v yq >/dev/null 2>&1 && yq --version 2>/dev/null | grep -qE 'version
 else
   skip "umbrel / casaos packages (yq v4 not installed)"
 fi
+
+echo "# deploy/cloudron"
+CL="$DEPLOY/cloudron"
+"$CL/pin.sh" --check >/dev/null 2>"$T/cl.err" && ok "cloudron package pinned to images.env" || fail "cloudron package pins out of date" "run deploy/cloudron/pin.sh"
+python3 - "$CL" >"$T/cl.out" 2>&1 <<'PY' && ok "CloudronManifest.json: $(cat "$T/cl.out")" || fail "CloudronManifest.json" "$(cat "$T/cl.out")"
+import json, os, re, sys
+d = sys.argv[1]; m = json.load(open(os.path.join(d, "CloudronManifest.json")))
+for k in ("id", "title", "author", "tagline", "version", "upstreamVersion", "httpPort", "healthCheckPath", "addons", "icon", "description", "postInstallMessage", "changelog"):
+    assert k in m, k
+assert m["manifestVersion"] == 2 and re.fullmatch(r"\d+\.\d+\.\d+", m["version"]), m["version"]
+assert set(m["addons"]) == {"localstorage", "mongodb", "mysql", "redis"}, m["addons"]
+assert m["addons"]["redis"].get("noPassword") is True  # the API has no Redis password
+for k in ("icon", "description", "postInstallMessage", "changelog"):
+    v = m[k]; assert not v.startswith("file://") or os.path.exists(os.path.join(d, v[7:])), v
+png = open(os.path.join(d, "icon.png"), "rb").read(32)
+assert png[:8] == b"\x89PNG\r\n\x1a\n" and int.from_bytes(png[16:20], "big") == 256 == int.from_bytes(png[20:24], "big")
+print(f"{m['id']} {m['version']} ({m['upstreamVersion']}), port {m['httpPort']}, 256px icon")
+PY
+bash -n "$CL/start.sh" && ok "start.sh parses" || fail "start.sh syntax"
+awk '/^FROM /{n=NR} {l[NR]=$0} END{for(i=n;i<=NR;i++) print l[i]}' "$CL/Dockerfile" | grep -qE "^USER " \
+  && fail "final stage sets USER (start.sh runs as root; supervisord drops privileges per program)" || ok "final stage runs start.sh as root"
+bad=""; for c in $(sed -n 's/^command=//p' "$CL/supervisor/ethora.conf" | grep -oE '/ethora/scripts/[a-z-]+\.sh' | sort -u); do
+  [ -f "$BUNDLE/scripts/${c##*/}" ] || bad="$bad $c"; done
+[ -z "$bad" ] && ok "supervisor programs run the bundle's scripts" || fail "supervisor programs name missing scripts:$bad"
+grep -rn $'\xe2\x80\x94' "$CL" >/dev/null && fail "em dash in deploy/cloudron" || ok "no em dashes in deploy/cloudron"
 
 echo
 echo "passed: $PASS  failed: $FAIL  skipped: $SKIP"
