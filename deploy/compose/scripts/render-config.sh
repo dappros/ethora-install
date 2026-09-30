@@ -43,8 +43,16 @@
 #                                                ejabberd's SQL store; the password is
 #                                                MYSQL_ROOT_PASSWORD whatever the user
 #   ETHORA_MINIO_HOST, ETHORA_MINIO_PORT         S3-compatible storage over plain HTTP
-#   ETHORA_CENTRIFUGO_URL, ETHORA_XMPP_URL, ETHORA_API_URL
-#                                                http://centrifugo:8000, http://xmpp:5280, http://api:8080
+#   ETHORA_MYSQL_DATABASE                        default ejabberd_db
+#   ETHORA_CENTRIFUGO_URL, ETHORA_XMPP_URL, ETHORA_API_URL, ETHORA_FRONTEND_URL
+#                                                http://centrifugo:8000, http://xmpp:5280,
+#                                                http://api:8080, http://frontend:8080
+# and, for a host that is not compose (the Cloudron package):
+#   ETHORA_SITE_ADDRESS    the one-origin site's Caddy address, e.g. :3000
+#                          behind a proxy that terminates TLS itself
+#   ETHORA_EXTRA_SITES     more Caddy site blocks, appended as they are
+#   API_UID, XMPP_UID, CENTRIFUGO_UID, MYSQL_UID, MINIO_UID, FRONTEND_UID
+#                          owners of the rendered files (the images' users)
 #
 # Differences from the host installer, all because the services talk over the
 # compose network instead of the host's loopback:
@@ -70,6 +78,8 @@ API_UID="${API_UID:-1000}"          # ethora-api: node
 XMPP_UID="${XMPP_UID:-9000}"        # ethora-xmpp: ejabberd
 CENTRIFUGO_UID="${CENTRIFUGO_UID:-1000}"
 MYSQL_UID="${MYSQL_UID:-999}"       # mysql: mysql
+MINIO_UID="${MINIO_UID:-0}"         # minio: root
+FRONTEND_UID="${FRONTEND_UID:-0}"   # ethora-frontend: root
 
 log() { echo "[config] $*"; }
 die() { echo "[config] ERROR: $*" >&2; exit 1; }
@@ -168,10 +178,12 @@ export MONGO_DB="${MONGO_DB:-ethora_prod}"
 ETHORA_REDIS_HOST="${ETHORA_REDIS_HOST:-redis}"
 ETHORA_MYSQL_HOST="${ETHORA_MYSQL_HOST:-mysql}"
 ETHORA_MYSQL_USER="${ETHORA_MYSQL_USER:-root}"
+ETHORA_MYSQL_DATABASE="${ETHORA_MYSQL_DATABASE:-ejabberd_db}"
 ETHORA_MINIO_HOST="${ETHORA_MINIO_HOST:-minio}"
 ETHORA_CENTRIFUGO_URL="${ETHORA_CENTRIFUGO_URL:-http://centrifugo:8000}"
 ETHORA_XMPP_URL="${ETHORA_XMPP_URL:-http://xmpp:5280}"
 ETHORA_API_URL="${ETHORA_API_URL:-http://api:8080}"
+ETHORA_FRONTEND_URL="${ETHORA_FRONTEND_URL:-http://frontend:8080}"
 export REDIS_PORT="${ETHORA_REDIS_PORT:-6379}"
 export MYSQL_PORT="${ETHORA_MYSQL_PORT:-3306}"
 MINIO_PORT="${ETHORA_MINIO_PORT:-9000}"
@@ -304,6 +316,7 @@ set_env_line "$stage/api/backend.env" CHAT_DATABASE "${ETHORA_CHAT_DATABASE_URI:
 set_env_line "$stage/api/backend.env" REDIS_HOST "$ETHORA_REDIS_HOST"
 set_env_line "$stage/api/backend.env" MAM_MYSQL_HOST "$ETHORA_MYSQL_HOST"
 set_env_line "$stage/api/backend.env" MAM_MYSQL_USER "$ETHORA_MYSQL_USER"
+set_env_line "$stage/api/backend.env" MAM_MYSQL_DATABASE "$ETHORA_MYSQL_DATABASE"
 set_env_line "$stage/api/backend.env" MINIO_HOST "$ETHORA_MINIO_HOST"
 set_env_line "$stage/api/backend.env" MINIO_PORT "$MINIO_PORT"
 set_env_line "$stage/api/backend.env" CENTRIFUGO_API_URL "$ETHORA_CENTRIFUGO_URL/api"
@@ -371,6 +384,9 @@ sed -i "s|^sql_password:.*|sql_password: \"$E_MYSQL_ROOT_PASSWORD\"|g" "$cfg"
 # (mysql, root, 3306), so the default rendering stays the installer's.
 if [ "$ETHORA_MYSQL_HOST" != mysql ]; then
   sed -i "s|^sql_server:.*|sql_server: \"$(esc "$ETHORA_MYSQL_HOST")\"|" "$cfg"
+fi
+if [ "$ETHORA_MYSQL_DATABASE" != ejabberd_db ]; then
+  sed -i "s|^sql_database:.*|sql_database: \"$(esc "$ETHORA_MYSQL_DATABASE")\"|" "$cfg"
 fi
 if [ "$ETHORA_MYSQL_USER" != root ]; then
   sed -i "s|^sql_username:.*|sql_username: \"$(esc "$ETHORA_MYSQL_USER")\"|" "$cfg"
@@ -447,6 +463,8 @@ printf '%s' "$MINIO_ROOT_PASSWORD" > "$stage/minio/root-password"
 if [ -z "$PUBLIC_URL" ]; then
   ETHORA_SITES="$(printf '%s {\n\timport api\n}\n%s {\n\timport web\n}\n%s {\n\timport xmpp\n}\n%s {\n\timport files\n}' \
     "$API_DOMAIN" "$WEB_DOMAIN" "$XMPP_DOMAIN" "$FILES_DOMAIN")"
+elif [ -n "${ETHORA_SITE_ADDRESS:-}" ]; then
+  ETHORA_SITES="$(printf '%s {\n\timport single_origin\n}' "$ETHORA_SITE_ADDRESS")"
 elif [ "$scheme" = https ]; then
   ETHORA_SITES="$(printf '%s {\n\timport single_origin\n}' "$hostport")"
 else
@@ -455,6 +473,13 @@ else
   ETHORA_SITES="$(printf ':80 {\n\timport single_origin\n}')"
 fi
 export ETHORA_SITES
+export ETHORA_EXTRA_SITES="${ETHORA_EXTRA_SITES:-}"
+hostport_of() { u="${1#*://}"; printf '%s' "${u%%/*}"; }
+export UPSTREAM_API="$(hostport_of "$ETHORA_API_URL")"
+export UPSTREAM_XMPP="$(hostport_of "$ETHORA_XMPP_URL")"
+export UPSTREAM_CENTRIFUGO="$(hostport_of "$ETHORA_CENTRIFUGO_URL")"
+export UPSTREAM_FRONTEND="$(hostport_of "$ETHORA_FRONTEND_URL")"
+export UPSTREAM_MINIO="$ETHORA_MINIO_HOST:$MINIO_PORT"
 mkdir -p "$stage/caddy"
 if [ -f "$CADDYFILE_TEMPLATE" ]; then
   awk '
@@ -488,11 +513,11 @@ for f in "$stage"/caddy/* "$stage"/scripts/*; do [ -f "$f" ] && chmod 644 "$f"; 
 # keeps its own ownership.)
 own() { chown -R "$1" "$2" 2>/dev/null || [ "$(id -u)" != 0 ] || die "chown $1 $2 failed"; }
 own "$API_UID:$API_UID" "$stage/api"
-own 0:0 "$stage/frontend"
+own "$FRONTEND_UID:$FRONTEND_UID" "$stage/frontend"
 own "$CENTRIFUGO_UID:$CENTRIFUGO_UID" "$stage/centrifugo"
 own "$XMPP_UID:$XMPP_UID" "$stage/xmpp"
 own "$MYSQL_UID:$MYSQL_UID" "$stage/mysql"
-own 0:0 "$stage/minio"
+own "$MINIO_UID:$MINIO_UID" "$stage/minio"
 own 0:0 "$stage/caddy"
 own 0:0 "$stage/scripts"
 mkdir -p "$OUT"
