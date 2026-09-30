@@ -42,7 +42,7 @@ server {
     }
 
     # Prometheus scrapes /metrics on the backend port directly (see
-    # monitoring/prometheus/prometheus.yml); keep it off the public host.
+    # monitoring/prometheus/scrape.yml); keep it off the public host.
     location = /metrics {
         return 404;
     }

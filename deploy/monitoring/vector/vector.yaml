@@ -1,0 +1,112 @@
+# Ethora.com platform, copyright: Dappros Ltd (c) 2026, all rights reserved
+#
+# Vector collects logs from two places:
+#   - every docker container on the host (ejabberd, mongo, mysql, minio, ...)
+#   - the pm2 log files of the Node services (backend, backend-jobs, push, ...)
+#
+# Stream fields stay few and low-cardinality on purpose:
+#   source (docker | pm2), service, stream (out | error), level.
+# Everything else stays in the log line and is searched as text.
+#
+# This file has the sources and transforms only. Where the lines go is the
+# second config file Vector is started with (see docker-compose.monitoring.yml):
+#   sink-local.yaml           the VictoriaLogs container on this host
+#   sink-remote.yaml.template the central monitoring server, rendered by
+#                             setup-nginx.sh with the host token
+
+data_dir: /var/lib/vector
+
+sources:
+  # ---------------------------------------------------------------- docker
+  docker:
+    type: docker_logs
+    docker_host: unix:///var/run/docker.sock
+    # VictoriaLogs and Vector stay out: their own chatter about pushed lines
+    # would otherwise feed straight back into the stream.
+    exclude_containers:
+      - ethora-victorialogs
+      - ethora-vector
+    # The docker source starts from each container's log beginning on its first
+    # run; anything older than this is dropped rather than replayed.
+    retry_backoff_secs: 2
+    partial_event_marker_field: _partial
+
+  # ------------------------------------------------------------------- pm2
+  pm2:
+    type: file
+    include:
+      - /var/log/pm2/*.log
+    # pm2 log files are not rotated and can be gigabytes: start at the end on
+    # the first run instead of replaying their whole history. Read positions
+    # are kept in data_dir, so a restart resumes where it stopped.
+    read_from: end
+    ignore_older_secs: 86400
+    fingerprint:
+      strategy: device_and_inode
+
+transforms:
+  # ---------------------------------------------------------------- docker
+  docker_labels:
+    type: remap
+    inputs: [docker]
+    source: |
+      .source = "docker"
+      .container = string!(.container_name)
+      .service = string(.label."com.docker.compose.service") ?? .container
+      .stream = if .stream == "stderr" { "error" } else { "out" }
+      .message = string!(.message)
+      # A blank line (stack traces have them) would be stored as the
+      # placeholder "missing _msg field"; drop it.
+      if strip_whitespace(.message) == "" { abort }
+
+      # Level, from whichever convention the container uses: a JSON `level`
+      # field, bracketed words as in ejabberd's "[warning]" or MySQL's
+      # "[Warning]" / "[System]", or MongoDB's one-letter severity `s`.
+      .level = "info"
+      parsed, err = parse_json(.message)
+      if err == null && is_object(parsed) {
+        if is_string(parsed.level) { .level = downcase!(parsed.level) }
+        if is_string(parsed.s) {
+          .level = if includes(["E", "F"], parsed.s) { "error" } else if parsed.s == "W" { "warn" } else { "info" }
+        }
+      } else {
+        bracket, berr = parse_regex(.message, r'(?i)\[(?P<lvl>debug|info|notice|note|system|warning|warn|error|critical|fatal)\]')
+        if berr == null { .level = downcase(string!(bracket.lvl)) }
+      }
+      .level = if .level == "warning" { "warn" } else if includes(["notice", "note", "system"], .level) { "info" } else if includes(["critical", "fatal"], .level) { "error" } else { .level }
+
+      del(.container_created_at); del(.container_id); del(.container_name)
+      del(.image); del(.label); del(.host); del(.source_type); del(._partial)
+
+  # ------------------------------------------------------------------- pm2
+  pm2_labels:
+    type: remap
+    inputs: [pm2]
+    source: |
+      .source = "pm2"
+      # backend-out.log, push-worker-error.log, backend-out-3.log
+      name, err = parse_regex(string!(.file), r'/(?P<service>.+?)-(?P<stream>out|error)(?:-\d+)?\.log$')
+      if err == null {
+        .service = name.service
+        .stream = name.stream
+      } else {
+        .service = "unknown"
+        .stream = "out"
+      }
+
+      # pm2 is started with --time, which puts "2026-09-21T14:07:50: " in
+      # front of every line. Strip it so a JSON line is JSON again.
+      .message = replace(string!(.message), r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}: ', "")
+      # Blank lines of a stack trace would be stored as "missing _msg field".
+      if strip_whitespace(.message) == "" { abort }
+
+      # Structured lines carry their own level; a plain line gets it from the
+      # stream it was written to.
+      .level = if .stream == "error" { "error" } else { "info" }
+      parsed, perr = parse_json(.message)
+      if perr == null && is_object(parsed) && is_string(parsed.level) {
+        .level = downcase!(parsed.level)
+        .level = if .level == "warning" { "warn" } else { .level }
+      }
+
+      del(.file); del(.host); del(.source_type)

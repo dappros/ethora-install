@@ -1,0 +1,35 @@
+# Ethora.com platform, copyright: Dappros Ltd (c) 2026, all rights reserved
+#
+# Prometheus in agent mode, the `remote` monitoring mode: scrapes this host
+# (scrape.yml, shared with the local mode) and pushes every sample to the
+# central monitoring server; nothing is queried here. Rendered by
+# setup-nginx.sh into generated/monitoring/prometheus-agent.yml from
+# services.monitoring.remote in deploy.yml.
+#
+# The central server has no way to tell hosts apart by itself: the `tenant`
+# label stamped here is what its dashboards and alerts group by, so it must
+# match the name the server was registered under (its tenants list).
+
+global:
+  scrape_interval: 15s
+  external_labels:
+    tenant: "{{MONITORING_TENANT}}"
+
+scrape_config_files:
+  - /etc/prometheus/scrape.yml
+
+remote_write:
+  - name: central
+    url: "{{MONITORING_REMOTE_URL}}/ingest/metrics"
+    # The per-host token from the central server's config; sent as
+    # `Authorization: Bearer ...`, which its nginx checks before accepting.
+    authorization:
+      credentials: "{{MONITORING_REMOTE_TOKEN}}"
+    # One host is a few thousand series; a couple of shards is plenty, and it
+    # bounds the memory the retry queue can take while the server is away.
+    queue_config:
+      max_shards: 4
+      max_samples_per_send: 1000
+      batch_send_deadline: 10s
+      min_backoff: 1s
+      max_backoff: 30s

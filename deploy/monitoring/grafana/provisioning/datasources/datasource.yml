@@ -12,3 +12,17 @@ datasources:
     url: http://prometheus:9090/prometheus
     isDefault: true
     editable: true
+
+  # Logs (VictoriaLogs, via the victoriametrics-logs-datasource plugin that the
+  # compose file installs). The containers behind it run only when
+  # services.monitoring.logs.enabled is true; with logs off the datasource is
+  # still listed and simply has nothing to answer with. The uid is what the
+  # "Logs" link in alert e-mails and the Ethora Logs dashboard point at.
+  - name: VictoriaLogs
+    uid: ethora-logs
+    type: victoriametrics-logs-datasource
+    access: proxy
+    url: http://victorialogs:9428
+    editable: true
+    jsonData:
+      maxLines: 1000

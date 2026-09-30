@@ -1,62 +1,110 @@
-# Load-testing observability (Prometheus + Grafana)
+# Monitoring of an Ethora host
 
-Self-contained monitoring stack for load tests. Separate compose project — it
-does NOT touch the app deploy (`update.sh`, nginx). Bring it up only when you
-want resource graphs alongside a load run.
+The monitoring stack of one server: what it runs is set by
+`services.monitoring.mode` in `deploy.yml`, and `update.sh` starts it. A
+separate compose project (`docker-compose.monitoring.yml`), so it never
+touches the app deploy.
 
-## What's in it
-
-| Service | Port (host) | Role |
+| Mode | On this host | Where to look |
 |---|---|---|
-| Prometheus | 9090 | scrapes + stores metrics |
-| Grafana | 3001 | dashboards (`Ethora / Ethora Load Testing`) |
-| cAdvisor | 8081 | per-container CPU/mem/net/disk |
-| node_exporter | 9100 | host CPU/mem/load/disk (covers backend pm2 + system) |
+| `off` | nothing | – |
+| `local` | Prometheus, Grafana, cAdvisor, node_exporter; VictoriaLogs + Vector with `logs.enabled` | `https://<uptime domain>/grafana/` (uptime basic-auth) |
+| `remote` | cAdvisor, node_exporter, Prometheus in agent mode; Vector with `logs.enabled` | the central monitoring server (`services.monitoring.remote.url`) |
 
-Prometheus also scrapes the load tool's own metrics from the uptime container's
-host-published port (`host.docker.internal:8099/metrics`) — load RPS / latency /
-errors / in-flight — so the dashboard overlays **load vs resources** on one
-timeline.
+`deploy.yml` files that still have `services.monitoring.enabled: true` run
+the local mode.
 
-## Bring up / tear down
+## Local mode
+
+```yaml
+services:
+  monitoring:
+    mode: local
+    alerts:
+      emails: ops@example.com      # Grafana alert e-mails; empty = no e-mail
+    screenshots: false             # panel screenshot in each e-mail (renderer container)
+    logs:
+      enabled: false               # VictoriaLogs + Vector on this host, 7 days
+```
+
+Needs `services.uptime`: the UIs are served on the uptime domain at
+`/grafana/` and `/prometheus/` behind its basic-auth. Dashboards: **Ethora
+Load Testing** (host and per-container CPU/memory next to the load tool's
+RPS/latency/errors) and, with logs, **Ethora Logs** (service, level and
+text filters; LogsQL in Explore, e.g. `service:backend AND level:error`).
+Alerts (host CPU/memory, container CPU, API 5xx rate and latency) go to the
+addresses in `alerts.emails` through the Postmark token of
+`integrations.postmark`, or through `alerts.smtp_*`.
+
+## Remote mode
+
+```yaml
+services:
+  monitoring:
+    mode: remote
+    remote:
+      url: https://monitoring.example.com
+      token: <token>               # from the central server's config (its tenants list)
+      tenant: qa                   # this host's name on the central dashboards
+    logs:
+      enabled: true                # ship the logs too; false keeps them on-site
+```
+
+Only agents run here. The Prometheus agent scrapes the same targets as the
+local mode and pushes every sample to `<url>/ingest/metrics` with
+`Authorization: Bearer <token>`; it stamps the `tenant` label on all of
+them, which is what the central dashboards and alerts group by. With
+`logs.enabled`, Vector sends the lines to `<url>/ingest/logs/` with the same
+token; the central server stamps the tenant on them itself. While the server
+is unreachable the agent keeps up to four hours of samples and Vector a disk
+buffer, both catch up afterwards.
+
+Check on the host: `curl -s 127.0.0.1:9090/api/v1/targets | grep -o '"health":"[a-z]*"'`
+lists the scrape targets, and
+`docker logs ethora-prometheus-agent` / `docker logs ethora-vector` show
+push errors (a 401 means the token is not the one the server has for this
+host).
+
+## Logs
+
+Vector reads the output of every docker container and the pm2 log files of
+the Node services (the API writes JSON lines, so their levels are exact).
+Every line gets the stream fields `source` (docker / pm2),
+`service`, `stream` (out / error) and `level`; everything else stays text.
+Vector keeps its read positions and a disk buffer in a volume, so restarts
+neither lose nor repeat lines. On its very first start it tails the pm2
+files from their end.
+
+## Files
+
+| Path | Role |
+|---|---|
+| `docker-compose.monitoring.yml` | all services; compose profiles `local`, `remote`, `victorialogs`, `logs`, `renderer` |
+| `prometheus/scrape.yml` | the scrape jobs, shared by both modes |
+| `prometheus/prometheus.yml` | the local Prometheus (15 days of data) |
+| `prometheus/agent.yml.template` | the agent: tenant label and remote_write; rendered by `setup-nginx.sh` |
+| `vector/vector.yaml` | Vector sources and transforms |
+| `vector/sink-local.yaml`, `vector/sink-remote.yaml.template` | where Vector sends the lines, per mode |
+| `grafana/` | provisioning (datasources, alerting) and dashboards of the local mode |
+| `.env` | written by `setup-nginx.sh` from `deploy.yml`: mode, profiles, alert settings, rendered config paths |
+
+`setup-nginx.sh` renders the per-mode files into `deploy/generated/monitoring/`;
+`update.sh` starts the profiles of the mode, removes containers of the other
+mode, and restarts Prometheus, the agent, Grafana or Vector when their config
+files changed.
+
+## Manual use
+
+For a load test on a box without `deploy.yml`:
 
 ```bash
-cd <deploy root>          # the dir containing deploy/
-# optional: set a real Grafana admin password
-export GRAFANA_ADMIN_PASSWORD='choose-a-strong-one'
-docker compose -f deploy/monitoring/docker-compose.monitoring.yml up -d
-
-# stop
+COMPOSE_PROFILES=local docker compose -f deploy/monitoring/docker-compose.monitoring.yml up -d
+# Grafana http://127.0.0.1:3001 (admin/admin unless GRAFANA_ADMIN_PASSWORD is set),
+# Prometheus http://127.0.0.1:9090/prometheus/
 docker compose -f deploy/monitoring/docker-compose.monitoring.yml down
 ```
 
-## Access
-
-- Grafana: `http://<server-ip>:3001` (login `admin` / `$GRAFANA_ADMIN_PASSWORD`,
-  default `admin`). Open dashboard **Ethora → Ethora Load Testing**.
-- Prometheus: `http://<server-ip>:9090` (targets at `/targets`).
-
-Ports 3001/9090 are not behind nginx — open them in the security group only to
-your IP, or add an nginx vhost (e.g. `grafana.<stage>`) later. Anonymous access
-is OFF.
-
-## Workflow
-
-1. Bring the stack up.
-2. Open the Grafana dashboard, set the time range to "last 30m", refresh 5s.
-3. Run a load test from `uptime.<stage>/load.html`.
-4. Watch load RPS/latency/errors next to host CPU/mem and per-container CPU/mem —
-   you can see *which* service saturates first.
-
-## Notes / caveats
-
-- This runs ON THE SAME box as the load target, so the monitoring containers add
-  overhead and slightly skew numbers. For clean results, run Prometheus/Grafana
-  on a separate host and point `prometheus.yml` at this box's published ports.
-- The `ethora_load` scrape target assumes the uptime container publishes 8099 on
-  the host (default). If your uptime port differs, edit `prometheus/prometheus.yml`.
-- For deeper host/container views you can also import community dashboards in
-  Grafana: **1860** (Node Exporter Full) and **14282** (cAdvisor) — both work
-  with the provisioned Prometheus datasource.
-- The backend runs under pm2 on the host (not a container), so it does not appear
-  in cAdvisor. Its load shows up in the node_exporter **host** CPU/mem.
+The ports bind to loopback only; reach them through an SSH tunnel. The
+`ethora_load` scrape job expects the uptime container on host port 8099.
+The backend runs under pm2 on the host, so it is not a container in cAdvisor;
+its load is part of the node_exporter **host** CPU/memory.

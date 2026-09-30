@@ -266,76 +266,173 @@ else
     remove_config_if_present "$NGINX_CONF_DIR/ethora-hosted-apps.conf"
 fi
 
+# Monitoring (optional; deploy/monitoring). services.monitoring.mode decides
+# what runs on this host:
+#   off    - nothing
+#   local  - Prometheus + Grafana here; the UIs hang off the uptime vhost
+#            (https://<uptime domain>/grafana/ and /prometheus/) and the alert
+#            e-mails are sent from here
+#   remote - agents only (node-exporter, cAdvisor, a Prometheus in agent mode
+#            and, with logs enabled, Vector) pushing to the central monitoring
+#            server named in services.monitoring.remote
+# deploy.yml files from before `mode` have services.monitoring.enabled:
+# enabled: true is the local mode.
+# Everything docker compose needs goes to monitoring/.env (compose auto-loads
+# it from that directory): the mode, the profiles to start, Grafana's alerting
+# and SMTP settings, and the paths of the configs rendered per mode into
+# generated/monitoring. update.sh reads MONITORING_MODE from the same file.
+MONITORING_MODE="off"
+if [ -d "$DEPLOY_DIR/monitoring" ]; then
+    mon_cfg() { yq eval "$1 // \"\"" "$CONFIG_FILE" 2>/dev/null || echo ""; }
+    MONITORING_MODE="$(mon_cfg '.services.monitoring.mode')"
+    if [ -z "$MONITORING_MODE" ] || [ "$MONITORING_MODE" == "false" ]; then
+        MONITORING_MODE="off"
+        [ "$(mon_cfg '.services.monitoring.enabled')" == "true" ] && MONITORING_MODE="local"
+    fi
+    remote_url="$(mon_cfg '.services.monitoring.remote.url')"
+    remote_url="${remote_url%/}"
+    remote_token="$(mon_cfg '.services.monitoring.remote.token')"
+    remote_tenant="$(mon_cfg '.services.monitoring.remote.tenant')"
+    case "$MONITORING_MODE" in
+        off|local) ;;
+        remote)
+            if [ -z "$remote_url" ] || [ -z "$remote_token" ] || [ -z "$remote_tenant" ]; then
+                log "[WARN] Monitoring: mode is remote but services.monitoring.remote.url, .token and .tenant are not all set; monitoring stays off."
+                MONITORING_MODE="off"
+            fi
+            ;;
+        *)
+            log "[WARN] Monitoring: services.monitoring.mode must be off, local or remote (got '$MONITORING_MODE'); monitoring stays off."
+            MONITORING_MODE="off"
+            ;;
+    esac
+
+    # Grafana alerting (local mode): recipients, SMTP and whether to run the
+    # screenshot renderer. SMTP defaults to the platform's Postmark server
+    # token (integrations.postmark) unless services.monitoring.alerts.smtp_*
+    # override it.
+    alert_emails="$(mon_cfg '.services.monitoring.alerts.emails')"
+    smtp_host="$(mon_cfg '.services.monitoring.alerts.smtp_host')"
+    smtp_user="$(mon_cfg '.services.monitoring.alerts.smtp_user')"
+    smtp_password="$(mon_cfg '.services.monitoring.alerts.smtp_password')"
+    smtp_from="$(mon_cfg '.services.monitoring.alerts.smtp_from')"
+    screenshots="$(mon_cfg '.services.monitoring.screenshots')"
+    logs_enabled="$(mon_cfg '.services.monitoring.logs.enabled')"
+    if [ -z "$smtp_host" ]; then
+        postmark_token="$(mon_cfg '.integrations.postmark.token')"
+        if [ -n "$postmark_token" ]; then
+            smtp_host="smtp.postmarkapp.com:587"
+            smtp_user="$postmark_token"
+            smtp_password="$postmark_token"
+            [ -n "$smtp_from" ] || smtp_from="$(mon_cfg '.integrations.postmark.from_email')"
+        fi
+    fi
+    smtp_enabled="false"
+    [ -n "$smtp_host" ] && smtp_enabled="true"
+    # pm2 runs as the deploying user (run_as_deploy_user in
+    # setup-node-services.sh); Vector tails that user's ~/.pm2/logs.
+    pm2_user="${SUDO_USER:-}"
+    { [ -z "$pm2_user" ] || [ "$pm2_user" == "root" ]; } && pm2_user="$(id -un)"
+    pm2_home="$(getent passwd "$pm2_user" 2>/dev/null | cut -d: -f6)"
+    pm2_log_dir="${PM2_LOG_DIR:-${pm2_home:-/root}/.pm2/logs}"
+
+    # Render the alerting provisioning. Grafana validates the e-mail
+    # contact point at start-up and exits when `addresses` is empty, so
+    # with no recipients configured we provision no contact point at all
+    # and route the notification policy to Grafana's built-in
+    # grafana-default-email receiver. Rules and templates ship either way.
+    alerting_src="$DEPLOY_DIR/monitoring/grafana/provisioning/alerting"
+    alerting_dir="$DEPLOY_DIR/generated/monitoring/alerting"
+    mkdir -p "$alerting_dir" && rm -f "$alerting_dir"/*.yml
+    for f in rules.yml templates.yml; do
+        [ -f "$alerting_src/$f" ] && cp "$alerting_src/$f" "$alerting_dir/$f"
+    done
+    if [ -n "$alert_emails" ]; then
+        cp "$alerting_src/contact-points.yml" "$alerting_dir/contact-points.yml"
+        cp "$alerting_src/policies.yml" "$alerting_dir/policies.yml"
+    else
+        sed 's/receiver: ethora-email/receiver: grafana-default-email/' "$alerting_src/policies.yml" > "$alerting_dir/policies.yml"
+        [ "$MONITORING_MODE" == "local" ] && log "Monitoring: no services.monitoring.alerts.emails configured; Grafana alerts route to the built-in default receiver (no e-mail)."
+    fi
+    chmod -R a+rX "$alerting_dir" 2>/dev/null || true
+
+    # What to start, as compose profiles: local (Prometheus + Grafana), remote
+    # (the Prometheus agent), victorialogs, logs (Vector), renderer. The remote
+    # mode renders the agent config and, with logs, the Vector sink from their
+    # templates with the server URL, token and tenant.
+    monitoring_profiles=""
+    add_monitoring_profile() { monitoring_profiles="${monitoring_profiles:+$monitoring_profiles,}$1"; }
+    generated_dir="$DEPLOY_DIR/generated/monitoring"
+    mkdir -p "$generated_dir"
+    agent_config="$generated_dir/prometheus-agent.yml"
+    vector_sink="$DEPLOY_DIR/monitoring/vector/sink-local.yaml"
+    rm -f "$agent_config" "$generated_dir/vector-sink.yaml"
+    render_monitoring_template() { # TEMPLATE OUTPUT
+        sed -e "s|{{MONITORING_REMOTE_URL}}|${remote_url}|g" \
+            -e "s|{{MONITORING_REMOTE_TOKEN}}|${remote_token}|g" \
+            -e "s|{{MONITORING_TENANT}}|${remote_tenant}|g" "$1" > "$2"
+        chmod 600 "$2" 2>/dev/null || true
+    }
+    case "$MONITORING_MODE" in
+        local)
+            add_monitoring_profile local
+            [ "$screenshots" == "true" ] && add_monitoring_profile renderer
+            if [ "$logs_enabled" == "true" ]; then
+                add_monitoring_profile victorialogs
+                add_monitoring_profile logs
+            fi
+            ;;
+        remote)
+            add_monitoring_profile remote
+            render_monitoring_template "$DEPLOY_DIR/monitoring/prometheus/agent.yml.template" "$agent_config"
+            if [ "$logs_enabled" == "true" ]; then
+                add_monitoring_profile logs
+                vector_sink="$generated_dir/vector-sink.yaml"
+                render_monitoring_template "$DEPLOY_DIR/monitoring/vector/sink-remote.yaml.template" "$vector_sink"
+            fi
+            log "Monitoring: remote mode, pushing to $remote_url as tenant '$remote_tenant' (logs: ${logs_enabled:-false})."
+            ;;
+    esac
+    {
+        printf 'MONITORING_MODE=%s\n' "$MONITORING_MODE"
+        # Grafana and Prometheus emit absolute links behind the /grafana/ and
+        # /prometheus/ sub-paths of the uptime vhost.
+        if [ "${UPTIME_ENABLED:-false}" == "true" ] && [ -n "${UPTIME_DOMAIN:-}" ] && [ "${UPTIME_DOMAIN:-}" != "null" ]; then
+            printf 'MONITORING_BASE_URL=https://%s\n' "$UPTIME_DOMAIN"
+        fi
+        printf 'GRAFANA_ALERT_EMAILS="%s"\n' "$alert_emails"
+        printf 'GRAFANA_ALERTING_DIR="%s"\n' "$alerting_dir"
+        printf 'GRAFANA_SMTP_ENABLED=%s\n' "$smtp_enabled"
+        printf 'GRAFANA_SMTP_HOST="%s"\n' "$smtp_host"
+        printf 'GRAFANA_SMTP_USER="%s"\n' "$smtp_user"
+        printf 'GRAFANA_SMTP_PASSWORD="%s"\n' "$smtp_password"
+        printf 'GRAFANA_SMTP_FROM="%s"\n' "$smtp_from"
+        printf 'GRAFANA_SCREENSHOTS=%s\n' "${screenshots:-false}"
+        printf 'PM2_LOG_DIR="%s"\n' "$pm2_log_dir"
+        if [ -f "$agent_config" ]; then
+            printf 'PROMETHEUS_AGENT_CONFIG="%s"\n' "$agent_config"
+        fi
+        printf 'VECTOR_SINK_CONFIG="%s"\n' "$vector_sink"
+        printf 'COMPOSE_PROFILES=%s\n' "$monitoring_profiles"
+    } > "$DEPLOY_DIR/monitoring/.env" 2>/dev/null || true
+    chmod 600 "$DEPLOY_DIR/monitoring/.env" 2>/dev/null || true
+fi
+
 # Generate Uptime configuration (optional)
 if [ "${UPTIME_ENABLED:-false}" == "true" ] && [ -n "${UPTIME_DOMAIN:-}" ] && [ "${UPTIME_DOMAIN:-}" != "null" ]; then
     # Must run before rendering: the conf references the htpasswd file, so it has
     # to exist or `nginx -t` fails.
     setup_uptime_basic_auth
-    # Hand the (optional) monitoring stack its public base URL so Grafana and
-    # Prometheus emit correct absolute links behind the /grafana//prometheus/
-    # sub-paths, plus everything Grafana alerting needs: recipients, SMTP and
-    # whether to run the screenshot renderer. SMTP defaults to the platform's
-    # Postmark server token (integrations.postmark) unless
-    # services.monitoring.alerts.smtp_* override it. docker compose auto-loads
-    # this .env from the compose directory.
-    if [ -d "$DEPLOY_DIR/monitoring" ]; then
-        mon_cfg() { yq eval "$1 // \"\"" "$CONFIG_FILE" 2>/dev/null || echo ""; }
-        alert_emails="$(mon_cfg '.services.monitoring.alerts.emails')"
-        smtp_host="$(mon_cfg '.services.monitoring.alerts.smtp_host')"
-        smtp_user="$(mon_cfg '.services.monitoring.alerts.smtp_user')"
-        smtp_password="$(mon_cfg '.services.monitoring.alerts.smtp_password')"
-        smtp_from="$(mon_cfg '.services.monitoring.alerts.smtp_from')"
-        screenshots="$(mon_cfg '.services.monitoring.screenshots')"
-        if [ -z "$smtp_host" ]; then
-            postmark_token="$(mon_cfg '.integrations.postmark.token')"
-            if [ -n "$postmark_token" ]; then
-                smtp_host="smtp.postmarkapp.com:587"
-                smtp_user="$postmark_token"
-                smtp_password="$postmark_token"
-                [ -n "$smtp_from" ] || smtp_from="$(mon_cfg '.integrations.postmark.from_email')"
-            fi
-        fi
-        smtp_enabled="false"
-        [ -n "$smtp_host" ] && smtp_enabled="true"
-        renderer_profile=""
-        [ "$screenshots" == "true" ] && renderer_profile="renderer"
-
-        # Render the alerting provisioning. Grafana validates the e-mail
-        # contact point at start-up and exits when `addresses` is empty, so
-        # with no recipients configured we provision no contact point at all
-        # and route the notification policy to Grafana's built-in
-        # grafana-default-email receiver. Rules and templates ship either way.
-        alerting_src="$DEPLOY_DIR/monitoring/grafana/provisioning/alerting"
-        alerting_dir="$DEPLOY_DIR/generated/monitoring/alerting"
-        mkdir -p "$alerting_dir" && rm -f "$alerting_dir"/*.yml
-        for f in rules.yml templates.yml; do
-            [ -f "$alerting_src/$f" ] && cp "$alerting_src/$f" "$alerting_dir/$f"
-        done
-        if [ -n "$alert_emails" ]; then
-            cp "$alerting_src/contact-points.yml" "$alerting_dir/contact-points.yml"
-            cp "$alerting_src/policies.yml" "$alerting_dir/policies.yml"
-        else
-            sed 's/receiver: ethora-email/receiver: grafana-default-email/' "$alerting_src/policies.yml" > "$alerting_dir/policies.yml"
-            log "Monitoring: no services.monitoring.alerts.emails configured; Grafana alerts route to the built-in default receiver (no e-mail)."
-        fi
-        chmod -R a+rX "$alerting_dir" 2>/dev/null || true
-        {
-            printf 'MONITORING_BASE_URL=https://%s\n' "$UPTIME_DOMAIN"
-            printf 'GRAFANA_ALERT_EMAILS="%s"\n' "$alert_emails"
-            printf 'GRAFANA_ALERTING_DIR="%s"\n' "$alerting_dir"
-            printf 'GRAFANA_SMTP_ENABLED=%s\n' "$smtp_enabled"
-            printf 'GRAFANA_SMTP_HOST="%s"\n' "$smtp_host"
-            printf 'GRAFANA_SMTP_USER="%s"\n' "$smtp_user"
-            printf 'GRAFANA_SMTP_PASSWORD="%s"\n' "$smtp_password"
-            printf 'GRAFANA_SMTP_FROM="%s"\n' "$smtp_from"
-            printf 'GRAFANA_SCREENSHOTS=%s\n' "${screenshots:-false}"
-            printf 'COMPOSE_PROFILES=%s\n' "$renderer_profile"
-        } > "$DEPLOY_DIR/monitoring/.env" 2>/dev/null || true
-        chmod 600 "$DEPLOY_DIR/monitoring/.env" 2>/dev/null || true
-    fi
     replace_template \
         "$DEPLOY_DIR/nginx/uptime.conf.template" \
         "$NGINX_CONF_DIR/ethora-uptime.conf"
+    # The /grafana/ and /prometheus/ locations only make sense with the local
+    # monitoring stack behind them; without it they would answer 502.
+    if [ "$MONITORING_MODE" == "local" ]; then
+        sed -i '/#BEGIN_MONITORING_UI/d;/#END_MONITORING_UI/d' "$NGINX_CONF_DIR/ethora-uptime.conf"
+    else
+        sed -i '/#BEGIN_MONITORING_UI/,/#END_MONITORING_UI/d' "$NGINX_CONF_DIR/ethora-uptime.conf"
+    fi
 else
     remove_config_if_present "$NGINX_CONF_DIR/ethora-uptime.conf"
     rm -f "$UPTIME_HTPASSWD_FILE" 2>/dev/null || true

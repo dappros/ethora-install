@@ -1381,56 +1381,91 @@ if [ "${UPTIME_ENABLED:-false}" == "true" ] && [ -f "$RUNTIME_DEPLOY_DIR/docker-
 fi
 
 # Monitoring stack (Prometheus + Grafana + cAdvisor + node-exporter).
-# Opt-in via deploy.yml services.monitoring.enabled (default false) so it never
-# starts on prod. Standalone compose project; the /grafana//prometheus/ sub-path
-# URLs come from monitoring/.env (written by setup-nginx.sh). Run from the
-# monitoring dir so compose auto-loads that .env. Non-fatal: a monitoring
-# failure must not abort the app deploy.
-MONITORING_ENABLED="false"
-if command -v yq >/dev/null 2>&1 && [ -n "${CANONICAL_DEPLOY_CONFIG_FILE:-}" ] && [ -f "${CANONICAL_DEPLOY_CONFIG_FILE:-}" ]; then
-  MONITORING_ENABLED="$(yq eval '.services.monitoring.enabled // "false"' "$CANONICAL_DEPLOY_CONFIG_FILE" 2>/dev/null || echo "false")"
-fi
-if [ "${MONITORING_ENABLED:-false}" == "true" ] && [ -f "$RUNTIME_DEPLOY_DIR/monitoring/docker-compose.monitoring.yml" ]; then
-  log "Starting/refreshing monitoring stack (Prometheus/Grafana/cAdvisor/node-exporter)..."
-  ( cd "$RUNTIME_DEPLOY_DIR/monitoring" && compose -f docker-compose.monitoring.yml up -d ) \
+# Monitoring (deploy/monitoring), driven by services.monitoring.mode in
+# deploy.yml: off (the default, so it never starts on prod by accident),
+# local (Prometheus + Grafana on this host) or remote (agents pushing to the
+# central monitoring server). setup-nginx.sh resolves the mode, renders the
+# per-mode configs into generated/monitoring and writes monitoring/.env, which
+# compose auto-loads from the monitoring dir; MONITORING_MODE is read from
+# there. Non-fatal: a monitoring failure must not abort the app deploy.
+MONITORING_ENV="$RUNTIME_DEPLOY_DIR/monitoring/.env"
+MONITORING_MODE="$(sed -n 's/^MONITORING_MODE=//p' "$MONITORING_ENV" 2>/dev/null | head -n1)"
+MONITORING_MODE="${MONITORING_MODE:-off}"
+monitoring_compose() { ( cd "$RUNTIME_DEPLOY_DIR/monitoring" && compose -f docker-compose.monitoring.yml "$@" ); }
+monitoring_profile_on() { # NAME -> 0 when COMPOSE_PROFILES in monitoring/.env lists it
+  grep -q "^COMPOSE_PROFILES=\([^ ]*,\)\?$1\(,.*\)\?$" "$MONITORING_ENV" 2>/dev/null
+}
+monitoring_env_value() { # KEY -> its value in monitoring/.env, quotes stripped
+  sed -n "s/^$1=\"\{0,1\}\([^\"]*\)\"\{0,1\}\$/\1/p" "$MONITORING_ENV" 2>/dev/null | head -n1
+}
+monitoring_remove() { # CONTAINER... -> remove those that exist
+  local c
+  for c in "$@"; do
+    if [ -n "$(docker ps -aq --filter "name=^${c}$" 2>/dev/null)" ]; then
+      log "Monitoring: removing $c (not used in mode '$MONITORING_MODE')..."
+      docker rm -f "$c" >/dev/null 2>&1 || log "[WARN] could not remove $c (non-fatal)"
+    fi
+  done
+}
+monitoring_restart_if_changed() { # STAMP SERVICE FILE... -> restart SERVICE when the files' joint hash changed since the last deploy
+  local stamp="$STATE_DIR/$1.sha256" svc="$2" f hash files=()
+  shift 2
+  for f in "$@"; do [ -f "$f" ] && files+=("$f"); done
+  [ "${#files[@]}" -gt 0 ] || return 0
+  hash="$(cat "${files[@]}" | sha256sum 2>/dev/null | awk '{print $1}')"
+  if [ -n "$hash" ] && [ "$(cat "$stamp" 2>/dev/null || echo '')" != "$hash" ]; then
+    log "Monitoring: $svc config changed; restarting $svc..."
+    monitoring_compose restart "$svc" || log "[WARN] $svc restart failed (non-fatal)"
+    echo "$hash" >"$stamp" 2>/dev/null || true
+  fi
+}
+monitoring_mode_stamp="$STATE_DIR/monitoring-mode"
+monitoring_prev_mode="$(cat "$monitoring_mode_stamp" 2>/dev/null || echo '')"
+if [ "$MONITORING_MODE" == "off" ]; then
+  # Switched off: stop what an earlier mode started. A stack that was never
+  # started through deploy.yml (no stamp; e.g. brought up by hand for a load
+  # test) is left alone.
+  if [ -n "$monitoring_prev_mode" ] && [ "$monitoring_prev_mode" != "off" ]; then
+    log "Monitoring switched off; removing the monitoring containers..."
+    monitoring_remove ethora-prometheus ethora-grafana ethora-grafana-renderer ethora-prometheus-agent \
+      ethora-vector ethora-victorialogs ethora-cadvisor ethora-node-exporter
+  fi
+elif [ -f "$RUNTIME_DEPLOY_DIR/monitoring/docker-compose.monitoring.yml" ]; then
+  log "Starting/refreshing monitoring stack (mode: $MONITORING_MODE)..."
+  # `up -d` only manages the services of the active profiles, so containers
+  # of the other mode or of a switched-off option are removed by hand, and
+  # before `up`: the local Prometheus and the agent share port 9090.
+  case "$MONITORING_MODE" in
+    local)  monitoring_remove ethora-prometheus-agent ;;
+    remote) monitoring_remove ethora-prometheus ethora-grafana ethora-grafana-renderer ethora-victorialogs ;;
+  esac
+  monitoring_profile_on renderer || monitoring_remove ethora-grafana-renderer
+  monitoring_profile_on victorialogs || monitoring_remove ethora-victorialogs
+  monitoring_profile_on logs || monitoring_remove ethora-vector
+  monitoring_compose up -d \
     || log "[WARN] monitoring stack failed to start (non-fatal); check: (cd deploy/monitoring && docker compose -f docker-compose.monitoring.yml ps)"
 
-  # prometheus.yml is bind-mounted, so `up -d` does not notice edits to it;
-  # restart Prometheus when the rendered config changed since the last deploy.
-  # Grafana re-reads dashboard JSON on its own; alerting provisioning is handled below.
-  prometheus_stamp="$STATE_DIR/prometheus-config.sha256"
-  prometheus_hash="$(hash_file_sha256 "$RUNTIME_DEPLOY_DIR/monitoring/prometheus/prometheus.yml")"
-  if [ -n "$prometheus_hash" ] && [ "$(cat "$prometheus_stamp" 2>/dev/null || echo '')" != "$prometheus_hash" ]; then
-    log "Prometheus config changed; restarting prometheus..."
-    ( cd "$RUNTIME_DEPLOY_DIR/monitoring" && compose -f docker-compose.monitoring.yml restart prometheus ) \
-      || log "[WARN] prometheus restart failed (non-fatal)"
-    echo "$prometheus_hash" >"$prometheus_stamp" 2>/dev/null || true
+  # The config files are bind-mounted and read at start-up only, so `up -d`
+  # does not notice edits to them: restart the service whose files changed
+  # since the last deploy. Grafana re-reads dashboard JSON on its own, but its
+  # alerting provisioning (rules, contact points, templates) is start-up only;
+  # the rendered directory (setup-nginx.sh) is hashed so that a change in
+  # alerts.emails restarts it too.
+  mon_dir="$RUNTIME_DEPLOY_DIR/monitoring"
+  if [ "$MONITORING_MODE" == "local" ]; then
+    monitoring_restart_if_changed prometheus-config prometheus "$mon_dir/prometheus/prometheus.yml" "$mon_dir/prometheus/scrape.yml"
+    alerting_dir="$RUNTIME_DEPLOY_DIR/generated/monitoring/alerting"
+    [ -d "$alerting_dir" ] || alerting_dir="$mon_dir/grafana/provisioning/alerting"
+    monitoring_restart_if_changed grafana-alerting grafana "$alerting_dir"/*.yml
+  else
+    monitoring_restart_if_changed prometheus-agent-config prometheus-agent "$(monitoring_env_value PROMETHEUS_AGENT_CONFIG)" "$mon_dir/prometheus/scrape.yml"
   fi
-
-  # Alerting provisioning (rules, contact points, templates) is read only at
-  # Grafana start-up, unlike dashboards; restart Grafana when those files changed.
-  alerting_stamp="$STATE_DIR/grafana-alerting.sha256"
-  # Hash the rendered directory (setup-nginx.sh) when present so a change in
-  # alerts.emails also restarts Grafana; fall back to the source files.
-  alerting_dir="$RUNTIME_DEPLOY_DIR/generated/monitoring/alerting"
-  [ -d "$alerting_dir" ] || alerting_dir="$RUNTIME_DEPLOY_DIR/monitoring/grafana/provisioning/alerting"
-  alerting_hash="$(cat "$alerting_dir"/*.yml 2>/dev/null | sha256sum 2>/dev/null | awk '{print $1}')"
-  if [ -n "$alerting_hash" ] && [ "$(cat "$alerting_stamp" 2>/dev/null || echo '')" != "$alerting_hash" ]; then
-    log "Grafana alerting provisioning changed; restarting grafana..."
-    ( cd "$RUNTIME_DEPLOY_DIR/monitoring" && compose -f docker-compose.monitoring.yml restart grafana ) \
-      || log "[WARN] grafana restart failed (non-fatal)"
-    echo "$alerting_hash" >"$alerting_stamp" 2>/dev/null || true
-  fi
-
-  # The screenshot renderer runs under the `renderer` compose profile. When
-  # services.monitoring.screenshots is switched off, `up -d` just stops
-  # managing that service, so remove the leftover container explicitly.
-  if ! grep -q '^COMPOSE_PROFILES=.*renderer' "$RUNTIME_DEPLOY_DIR/monitoring/.env" 2>/dev/null \
-     && [ -n "$(docker ps -aq --filter name='^ethora-grafana-renderer$' 2>/dev/null)" ]; then
-    log "Screenshots disabled; removing the grafana renderer container..."
-    docker rm -f ethora-grafana-renderer >/dev/null 2>&1 || log "[WARN] could not remove ethora-grafana-renderer (non-fatal)"
+  if monitoring_profile_on logs; then
+    vector_sink="$(monitoring_env_value VECTOR_SINK_CONFIG)"
+    monitoring_restart_if_changed vector-config vector "$mon_dir/vector/vector.yaml" "${vector_sink:-$mon_dir/vector/sink-local.yaml}"
   fi
 fi
+echo "$MONITORING_MODE" >"$monitoring_mode_stamp" 2>/dev/null || true
 
 log "Restarting Node.js services (PM2)..."
 bash "$RUNTIME_DEPLOY_DIR/scripts/setup-node-services.sh"
