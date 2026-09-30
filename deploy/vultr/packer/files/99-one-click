@@ -1,0 +1,43 @@
+#!/bin/sh
+# Message of the day for the Ethora Core Vultr instance. Shown at every SSH
+# login until removed; the setup page it points at works only once.
+myip=$(hostname -I | awk '{print $1}')
+pw=$(sed -n 's/^SETUP_PASSWORD=//p' /etc/ethora/setup-web.env 2>/dev/null)
+if [ -f /etc/ethora/setup-done ]; then
+cat <<MSG
+********************************************************************************
+Ethora Core is installed on this server (setup completed $(cat /etc/ethora/setup-done)).
+
+  * Configuration:  /root/ethora-install-shared/deploy/config/deploy.yml
+  * Apply changes:  cd /root/ethora-install-shared && deploy/scripts/update.sh
+  * Health check:   deploy/scripts/health-check.sh
+  * Your data:      /root/ethora-data (back this up)
+  * Documentation:  https://github.com/dappros/ethora-install
+
+To delete this message: rm -f /etc/update-motd.d/99-one-click
+********************************************************************************
+MSG
+else
+cat <<MSG
+********************************************************************************
+Welcome to the Ethora Core server.
+
+Finish the installation in your browser (about five minutes):
+
+  http://$myip:8888        user: admin      password: ${pw:-<see /etc/ethora/setup-web.env>}
+
+Enter your domain (or $(echo "$myip" | tr . -).sslip.io for an install without
+DNS records) and your e-mail; the page installs everything, obtains TLS
+certificates from Let's Encrypt and shows the admin password once.
+
+For a real domain, first create A records for api., app., xmpp. and
+files.<your domain> pointing at $myip.
+
+The UFW firewall is enabled: ports 22 (SSH), 80, 443 and 8888 are open.
+
+Documentation: https://github.com/dappros/ethora-install
+Ethora Core is free under the Ethora Core Software License:
+https://ethora.com/legal/ethora-core-license/
+********************************************************************************
+MSG
+fi

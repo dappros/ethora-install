@@ -13,6 +13,9 @@ Environment=ETHORA_SOURCE_ROOT=__SOURCE_ROOT__
 Environment=SETUP_PORT=8888
 Environment=SETUP_DEFAULT_MODE=image
 Environment=HOME=/root
+# Optional per-instance values, for clouds without an instance id in metadata
+# (SETUP_PASSWORD=...); written by a first-boot script.
+EnvironmentFile=-/etc/ethora/setup-web.env
 ExecStart=/usr/bin/env node __SOURCE_ROOT__/deploy/setup-web/server.js
 Restart=no
 StandardOutput=journal
