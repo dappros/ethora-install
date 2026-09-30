@@ -15,6 +15,14 @@ CONF_DIR=/opt/ejabberd/conf
 CTL=/opt/ejabberd/bin/ejabberdctl
 
 [ -r "$CONF_SRC/ejabberd.yml" ] || { echo "[xmpp] $CONF_SRC/ejabberd.yml missing; the config service did not run" >&2; exit 1; }
+# XMPP_DOMAIN normally arrives from compose (${XMPP_DOMAIN:-xmpp.${ROOT_DOMAIN}}).
+# A platform that resolves compose defaults itself (Coolify) hands an empty
+# override through as an empty value, so fall back to the host the config
+# service rendered into ejabberd.yml.
+if [ -z "${XMPP_DOMAIN:-}" ]; then
+  XMPP_DOMAIN="$(sed -n '/^hosts:/,/^[a-z]/{s/^  - //p;}' "$CONF_SRC/ejabberd.yml" | head -n 1)"
+  export XMPP_DOMAIN
+fi
 cp "$CONF_SRC/ejabberd.yml" "$CONF_DIR/ejabberd.yml"
 cp "$CONF_SRC/jwt.key" "$CONF_DIR/jwt.key"
 chmod 600 "$CONF_DIR/ejabberd.yml" "$CONF_DIR/jwt.key"
