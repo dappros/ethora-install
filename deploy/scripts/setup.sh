@@ -324,7 +324,14 @@ fi
 # ethora-install repository) can only run from images: default to the Core
 # edition and image mode there, so the README command needs no flags. A
 # monoserver checkout keeps the full, source-mode defaults.
-if [ ! -d "$SOURCE_ROOT/ethora-backend/services/api" ] && [ ! -d "$SOURCE_ROOT/ethora-app-reactjs/src" ]; then
+# ETHORA_SETUP_COMPONENT_SOURCES=present|absent overrides the detection
+# (tests run in checkouts with and without submodule contents).
+case "${ETHORA_SETUP_COMPONENT_SOURCES:-auto}" in
+  present) _have_sources=true ;;
+  absent)  _have_sources=false ;;
+  *) if [ -d "$SOURCE_ROOT/ethora-backend/services/api" ] || [ -d "$SOURCE_ROOT/ethora-app-reactjs/src" ]; then _have_sources=true; else _have_sources=false; fi ;;
+esac
+if [ "$_have_sources" = false ]; then
   [ -z "$A_EDITION" ] && [ -z "$(from_val '.edition')" ] && A_EDITION="core"
   [ -z "$A_ALL_MODES" ] && [ -z "$(from_val '.services.backend.mode')" ] && A_ALL_MODES="image"
 fi
