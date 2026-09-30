@@ -49,6 +49,12 @@ links? From the deploy directory: `sudo ./scripts/admin-reset.sh list`, then
 `temp-password`, `clear-mfa`, `set-email` or `create` with `--email`. See
 [deploy/README.md](../deploy/README.md#recover-or-manage-the-superadmin-from-the-host).
 
+**Docker Compose instead of the installer.** `deploy/compose/` runs the
+same Core images as one compose project with Caddy for TLS; nothing is
+installed on the host beyond Docker. `./configure.sh --domain ... --admin-email ...`
+then `docker compose up -d`; update with `docker compose pull && docker compose up -d`.
+Its README covers backup and restore of the named volumes.
+
 ## Update
 
 ```bash

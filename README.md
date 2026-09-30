@@ -79,6 +79,16 @@ What you get:
 | File storage | MinIO | `files.<root>` |
 | MongoDB, MySQL, Redis, Centrifugo | stock images | internal |
 
+## Prefer Docker Compose?
+
+The same server as one compose project, for hosts and platforms that run
+compose files (Coolify, Dokploy, Portainer, a plain Docker host): copy
+[deploy/compose/](deploy/compose/) to the server, run `./configure.sh
+--domain chat.example.com --admin-email you@example.com`, then `docker
+compose up -d`. Caddy obtains the certificates; nothing is installed on the
+host beyond Docker. Details, backup and update steps in its
+[README](deploy/compose/README.md).
+
 ## Update
 
 ```bash
