@@ -1,0 +1,142 @@
+# Ethora Core, Dokploy template (github.com/Dokploy/templates format).
+# GENERATED FILE: edit template.in.toml and run build-template.sh; the mounts
+# are the bundle's deploy/compose/scripts and deploy/compose/templates.
+#
+# No input is required: root_domain is a Dokploy-generated
+# <name>-<hash>-<ip>.sslip.io host, the four public hosts api., app., xmpp. and
+# files.<root_domain> are the domains below, and every secret is generated.
+# To use your own domain change ROOT_DOMAIN and the six domains together.
+# Before the first deploy set ADMIN_EMAIL (the admin login), enable HTTPS
+# with Let's Encrypt on the six domains (the web app only works over https)
+# and turn Isolated Deployment on (Advanced), so the service names stay
+# private to this stack. See README.md.
+
+[variables]
+root_domain = "${domain}"
+admin_password = "${password:20}"
+jwt_secret = "${password:64}"
+refresh_secret = "${password:64}"
+xmpp_secret = "${password:32}"
+xmpp_jwt_secret = "${password:64}"
+xmpp_admin_password = "${password:24}"
+internal_requests_secret = "${password:32}"
+mysql_root_password = "${password:32}"
+minio_root_user = "ethora${password:12}"
+minio_root_password = "${password:32}"
+centrifugo_api_key = "${password:64}"
+centrifugo_hmac_secret = "${password:64}"
+centrifugo_admin_password = "${password:24}"
+centrifugo_admin_secret = "${password:64}"
+
+[config]
+# The keys of the bundle's .env.example (deploy/compose/.env.example in
+# github.com/dappros/ethora-install), same order, without the per-host
+# overrides (API_DOMAIN, ...) and the bundled proxy's settings. ADMIN_EMAIL
+# is the admin login; ADMIN_PASSWORD its initial password. MYSQL_ROOT_PASSWORD
+# and MINIO_ROOT_* are written into the databases on the first start and must
+# not change after it.
+env = [
+  "ROOT_DOMAIN=${root_domain}",
+  "ADMIN_EMAIL=admin@${root_domain}",
+  "ADMIN_PASSWORD=${admin_password}",
+  "BASE_APP_DISPLAY_NAME=Ethora",
+  "ETHORA_LICENSE_KEY=",
+  "ETHORA_LICENSE_CALL_HOME=true",
+  "ETHORA_LICENSE_SERVER_URL=",
+  "JWT_SECRET=${jwt_secret}",
+  "REFRESH_SECRET=${refresh_secret}",
+  "XMPP_SECRET=${xmpp_secret}",
+  "XMPP_JWT_SECRET=${xmpp_jwt_secret}",
+  "XMPP_ADMIN_PASSWORD=${xmpp_admin_password}",
+  "INTERNAL_REQUESTS_SECRET=${internal_requests_secret}",
+  "MYSQL_ROOT_PASSWORD=${mysql_root_password}",
+  "MINIO_ROOT_USER=${minio_root_user}",
+  "MINIO_ROOT_PASSWORD=${minio_root_password}",
+  "CENTRIFUGO_API_KEY=${centrifugo_api_key}",
+  "CENTRIFUGO_HMAC_SECRET=${centrifugo_hmac_secret}",
+  "CENTRIFUGO_ADMIN_PASSWORD=${centrifugo_admin_password}",
+  "CENTRIFUGO_ADMIN_SECRET=${centrifugo_admin_secret}",
+  "ETHORA_API_IMAGE=docker.io/dappros/ethora-api:2610",
+  "ETHORA_FRONTEND_IMAGE=docker.io/dappros/ethora-frontend:2610",
+  "ETHORA_XMPP_IMAGE=docker.io/dappros/ethora-xmpp:2610",
+  "COMPOSE_PROFILES=",
+]
+
+# api.<root>: the HTTP API (Swagger at /api-docs/).
+[[config.domains]]
+serviceName = "api"
+port = 8080
+host = "api.${root_domain}"
+
+# app.<root>: web chat and admin panel ...
+[[config.domains]]
+serviceName = "frontend"
+port = 8080
+host = "app.${root_domain}"
+
+# ... and, on the same host, the real-time channel (longer path rule wins).
+[[config.domains]]
+serviceName = "centrifugo"
+port = 8000
+host = "app.${root_domain}"
+path = "/connection/websocket"
+
+# xmpp.<root>: only /ws and /bosh; ejabberd's /api and /admin stay internal.
+[[config.domains]]
+serviceName = "xmpp"
+port = 5280
+host = "xmpp.${root_domain}"
+path = "/ws"
+
+[[config.domains]]
+serviceName = "xmpp"
+port = 5280
+host = "xmpp.${root_domain}"
+path = "/bosh"
+
+# files.<root>: file storage (MinIO).
+[[config.domains]]
+serviceName = "minio"
+port = 9000
+host = "files.${root_domain}"
+
+# The bundle's scripts and templates, mounted from ../files/ by docker-compose.yml.
+[[config.mounts]]
+filePath = "/scripts/api-entrypoint.sh"
+@content scripts/api-entrypoint.sh
+
+[[config.mounts]]
+filePath = "/scripts/init.sh"
+@content scripts/init.sh
+
+[[config.mounts]]
+filePath = "/scripts/verify.js"
+@content scripts/verify.js
+
+[[config.mounts]]
+filePath = "/scripts/render-config.sh"
+@content scripts/render-config.sh
+
+[[config.mounts]]
+filePath = "/scripts/mongo-init.sh"
+@content scripts/mongo-init.sh
+
+[[config.mounts]]
+filePath = "/scripts/xmpp-start.sh"
+@content scripts/xmpp-start.sh
+
+[[config.mounts]]
+filePath = "/scripts/frontend-start.sh"
+@content scripts/frontend-start.sh
+
+[[config.mounts]]
+filePath = "/templates/backend.env.template"
+@content templates/backend.env.template
+
+[[config.mounts]]
+filePath = "/templates/frontend.env.template"
+@content templates/frontend.env.template
+
+[[config.mounts]]
+filePath = "/templates/centrifugo-config.json.template"
+@content templates/centrifugo-config.json.template

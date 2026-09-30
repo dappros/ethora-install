@@ -71,7 +71,7 @@ async function xmppRoundTrip({ username, token, roomJid }) {
     xmpp.on('stanza', on)
   })
   await xmpp.start()
-  ok(`xmpp login over wss://${XMPP}/ws as ${username}`)
+  ok(`xmpp login over wss://${XMPP}/ws as ${nick}`)
   try {
     // Join, and wait for our own presence back (MUC status 110).
     const joined = waitFor(`join ${roomJid}`, (st) => st.is('presence') && st.attrs.from === `${roomJid}/${nick}`)
