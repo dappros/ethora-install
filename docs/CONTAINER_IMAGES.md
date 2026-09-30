@@ -232,6 +232,15 @@ migrations), so no host Node.js is involved for any of these services.
 individually). The smallest image-mode install is the API, the frontend and
 ejabberd; everything else is optional per `deploy.yml`.
 
+## Compose bundle
+
+`deploy/compose/` (2610) runs the three Core images plus the databases as a
+single compose project with Caddy: the delivery form for compose-based
+platforms and the base for future Helm charts and slimmer cloud images. It
+renders the service configuration from the same templates as the installer
+(a test asserts the templates are identical) and runs the first-boot steps
+through the API image's script mode. See its README.
+
 ## Editions, registries and versions
 
 `setup.sh --edition core` writes a `deploy.yml` with only the API, the
