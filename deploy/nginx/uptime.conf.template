@@ -23,7 +23,9 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-XSS-Protection "1; mode=block" always;
 
-    # Monitoring UIs, reverse-proxied behind the same basic-auth. The containers
+    #BEGIN_MONITORING_UI
+    # Monitoring UIs of services.monitoring.mode: local (setup-nginx.sh drops
+    # this block in the other modes), reverse-proxied behind the same basic-auth. The containers
     # bind to 127.0.0.1 only (see docker-compose.monitoring.yml); nginx is the
     # only public path in, and it requires the htpasswd credentials. Grafana is
     # configured with serve_from_sub_path + root_url=.../grafana/ and Prometheus
@@ -52,6 +54,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
+    #END_MONITORING_UI
 
     location / {
         # Restrict the uptime pages + load-test control API to authenticated

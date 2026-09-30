@@ -46,6 +46,13 @@ answers (root domain, admin email, license key, TLS, AI, modules) and can
 reconfigure an existing file with `--from`. Optional; hand-edited files
 keep working.
 
+**Monitoring modes.** `services.monitoring.mode: off | local | remote`
+replaces `enabled` (still honoured: `enabled: true` is `local`). `local`
+is the stack as before, on the host. `remote` keeps only the agents on
+the host and pushes metrics, and with `logs.enabled` the logs, to the
+central monitoring server set in `services.monitoring.remote` (URL,
+token and tenant name from that server's config).
+
 **Monitoring alerts.** `services.monitoring.alerts.emails` and the
 `smtp_*` keys configure Grafana alert e-mail. Leave empty to disable;
 earlier 2610 builds crash-looped Grafana on an empty address, fixed

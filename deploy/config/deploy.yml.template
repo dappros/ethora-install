@@ -222,19 +222,43 @@ services:
   # Grafana + Prometheus are reverse-proxied behind the uptime domain at
   # /grafana/ and /prometheus/ under the uptime basic-auth.
   monitoring:
-    enabled: false
-    # Grafana alert e-mails (host CPU/memory, container CPU, API 5xx rate and
-    # latency). Recipients are comma-separated. SMTP defaults to the platform's
-    # Postmark server token (integrations.postmark); set smtp_* for another relay.
+    # What runs on this host (deploy/monitoring):
+    #   off    - nothing
+    #   local  - Prometheus + Grafana here; dashboards at https://<uptime domain>/grafana/
+    #            (needs services.uptime), alert e-mails sent from here
+    #   remote - only the agents (node-exporter, cAdvisor, Prometheus in agent
+    #            mode and Vector for logs), pushing to the central monitoring
+    #            server below; the dashboards and alerts are there
+    mode: off
+    # The central monitoring server (mode: remote). Token and tenant name come
+    # from that server's config, where this host is listed under tenants; the
+    # tenant is the name this host has on the central dashboards.
+    remote:
+      url: ""                # https://monitoring.example.com
+      token: ""
+      tenant: ""
+    # Grafana alert e-mails (mode: local; host CPU/memory, container CPU, API
+    # 5xx rate and latency). Recipients are comma-separated. SMTP defaults to
+    # the platform's Postmark server token (integrations.postmark); set smtp_*
+    # for another relay.
     alerts:
       emails: ""
       smtp_host: ""          # host:port, e.g. smtp.example.com:587
       smtp_user: ""
       smtp_password: ""
       smtp_from: ""          # defaults to integrations.postmark.from_email
-    # Attach a screenshot of the alerting panel to each e-mail. Runs a headless
-    # Chromium renderer container (~400 MB RAM); leave off on small hosts.
+    # Attach a screenshot of the alerting panel to each e-mail (mode: local).
+    # Runs a headless Chromium renderer container (~400 MB RAM); leave off on
+    # small hosts.
     screenshots: false
+    # Logs: the Vector agent collects the output of every docker container and
+    # the pm2 logs of the Node services, searchable by service and level. In
+    # local mode VictoriaLogs keeps them here for 7 days (Grafana -> "Ethora
+    # Logs" dashboard, or Explore); in remote mode they go to the central
+    # server. Costs roughly 100 MB of RAM, capped per container; off by
+    # default. Keep it off on a host whose logs must stay on-site.
+    logs:
+      enabled: false
   ejabberd:
     mode: source                                  # source | image (published ethora-xmpp image with the custom modules)
     image: docker.io/dappros/ethora-xmpp:2610

@@ -1,33 +1,40 @@
 # Ethora.com platform, copyright: Dappros Ltd (c) 2026, all rights reserved
 #
-# Standalone observability stack for load testing (Prometheus + Grafana +
-# cAdvisor + node_exporter). Deliberately a SEPARATE compose project so it can
-# be brought up / torn down independently of the app stack and does not touch
-# the existing deploy flow:
+# The monitoring stack of one Ethora host. Deliberately a SEPARATE compose
+# project from the app stack, so it can be brought up / torn down on its own
+# and never touches the app deploy. What runs is chosen by
+# services.monitoring.mode in deploy.yml; setup-nginx.sh turns that into the
+# COMPOSE_PROFILES line of the .env next to this file, update.sh starts it:
 #
-#   docker compose -f deploy/monitoring/docker-compose.monitoring.yml up -d
+#   (always)  cadvisor, node-exporter   per-container and host metrics
+#   local     prometheus, grafana       metrics kept and shown on this host,
+#                                       UIs behind the uptime vhost
+#             + victorialogs, vector    logs kept here (services.monitoring.logs)
+#             + renderer                panel screenshots in alert e-mails
+#   remote    prometheus-agent          metrics pushed to the central monitoring
+#                                       server (services.monitoring.remote)
+#             + vector                  logs pushed there as well
+#
+# Manual use, e.g. load tests on a box set up without deploy.yml:
+#   COMPOSE_PROFILES=local docker compose -f deploy/monitoring/docker-compose.monitoring.yml up -d
 #   docker compose -f deploy/monitoring/docker-compose.monitoring.yml down
 #
-# What it scrapes (see prometheus/prometheus.yml):
-#   - cadvisor      -> per-container CPU/mem/net/disk (mongo, xmpp, mysql, redis, …)
-#   - node_exporter -> host CPU/mem/load/disk/net (covers backend pm2 + system)
-#   - ethora_load   -> the load tool's /metrics (RPS / latency / errors / inflight),
-#                      scraped from the host-published uptime port
-#
-# NOTE: this runs ON THE SAME box as the load target, so the monitoring
-# containers add some overhead. Acceptable for a QA/test box; for clean numbers
-# run Prometheus/Grafana on a separate host scraping this one.
+# NOTE: this runs ON THE SAME box as the app, so the containers add some
+# overhead. The remote mode keeps only the agents here for that reason.
 
 name: ethora-monitoring
 
 services:
+  # --- local mode: metrics stored and shown on this host ---------------------
   prometheus:
     image: prom/prometheus:v2.54.1
     container_name: ethora-prometheus
     restart: unless-stopped
+    profiles: ["local"]
     user: root
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/scrape.yml:/etc/prometheus/scrape.yml:ro
       # Read-only Docker socket for docker_sd_configs (container names).
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - prometheus-data:/prometheus
@@ -51,6 +58,7 @@ services:
     image: grafana/grafana:11.2.0
     container_name: ethora-grafana
     restart: unless-stopped
+    profiles: ["local"]
     depends_on:
       - prometheus
     environment:
@@ -66,6 +74,9 @@ services:
       # Explore is Editor-only by default; the "Logs" link in alert e-mails
       # opens Explore, so let the anonymous Viewer use it (edits stay temporary).
       GF_USERS_VIEWERS_CAN_EDIT: "true"
+      # Datasource plugin for the (optional) VictoriaLogs log store; installed
+      # on container start, so Grafana needs outbound HTTPS to grafana.com once.
+      GF_INSTALL_PLUGINS: "victoriametrics-logs-datasource"
       # Served behind nginx at <uptime-domain>/grafana/ (basic-auth).
       GF_SERVER_ROOT_URL: "${MONITORING_BASE_URL:-http://localhost:3001}/grafana/"
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
@@ -102,8 +113,8 @@ services:
       - "127.0.0.1:3001:3000"
 
   # Headless Chromium that renders dashboard panels for alert e-mails. Opt-in
-  # (~400 MB RAM): only started when COMPOSE_PROFILES=renderer is set in
-  # monitoring/.env, i.e. services.monitoring.screenshots: true in deploy.yml.
+  # (~400 MB RAM): only started when COMPOSE_PROFILES includes renderer, i.e.
+  # services.monitoring.screenshots: true in deploy.yml (local mode).
   renderer:
     image: grafana/grafana-image-renderer:3.11.1
     container_name: ethora-grafana-renderer
@@ -112,6 +123,41 @@ services:
     environment:
       ENABLE_METRICS: "false"
 
+  # --- remote mode: metrics pushed to the central monitoring server ----------
+  # The same Prometheus image in agent mode: it scrapes the same targets
+  # (prometheus/scrape.yml) but stores nothing to query, only a write-ahead
+  # log it forwards over remote_write. The config is rendered by
+  # setup-nginx.sh from services.monitoring.remote (server URL, token and the
+  # tenant label that names this host on the central dashboards). While the
+  # server is unreachable the log keeps up to 4 hours of samples (the agent
+  # default) and catches up afterwards.
+  prometheus-agent:
+    image: prom/prometheus:v2.54.1
+    container_name: ethora-prometheus-agent
+    restart: unless-stopped
+    profiles: ["remote"]
+    user: root
+    volumes:
+      # PROMETHEUS_AGENT_CONFIG is written to .env by setup-nginx.sh together
+      # with the rendered file; the template is only a placeholder mount so a
+      # start without it fails on a config error, not on a missing file.
+      - ${PROMETHEUS_AGENT_CONFIG:-./prometheus/agent.yml.template}:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/scrape.yml:/etc/prometheus/scrape.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - prometheus-agent-data:/prometheus
+    command:
+      - "--enable-feature=agent"
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.agent.path=/prometheus"
+    mem_limit: 256m
+    # Loopback only, same port as the local Prometheus (the two never run
+    # together): `curl 127.0.0.1:9090/api/v1/targets` shows the scrape status.
+    ports:
+      - "127.0.0.1:9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # --- both modes: the exporters ---------------------------------------------
   cadvisor:
     # PINNED to v0.49.1 on purpose — do NOT bump.
     #
@@ -167,6 +213,63 @@ services:
     ports:
       - "127.0.0.1:9100:9100"
 
+  # --- logs (opt-in: services.monitoring.logs.enabled) -----------------------
+  # Vector ships every docker container's output plus the pm2 log files of the
+  # Node services; VictoriaLogs stores them in local mode (in remote mode the
+  # central server does). Together about 100 MB of RAM, which is still why
+  # they are off unless asked for. Both are capped (mem_limit) so a log storm
+  # cannot take memory from the app.
+  victorialogs:
+    image: victoriametrics/victoria-logs:v1.52.0
+    container_name: ethora-victorialogs
+    restart: unless-stopped
+    profiles: ["victorialogs"]
+    command:
+      - "-storageDataPath=/victoria-logs-data"
+      - "-retentionPeriod=7d"
+      # Trust nothing older than a day: Vector reads docker logs from their
+      # beginning on its very first run, and a container with months of
+      # history must not flood the first ingest.
+      - "-retention.maxDiskSpaceUsageBytes=2GiB"
+      - "-insert.maxLineSizeBytes=64KiB"
+      - "-search.maxQueryDuration=30s"
+      - "-loggerLevel=WARN"
+    mem_limit: 256m
+    volumes:
+      - victorialogs-data:/victoria-logs-data
+    # Bound to loopback only: Grafana and Vector reach it as victorialogs:9428
+    # on the compose network, the published port is for `curl 127.0.0.1:9428/health`.
+    ports:
+      - "127.0.0.1:9428:9428"
+
+  vector:
+    image: timberio/vector:0.58.0-alpine
+    container_name: ethora-vector
+    restart: unless-stopped
+    profiles: ["logs"]
+    # root: reads the docker socket and the deploy user's pm2 log files.
+    user: root
+    # Two config files: what to collect (vector.yaml) and where to send it
+    # (the sink file, chosen by mode: VECTOR_SINK_CONFIG in .env from
+    # setup-nginx.sh, the local VictoriaLogs when unset).
+    command: ["--config", "/etc/vector/vector.yaml", "--config", "/etc/vector/sink.yaml"]
+    environment:
+      VECTOR_LOG: warn
+    mem_limit: 128m
+    volumes:
+      - ./vector/vector.yaml:/etc/vector/vector.yaml:ro
+      - ${VECTOR_SINK_CONFIG:-./vector/sink-local.yaml}:/etc/vector/sink.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # PM2_LOG_DIR is written to monitoring/.env by setup-nginx.sh: the deploy
+      # user's ~/.pm2/logs.
+      - ${PM2_LOG_DIR:-/home/ubuntu/.pm2/logs}:/var/log/pm2:ro
+      # Read positions and the disk buffer live here, so a restart resumes
+      # where it stopped instead of re-sending or skipping lines.
+      - vector-data:/var/lib/vector
+
 volumes:
   prometheus-data:
+  prometheus-agent-data:
   grafana-data:
+  victorialogs-data:
+  vector-data:
