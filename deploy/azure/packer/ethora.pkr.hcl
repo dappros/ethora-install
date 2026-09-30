@@ -49,7 +49,7 @@ variable "location" {
 }
 variable "vm_size" {
   type    = string
-  default = "Standard_D2s_v5"
+  default = "Standard_D2s_v5"  # subscriptions differ in quota and capacity; the first bake used -var vm_size=Standard_D2ads_v7
 }
 variable "gallery_resource_group" {
   type    = string
