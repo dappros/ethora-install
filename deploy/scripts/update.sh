@@ -1351,6 +1351,15 @@ if [ -f "$RUNTIME_DEPLOY_DIR/docker-compose.enterprise.yml" ]; then
   fi
 fi
 
+# ejabberd keeps its MUC rooms in MySQL; make sure the index prefixes are wide
+# enough for Ethora's 1:1 room names (scripts/ensure-ejabberd-sql-schema.sh,
+# idempotent, online). Runs before the data migrations below, which recreate
+# the rooms that were lost while the prefix was too short.
+if [ -f "$RUNTIME_DEPLOY_DIR/scripts/ensure-ejabberd-sql-schema.sh" ]; then
+  bash "$RUNTIME_DEPLOY_DIR/scripts/ensure-ejabberd-sql-schema.sh" \
+    || warn "ejabberd MySQL schema check failed (non-fatal); re-run: sudo bash $RUNTIME_DEPLOY_DIR/scripts/ensure-ejabberd-sql-schema.sh"
+fi
+
 if [ "${AI_SERVICE_ENABLED:-false}" == "true" ] && [ -f "$RUNTIME_DEPLOY_DIR/scripts/setup-ai-postgres.sh" ]; then
   log "Starting/refreshing AI embeddings Postgres..."
   bash "$RUNTIME_DEPLOY_DIR/scripts/setup-ai-postgres.sh"

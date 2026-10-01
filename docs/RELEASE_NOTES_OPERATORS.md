@@ -46,6 +46,16 @@ answers (root domain, admin email, license key, TLS, AI, modules) and can
 reconfigure an existing file with `--from`. Optional; hand-edited files
 keep working.
 
+**ejabberd MySQL schema: MUC index width.** Existing databases are altered
+on the next update (`scripts/ensure-ejabberd-sql-schema.sh`, online, no
+restart): the unique indexes of `muc_room`, `muc_online_room`,
+`muc_online_users` and `muc_registered` move from a 75- to a
+191-character prefix. The old width made every 1:1 room of the same first
+member one row, so ejabberd lost such rooms on restart. The
+`reconcile-muc-rooms` data migration then recreates the rooms that exist
+in Mongo but not in ejabberd and sets the missing affiliations; it logs
+one line per room it touches. Runbook: TROUBLESHOOTING.md 7d.
+
 **Monitoring modes.** `services.monitoring.mode: off | local | remote`
 replaces `enabled` (still honoured: `enabled: true` is `local`). `local`
 is the stack as before, on the host. `remote` keeps only the agents on
