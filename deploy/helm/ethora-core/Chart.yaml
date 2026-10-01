@@ -6,7 +6,7 @@ description: >-
   MongoDB, MySQL, Redis, MinIO and Centrifugo.
 type: application
 # CalVer, YY.M.patch: the year and month the chart ships (see CLAUDE.md).
-version: 26.9.0
+version: 26.10.0
 # The image release line the chart runs by default (docker.io/dappros/ethora-*:2610).
 appVersion: "2610"
 kubeVersion: ">=1.25.0-0"
