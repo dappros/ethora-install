@@ -2,7 +2,7 @@
 # Pushed as the OCI artifact docker.io/dappros/ethora-core:artifacthub.io
 # (see ethora-core/README.md, "Publishing"). Fill in repositoryID with the ID
 # Artifact Hub shows after the repository is added there.
-repositoryID: ""
+repositoryID: "790d37b5-7966-478d-83bf-1c41011187a0"
 owners:
   - name: Dappros
     email: support@ethora.com
