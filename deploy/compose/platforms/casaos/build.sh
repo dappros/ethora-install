@@ -76,7 +76,13 @@ render() {
         "category": "Social",
         "author": "Dappros",
         "developer": "Dappros",
-        "icon": "https://cdn.jsdelivr.net/gh/dappros/ethora-install@main/deploy/compose/platforms/casaos/icon.svg",
+        "icon": "https://cdn.jsdelivr.net/gh/IceWhaleTech/CasaOS-AppStore@main/Apps/Ethora/icon.svg",
+        "thumbnail": "https://cdn.jsdelivr.net/gh/IceWhaleTech/CasaOS-AppStore@main/Apps/Ethora/thumbnail.png",
+        "screenshot_link": [
+          "https://cdn.jsdelivr.net/gh/IceWhaleTech/CasaOS-AppStore@main/Apps/Ethora/screenshot-1.png",
+          "https://cdn.jsdelivr.net/gh/IceWhaleTech/CasaOS-AppStore@main/Apps/Ethora/screenshot-2.png",
+          "https://cdn.jsdelivr.net/gh/IceWhaleTech/CasaOS-AppStore@main/Apps/Ethora/screenshot-3.png"
+        ],
         "title": {"en_US": "Ethora"},
         "tagline": {"en_US": "Your own chat server with a web app, admin panel and SDKs"},
         "description": {"en_US": "Ethora is a chat and messaging platform you run yourself: a web chat and admin panel, an API, an XMPP server (ejabberd) and file storage, with mobile and web SDKs on top. This is Ethora Core: free, with per-server limits of 5 apps and 500 user accounts, raised to 10 and 5,000 by registering for free on the License page of the admin panel. Licence: https://ethora.com/legal/ethora-core-license/"},
