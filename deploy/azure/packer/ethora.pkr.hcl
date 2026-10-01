@@ -132,9 +132,12 @@ source "azure-arm" "ethora" {
 build {
   sources = ["source.azure-arm.ethora"]
 
+  # execute_command: the environment goes in front of sudo, never inside a quoted
+  # bash -c string (IMAGES contains spaces; the quotes broke the command and the
+  # build hung without output).
   provisioner "shell" {
     inline_shebang  = "/bin/bash -e"
-    execute_command = "chmod +x {{ .Path }}; sudo -E bash -c '{{ .Vars }} {{ .Path }}'"
+    execute_command = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E {{ .Path }}"
     environment_vars = [
       "INSTALL_REF=${var.install_ref}",
       "INSTALL_REPO=${var.install_repo}",
@@ -213,7 +216,7 @@ build {
   # Marketplace hardening, then Azure generalisation. Nothing after this may log in.
   provisioner "shell" {
     inline_shebang  = "/bin/bash -e"
-    execute_command = "chmod +x {{ .Path }}; sudo -E bash -c '{{ .Vars }} {{ .Path }}'"
+    execute_command = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E {{ .Path }}"
     inline = [
       "set -eux",
       "sed -i 's/^#\\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config",
