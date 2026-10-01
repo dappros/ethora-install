@@ -179,15 +179,16 @@ build {
     environment_vars = ["IMAGES=${join(" ", var.images)}"]
     inline = [
       "rm -f /tmp/ethora-pulls.done /tmp/ethora-pulls.log",
-      "nohup bash -c 'for i in $IMAGES; do echo \"== $i\"; docker pull \"$i\" || echo \"PULL FAILED: $i\"; done; echo done > /tmp/ethora-pulls.done' > /tmp/ethora-pulls.log 2>&1 &",
-      "echo 'pulls started in the background'",
+      # A transient systemd unit: a nohup'd child of a sudo session dies with the session on this image.
+      "systemd-run --unit=ethora-pulls --collect --property=StandardOutput=file:/tmp/ethora-pulls.log --property=StandardError=file:/tmp/ethora-pulls.log --setenv=IMAGES=\"$IMAGES\" bash -c 'for i in $IMAGES; do echo \"== $i\"; docker pull \"$i\" || echo \"PULL FAILED: $i\"; done; echo done > /tmp/ethora-pulls.done'",
+      "echo 'pulls started as unit ethora-pulls'",
     ]
   }
   provisioner "shell" {
     inline_shebang    = "/bin/bash -e"
     expect_disconnect = true
     valid_exit_codes  = [0, 2300218]
-    inline            = ["while [ ! -f /tmp/ethora-pulls.done ]; do sleep 15; tail -1 /tmp/ethora-pulls.log 2>/dev/null | cut -c1-100; done"]
+    inline            = ["for _ in $(seq 1 240); do [ -f /tmp/ethora-pulls.done ] && break; sleep 15; tail -1 /tmp/ethora-pulls.log 2>/dev/null | cut -c1-100; done; [ -f /tmp/ethora-pulls.done ] || { echo 'pulls did not finish in an hour'; systemctl status ethora-pulls --no-pager | tail -5; exit 1; }"]
   }
   provisioner "shell" {
     inline_shebang   = "/bin/bash -e"
