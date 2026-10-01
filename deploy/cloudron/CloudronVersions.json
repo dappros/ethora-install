@@ -1,0 +1,57 @@
+{
+    "stable": true,
+    "versions": {
+        "26.10.0": {
+            "manifest": {
+                "manifestVersion": 2,
+                "id": "com.ethora.core",
+                "title": "Ethora",
+                "author": "Dappros Ltd",
+                "tagline": "Your own chat server with a web app, admin panel and SDKs",
+                "description": "Ethora is a chat and messaging platform you run yourself: a web chat and\nadmin panel, an API, an XMPP server (ejabberd) and file storage, with mobile\nand web SDKs on top. Create apps, users and chat rooms, and connect your own\nclients through the API and the SDKs.\n\n### Features\n\n* Web chat and admin panel for apps, users, rooms and settings\n* REST API (documented at `/api-docs/`) and real-time messaging over XMPP\n* File sharing, stored in the app's own MinIO\n* Multi-tenant: one server hosts many apps, each with its own users\n* Web chat component and backend SDKs, and an MCP server for AI tools\n\n### Licence\n\nThis is Ethora Core: free, with per-server limits of 5 apps and 500 user\naccounts, raised to 10 and 5,000 by registering for free on the License page\nof the admin panel. Licence: https://ethora.com/legal/ethora-core-license/\n",
+                "changelog": "* First package: Ethora Core 2610.10 (API, web app, ejabberd, Centrifugo, MinIO)\n",
+                "postInstallMessage": "This app sets up its own administrator account on first start. The email is\n`admin@` followed by the app's domain; the password is generated. To read\nit, open the app's Web Terminal and run:\n\n```\ngrep ADMIN_PASSWORD /app/data/secrets/secrets.env\n```\n\nSign in at the app's address, then change the password in your account settings.\nThe XMPP server is reached over WebSocket at `/ws` on the same address; the\nAPI lives under `/v1` and `/v2`.\n",
+                "icon": "https://raw.githubusercontent.com/dappros/ethora-install/main/img/store/icon-256.png",
+                "version": "26.10.0",
+                "upstreamVersion": "2610.10",
+                "website": "https://ethora.com",
+                "contactEmail": "support@ethora.com",
+                "documentationUrl": "https://github.com/dappros/ethora-install",
+                "packagerName": "Dappros",
+                "packagerUrl": "https://ethora.com",
+                "tags": [
+                    "chat",
+                    "collaboration",
+                    "communication"
+                ],
+                "httpPort": 3000,
+                "healthCheckPath": "/v1/ping",
+                "memoryLimit": 2147483648,
+                "addons": {
+                    "localstorage": {},
+                    "mongodb": {
+                        "oplog": true
+                    },
+                    "mysql": {},
+                    "redis": {
+                        "noPassword": true
+                    }
+                },
+                "forumUrl": "https://github.com/dappros/ethora-install/issues",
+                "iconUrl": "https://raw.githubusercontent.com/dappros/ethora-install/main/img/store/icon-256.png",
+                "packageUrl": "https://github.com/dappros/ethora-install/tree/main/deploy/cloudron",
+                "minBoxVersion": "10.0.0",
+                "mediaLinks": [
+                    "https://raw.githubusercontent.com/dappros/ethora-install/main/img/store/1.jpg",
+                    "https://raw.githubusercontent.com/dappros/ethora-install/main/img/store/2.jpg",
+                    "https://raw.githubusercontent.com/dappros/ethora-install/main/img/store/3.jpg",
+                    "https://raw.githubusercontent.com/dappros/ethora-install/main/img/store/4.jpg"
+                ],
+                "dockerImage": "docker.io/dappros/ethora-cloudron:26.10.0"
+            },
+            "creationDate": "Thu, 01 Oct 2026 08:28:56 GMT",
+            "ts": "Thu, 01 Oct 2026 08:28:56 GMT",
+            "publishState": "published"
+        }
+    }
+}

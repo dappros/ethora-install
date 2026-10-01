@@ -7,13 +7,13 @@
   "description": "file://DESCRIPTION.md",
   "changelog": "file://CHANGELOG.md",
   "postInstallMessage": "file://POSTINSTALL.md",
-  "icon": "file://icon.png",
+  "icon": "https://raw.githubusercontent.com/dappros/ethora-install/main/img/store/icon-256.png",
   "version": "26.10.0",
   "upstreamVersion": "2610.10",
   "website": "https://ethora.com",
   "contactEmail": "support@ethora.com",
   "documentationUrl": "https://github.com/dappros/ethora-install",
-  "packagerName": "Dappros Ltd",
+  "packagerName": "Dappros",
   "packagerUrl": "https://ethora.com",
   "tags": [
     "chat",
@@ -33,5 +33,14 @@
       "noPassword": true
     }
   },
-  "forumUrl": "https://github.com/dappros/ethora-install/issues"
+  "forumUrl": "https://github.com/dappros/ethora-install/issues",
+  "iconUrl": "https://raw.githubusercontent.com/dappros/ethora-install/main/img/store/icon-256.png",
+  "packageUrl": "https://github.com/dappros/ethora-install/tree/main/deploy/cloudron",
+  "minBoxVersion": "10.0.0",
+  "mediaLinks": [
+    "https://raw.githubusercontent.com/dappros/ethora-install/main/img/store/1.jpg",
+    "https://raw.githubusercontent.com/dappros/ethora-install/main/img/store/2.jpg",
+    "https://raw.githubusercontent.com/dappros/ethora-install/main/img/store/3.jpg",
+    "https://raw.githubusercontent.com/dappros/ethora-install/main/img/store/4.jpg"
+  ]
 }
