@@ -178,7 +178,7 @@ build {
 
   provisioner "shell" {
     inline_shebang   = "/bin/bash -e"
-    execute_command  = "chmod +x {{ .Path }}; sudo -E bash -c '{{ .Vars }} {{ .Path }}'"
+    execute_command  = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E {{ .Path }}"
     environment_vars = ["IMAGES=${join(" ", var.images)}"]
     inline = [
       "rm -f /tmp/ethora-pulls.done /tmp/ethora-pulls.log",
@@ -196,7 +196,7 @@ build {
   provisioner "shell" {
     inline_shebang   = "/bin/bash -e"
     pause_before     = "10s"
-    execute_command  = "chmod +x {{ .Path }}; sudo -E bash -c '{{ .Vars }} {{ .Path }}'"
+    execute_command  = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E {{ .Path }}"
     environment_vars = ["IMAGES=${join(" ", var.images)}"]
     inline = [
       "while [ ! -f /tmp/ethora-pulls.done ]; do sleep 15; done",
