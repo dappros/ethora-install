@@ -1,0 +1,14 @@
+{
+  "builds": [
+    {
+      "name": "ethora",
+      "builder_type": "azure-arm",
+      "build_time": 1790832380,
+      "files": null,
+      "artifact_id": "/subscriptions/b8f901b7-2017-424e-ac8f-5c4d4025673c/resourceGroups/ethora-images/providers/Microsoft.Compute/images/ethora-core-2610.5.4",
+      "packer_run_uuid": "dc688f3d-35cb-6460-04d0-ea8f284818b1",
+      "custom_data": null
+    }
+  ],
+  "last_run_uuid": "dc688f3d-35cb-6460-04d0-ea8f284818b1"
+}

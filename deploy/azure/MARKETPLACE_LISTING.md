@@ -46,9 +46,10 @@ images and the Ethora logo; keep copies with the listing text.
 - Pricing and availability: **Free** (customers pay Azure infrastructure only).
   Markets: all. Visibility: public (private only for the preview stage).
 - Technical configuration: Azure Compute Gallery image; gallery `ethora`,
-  resource group `ethora-images`, definition `ethora-core`, version 2610.5.1.
+  resource group `ethora-images`, definition `ethora-core`, version 2610.5.4.
   Operating system: Linux, Ubuntu 24.04. Recommended VM sizes: Standard_B2s,
-  Standard_D2s_v5, Standard_D2as_v5, Standard_D4s_v5. Open ports: 22 (SSH),
+  Standard_D2s_v4, Standard_D2s_v5, Standard_D2as_v5, Standard_D4s_v5 (no
+  NVMe-only sizes: the image definition is SCSI). Open ports: 22 (SSH),
   80 (HTTP), 443 (HTTPS), 8888 (setup page). Properties: supports SSH: yes;
   supports Accelerated Networking: yes; Generation 2.
 - Usage instructions (plan technical configuration or listing): the four

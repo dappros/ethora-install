@@ -47,6 +47,21 @@ plan lists the open ports (22, 80, 443, 8888) and the buyer's network
 security group opens them. Swap comes from the resource disk through
 `waagent.conf`, not from the OS disk.
 
+## VM sizes
+
+The gallery image definition declares no NVMe disk controller, so sizes
+that are NVMe-only (the v6 and v7 `ads`/`ds` families used for the bake)
+cannot boot from it: "cannot boot with OS image or disk". Recommend and
+test SCSI-capable sizes (B2s, D2s_v4, D2s_v5, D2as_v5, D4s_v5). The Packer
+build VM may be any size with quota; the captured image is the same. To
+allow NVMe sizes later, create a new image definition with
+`--features DiskControllerTypes=SCSI,NVMe` and bake into it.
+
+Verified 2026-10-01 on version 2610.5.4 with a Standard_D2s_v4 VM: setup
+page with the VM id as password, install in under four minutes with
+sslip.io and Let's Encrypt, second submit refused, health check green,
+a room created and messages delivered in the web app.
+
 ## Submitting
 
 Partner Center > Marketplace offers > New offer > Azure Virtual Machine.
