@@ -1931,6 +1931,13 @@ main() {
         bash "$SCRIPT_DIR/ensure-data-sentinels.sh" || true
     fi
 
+    # A fresh MySQL gets the schema from ejabberd-docker/docker/mysql2.sql, which
+    # already carries the wider MUC index prefixes; this only matters for an
+    # install over an existing database. Idempotent either way.
+    if [ -f "$SCRIPT_DIR/ensure-ejabberd-sql-schema.sh" ]; then
+        bash "$SCRIPT_DIR/ensure-ejabberd-sql-schema.sh" || true
+    fi
+
     if [ "${AI_SERVICE_ENABLED:-false}" == "true" ]; then
         log "Starting AI embeddings Postgres..."
         "$SCRIPT_DIR/setup-ai-postgres.sh" || error "Failed to provision AI embeddings Postgres"

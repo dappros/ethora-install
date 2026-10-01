@@ -308,6 +308,39 @@ Quick checks:
 - Send a message in chat, then check:
   - `docker exec deploy_mongo_1 mongosh --quiet ethora_test --eval 'db.appstatdayli.find().sort({date:-1}).limit(5).toArray()'`
 
+## 7d. 1:1 chats vanish after an xmpp restart: `forbidden` on join, MucSub refused, no pushes
+
+**Symptoms**: a 1:1 chat is listed by `GET /v1/chats/my` but joining the room
+or subscribing to it (MucSub) answers `<forbidden/>` "Room creation is denied
+by service policy", `disco#info` on the room returns nothing, and push
+notifications for it stop. Other members-only rooms may answer
+`<registration-required/>` for users who are members in Mongo. It appears
+after an `update.sh` that restarted the xmpp container.
+
+**Cause**: the stock ejabberd MySQL schema keys `muc_room` on the first 75
+characters of the room name. A 1:1 room is named `app_user1-app_user2` (99
+characters) and the id of the second user starts at character 76, so every
+1:1 room of the same first member was one row to MySQL: ejabberd persisted
+one of them, kept the others only in memory, and lost them at the next
+restart while the chats stayed in Mongo.
+
+**Fix**: 2610 widens the index prefixes to 191 characters
+(`ejabberd-docker/docker/mysql2.sql` for new databases,
+`scripts/ensure-ejabberd-sql-schema.sh` for existing ones, run by
+`update.sh`) and recreates the lost rooms from Mongo through the
+`reconcile-muc-rooms` data migration. Both run on the next update. By hand:
+
+```bash
+sudo bash deploy/scripts/ensure-ejabberd-sql-schema.sh          # widen the indexes (idempotent, online)
+sudo bash deploy/scripts/run-migrations.sh --only reconcile-muc-rooms --force   # recreate rooms, set affiliations
+```
+
+**Check**: chats in Mongo without a room in ejabberd should be 0 afterwards:
+
+```bash
+cd <api dir> && node scripts/reconcileMucRooms.js --dry-run     # "would run" lines name the rooms still missing
+```
+
 ## 6. Frontend Build Fails
 
 **Problem**: Frontend build errors.

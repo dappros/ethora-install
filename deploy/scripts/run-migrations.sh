@@ -68,6 +68,14 @@ MIGRATIONS=(
   # Web Index unreachable. The resolver now falls back to Agent.ownerAppId; the
   # suffix is what makes already-stamped hosts pick that up.
   "source-agent-id-v2|scripts/migrateSourceAgentId.js|"
+  # MUC rooms lost to the 75-character index prefix on ejabberd's muc_room
+  # table (every 1:1 room of the same first member looked like one row to
+  # MySQL, so only one survived a restart). update.sh widens the index earlier
+  # in the same run (scripts/ensure-ejabberd-sql-schema.sh); this recreates the
+  # rooms that exist in Mongo but not in ejabberd, sets missing affiliations
+  # and re-saves every room so one that lived only in memory gets its row.
+  # Idempotent, so it is also the repair tool: --only reconcile-muc-rooms --force.
+  "reconcile-muc-rooms|scripts/reconcileMucRooms.js|"
 )
 
 DRY_RUN=""
