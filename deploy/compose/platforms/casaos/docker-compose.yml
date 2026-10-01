@@ -287,7 +287,12 @@ x-casaos:
   category: Social
   author: Dappros
   developer: Dappros
-  icon: https://cdn.jsdelivr.net/gh/dappros/ethora-install@main/deploy/compose/platforms/casaos/icon.svg
+  icon: https://cdn.jsdelivr.net/gh/IceWhaleTech/CasaOS-AppStore@main/Apps/Ethora/icon.svg
+  thumbnail: https://cdn.jsdelivr.net/gh/IceWhaleTech/CasaOS-AppStore@main/Apps/Ethora/thumbnail.png
+  screenshot_link:
+    - https://cdn.jsdelivr.net/gh/IceWhaleTech/CasaOS-AppStore@main/Apps/Ethora/screenshot-1.png
+    - https://cdn.jsdelivr.net/gh/IceWhaleTech/CasaOS-AppStore@main/Apps/Ethora/screenshot-2.png
+    - https://cdn.jsdelivr.net/gh/IceWhaleTech/CasaOS-AppStore@main/Apps/Ethora/screenshot-3.png
   title:
     en_US: Ethora
   tagline:
