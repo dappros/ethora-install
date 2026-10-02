@@ -9,8 +9,10 @@
 #                       volume as a bind mount under ${APP_DATA_DIR}/data,
 #                       images pinned from ../images.env (tag@digest), the
 #                       admin password = APP_PASSWORD and the other secrets
-#                       from exports.sh, restart on-failure (one-shot steps
-#                       without restart), no verify profile.
+#                       from exports.sh, restart on-failure on every service
+#                       (Umbrel's linter asks for it on the one-shot steps
+#                       too; they exit 0, so it never restarts them), no
+#                       verify profile.
 #   umbrel-app.yml      umbrel-app.in.yml with the release build as version.
 #   exports.sh          copied.
 #   data/<volume>/.gitkeep for every bind-mount source.
@@ -43,8 +45,7 @@ render_into() { # render_into <dir>
       | del(.services.verify)
       | del(.services.caddy.ports) | del(.services.caddy.profiles)
       | del(.services.config.env_file)
-      | (.services[] | select(.restart == "unless-stopped") | .restart) = "on-failure"
-      | del(.services[] | select(.restart == "no") | .restart)
+      | (.services[] | select(.restart == "unless-stopped" or .restart == "no") | .restart) = "on-failure"
       | (.services[] | select(has("volumes")) | .volumes[] | select(test("^[a-z][a-z0-9-]*:")))
           |= sub("^([a-z][a-z0-9-]*):", "$${APP_DATA_DIR}/data/${1}:")
       | .services.config.image = strenv(ETHORA_COMPOSE_INIT_IMAGE)

@@ -35,6 +35,7 @@ services:
       - ${APP_DATA_DIR}/data/config:/out/config
       - ${APP_DATA_DIR}/data/mysql-initdb:/out/mysql-initdb
       - ${APP_DATA_DIR}/data/secrets:/out/secrets
+    restart: "on-failure"
     logging:
       driver: json-file
       options:
@@ -67,6 +68,7 @@ services:
         condition: service_completed_successfully
       mongo:
         condition: service_healthy
+    restart: "on-failure"
     logging:
       driver: json-file
       options:
@@ -243,6 +245,7 @@ services:
         condition: service_healthy
       xmpp:
         condition: service_healthy
+    restart: "on-failure"
     healthcheck:
       disable: true
   frontend:

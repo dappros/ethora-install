@@ -19,9 +19,9 @@ description: >-
   This is Ethora Core: free, with per-server limits of 5 apps and 500 user
   accounts, raised to 10 and 5,000 by registering for free on the License
   page of the admin panel. Licence: https://ethora.com/legal/ethora-core-license/
-releaseNotes: >-
-  First release of Ethora Core for umbrelOS: web chat, admin panel, API,
-  XMPP server and file storage in one app, release line 2610.
+# Umbrel's linter requires empty releaseNotes on a new submission; fill it in
+# from the second release on.
+releaseNotes: ""
 
 developer: Dappros
 website: https://ethora.com
@@ -30,12 +30,8 @@ repo: https://github.com/dappros/ethora-install
 support: https://github.com/dappros/ethora-install/issues
 
 port: 8456
-gallery:
-  - 1.jpg
-  - 2.jpg
-  - 3.jpg
-  - 4.jpg
-  - 5.jpg
+# Empty for a new submission: Umbrel produces the gallery assets itself.
+gallery: []
 path: ""
 
 defaultUsername: umbrel@umbrel.local
