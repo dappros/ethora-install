@@ -82,4 +82,11 @@ fi
 [ -f "$BACKEND_API_DIR/$SCRIPT" ] || { echo "admin-reset: $BACKEND_API_DIR/$SCRIPT not found (backend older than this script, or wrong paths in $ENV_FILE)" >&2; exit 1; }
 command -v node >/dev/null 2>&1 || { echo "admin-reset: node is required on the host in source mode" >&2; exit 1; }
 cd "$BACKEND_API_DIR"
+# Prefer the compiled copy under dist/ (src/helpers is TypeScript; the script
+# requires ../src), then ts-node's require hook, then plain node.
+if [ -f "dist/$SCRIPT" ]; then
+    exec env NODE_NO_WARNINGS=1 NODE_OPTIONS=--no-deprecation node "dist/$SCRIPT" "${ARGS[@]}"
+elif [ -f node_modules/ts-node/register/transpile-only.js ]; then
+    exec env NODE_NO_WARNINGS=1 NODE_OPTIONS=--no-deprecation node -r ts-node/register/transpile-only "$SCRIPT" "${ARGS[@]}"
+fi
 exec env NODE_NO_WARNINGS=1 NODE_OPTIONS=--no-deprecation node "$SCRIPT" "${ARGS[@]}"
