@@ -509,10 +509,26 @@ blockchain:
   alchemy_url: ""
   usdc_contract_address: ""
 
-# Admin Configuration
+# Platform superadmin: bootstrap only.
+#
+# These two values are read exactly once, when the base app has no superadmin
+# at all (the very first install). They create the first administrator and are
+# never looked at again: later edits here change nothing, updates never
+# re-create a deleted account, and a deleted seed stays deleted as long as
+# another superadmin exists.
+#
+# Leave `password` empty: setup.sh fills in a generated one (and prints it
+# once); a file written by hand is completed by install.sh the same way. The
+# password is also kept in deploy/.deploy.env (mode 600) with the other
+# generated secrets. The old template default "admin123" is refused.
+# Use a real address the operator controls for `email`.
+#
+# Afterwards: change the password at first login (Account > Security), and
+# use deploy/scripts/admin-reset.sh on the host for recovery, extra
+# superadmins or an address change.
 admin:
   email: admin@example.com
-  password: "admin123" # Default admin password (change in production!)
+  password: ""
 
 # License key for this install. Optional: with no key the install is Ethora
 # Core, unregistered (5 apps, 500 user accounts per server, no expiry,

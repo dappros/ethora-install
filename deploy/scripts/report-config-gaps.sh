@@ -52,7 +52,7 @@ CODE_MAP=(
 
 # Known insecure/default secret values that must never survive into a live file.
 # Matched case-sensitively; only the KEY and file are ever printed, never the value.
-INSECURE_RE='supersecretsupersecetABC|CHANGEME|change-me|REPLACE_ME|your-secret-here|password123|root123'
+INSECURE_RE='supersecretsupersecetABC|CHANGEME|change-me|REPLACE_ME|your-secret-here|password123|root123|admin123'
 
 # Env names that are ambient/runtime, not deploy config - excluded from tier 3.
 DENYLIST_RE='^(NODE_ENV|PORT|PATH|HOME|PWD|USER|SHELL|TZ|LANG|LC_|TERM|HOSTNAME|npm_|CI|TMPDIR|PM2_|VITE_CJS_|SSL_CERT|NODE_OPTIONS|NODE_TLS)'

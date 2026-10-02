@@ -116,16 +116,19 @@ deploy/scripts/health-check.sh
 
 Expect 20 to 40 minutes on a 2 vCPU host, most of it Node builds. The
 install log ends with the service URLs and the admin email; the admin
-password is the one `setup.sh` printed (or `admin.password` in `deploy.yml`).
+password is the one `setup.sh` printed, kept in `deploy/.deploy.env`.
 
 ### First login: secure the superadmin account
 
-The installer seeds one platform superadmin (`admin.email` in `deploy.yml`)
-with a generated password when `admin.password` is left blank, and stores
-that password in `deploy/.deploy.env` on the host. Treat it as a first-boot
-seed only: the platform creates the account once, so editing `deploy.yml`
-later does not change it. Recommended practice on a production host, in
-this order, before anyone else gets the URL:
+The seed superadmin is **bootstrap only**. `admin.email` and
+`admin.password` in `deploy.yml` are read exactly once, when the base app has
+no superadmin at all, to create the first administrator. From then on they
+are inert: editing them changes nothing, updates never re-create an account
+you deleted, and the install refuses the template password (`admin123`).
+Leave `admin.password` empty; the installer generates one, prints it once and
+keeps it in `deploy/.deploy.env` (mode 600) with the other generated secrets.
+Recommended practice on a production host, in this order, before anyone else
+gets the URL:
 
 1. **Use a real owner address** for `admin.email` (a named administrator or
    an operations mailbox the customer controls), never the template default.
@@ -176,11 +179,12 @@ choose the password yourself, pass `--password <p>` or set
 history). `--json` gives a machine-readable result. Hand generated passwords
 over out of band; the script does not store them.
 
-Note on `deploy.yml`: `admin.email` / `admin.password` are read only when the
-owner account is first created. Changing `admin.password` later has no
-effect; changing `admin.email` makes the next `update.sh` create an
-additional superadmin with that address (the old one stays). Use
-`admin-reset.sh` for deliberate changes.
+Note on `deploy.yml`: `admin.email` / `admin.password` are bootstrap only.
+They create the first superadmin when the base app has none, and are never
+read again: changing them later has no effect, a deleted seed account stays
+deleted as long as another superadmin exists, and the next `update.sh` does
+not bring it back. Use `admin-reset.sh create` for an additional superadmin
+and `set-email` / `set-password` for changes.
 
 Useful `install.sh` flags:
 

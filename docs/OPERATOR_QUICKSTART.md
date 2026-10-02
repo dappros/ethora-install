@@ -32,9 +32,12 @@ deploy/scripts/health-check.sh
 
 `setup.sh` writes `deploy/config/deploy.yml`, derives every host from the
 root domain (`api.`, `app.`, `xmpp.`, `files.`, `playground.`, `uptime.`),
-generates all secrets and prints the admin password once. Run it without
-`--yes` to be prompted, or edit `deploy/config/deploy.yml` afterwards:
-the file is fully commented. Allow 20 to 40 minutes for the install.
+generates all secrets and prints the admin password once (it is also kept
+in `deploy/.deploy.env`). Run it without `--yes` to be prompted, or edit
+`deploy/config/deploy.yml` afterwards: the file is fully commented. The
+`admin:` block only creates the first administrator; after that it is never
+read again, and a deleted seed account is not re-created by updates. Allow
+20 to 40 minutes for the install.
 
 The admin panel is at `https://app.<your root domain>`, the API at
 `https://api.<your root domain>` with Swagger at `/api-docs/`.
