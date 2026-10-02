@@ -14,6 +14,16 @@ default is not what you want.
 
 ## 2610 (development line, September 2026)
 
+**Seed superadmin is bootstrap only.** The `admin:` block in `deploy.yml`
+(`email`, `password`) now creates the first administrator once, when the
+base app has no superadmin, and is never read again: changing it later does
+nothing, and an update no longer re-creates a seed account you deleted.
+Leave `admin.password` empty; `setup.sh` fills in a generated one and the
+installer keeps it in `deploy/.deploy.env`. The old template value
+`admin123` is refused and flagged by the end-of-deploy configuration gap
+report. Recovery and extra superadmins: `deploy/scripts/admin-reset.sh`.
+Also applied to 2609.
+
 **Licensing and editions.** New `deploy.yml` block `license:` (`key`,
 `key_file`, `call_home`, `server_url`, `grace_days`), all optional. Without
 a key an install is Ethora Core (unregistered): Core features, 5 apps and
@@ -93,6 +103,13 @@ operator. No migration: apps that predate the setting read as off.
 **Host.** No new ports. Node.js 24 as in 2609.
 
 ## 2609 (production line, promoted 2026-09-15)
+
+**Seed superadmin is bootstrap only** (from 2026-10-02 on this line). The
+`admin:` block in `deploy.yml` creates the first administrator once, when the
+base app has no superadmin, and is never read again; an update no longer
+re-creates a seed account you deleted. Leave `admin.password` empty (a
+generated one is kept in `deploy/.deploy.env`); `admin123` is refused.
+Recovery and extra superadmins: `deploy/scripts/admin-reset.sh`.
 
 **Node.js 24.** `install.sh` installs Node 24 and `update.sh` switches a
 host from Node 20 on its first run (`ensure_node_major`). Builds take the

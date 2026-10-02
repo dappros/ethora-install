@@ -1369,6 +1369,12 @@ parse_config() {
         log "Generated Ejabberd admin password"
     fi
     
+    # The seed superadmin is bootstrap-only (created once, when the base app
+    # has no superadmin); its password must not be the template literal.
+    if [ "$ADMIN_PASSWORD" == "admin123" ]; then
+        warn "admin.password in deploy.yml is the template default; ignoring it and generating one"
+        export ADMIN_PASSWORD=""
+    fi
     if [ -z "$ADMIN_PASSWORD" ] || [ "$ADMIN_PASSWORD" == "null" ]; then
         if [ "${NON_INTERACTIVE:-false}" == "true" ]; then
             export ADMIN_PASSWORD=$(openssl rand -base64 16)
