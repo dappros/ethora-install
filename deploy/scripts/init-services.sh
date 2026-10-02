@@ -67,7 +67,24 @@ backend_node() {
             -e NODE_NO_WARNINGS=1 -e NODE_OPTIONS="${NODE_OPTIONS:---no-deprecation}" \
             "$ETHORA_API_IMAGE" script "$script" "$@"
     else
-        run_as_deploy_user "cd \"$api_dir\" && NODE_NO_WARNINGS=1 NODE_OPTIONS=\"${NODE_OPTIONS:---no-deprecation}\" node \"$script\" $(printf '%q ' "$@")"
+        run_as_deploy_user "cd \"$api_dir\" && NODE_NO_WARNINGS=1 NODE_OPTIONS=\"${NODE_OPTIONS:---no-deprecation}\" node $(backend_node_args "$api_dir" "$script") $(printf '%q ' "$@")"
+    fi
+}
+
+# backend_node_args <api_dir> <script>: the `node` arguments that run a
+# backend script in source mode. The scripts require `../src/...`, and since
+# src/helpers is TypeScript they only load from the compiled tree, so prefer
+# the copy the build places under dist/ (../src then resolves to dist/src,
+# the same layout the API image uses). An older backend without dist/scripts
+# gets ts-node's require hook when it is installed, else plain node.
+backend_node_args() {
+    local api_dir="$1" script="$2"
+    if [ -f "$api_dir/dist/$script" ]; then
+        printf '%q' "dist/$script"
+    elif [ -f "$api_dir/node_modules/ts-node/register/transpile-only.js" ]; then
+        printf -- '-r ts-node/register/transpile-only %q' "$script"
+    else
+        printf '%q' "$script"
     fi
 }
 
@@ -1180,7 +1197,7 @@ sync_translate_languages() {
     # the clearing case ("" means remove every language) unambiguous.
     local languages="${TRANSLATE_LANGUAGES:-}"
     local out
-    if out="$(run_as_deploy_user "cd \"$BACKEND_API_DIR\" && NODE_NO_WARNINGS=1 node src/utils/scripts/syncTranslateLanguages.js \"$languages\"" 2>&1)"; then
+    if out="$(run_as_deploy_user "cd \"$BACKEND_API_DIR\" && NODE_NO_WARNINGS=1 node $(backend_node_args "$BACKEND_API_DIR" src/utils/scripts/syncTranslateLanguages.js) \"$languages\"" 2>&1)"; then
         log "Translate languages: ${out}"
     else
         warn "Translate language sync failed (non-fatal): $(echo "$out" | tr '\n' ' ' | head -c 240)"

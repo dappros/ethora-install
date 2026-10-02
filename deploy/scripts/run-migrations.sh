@@ -170,7 +170,16 @@ run_migration_script() { # <path relative to api dir> [args...]
     docker run --rm --network host "${env_args[@]}" -e MONGO_URI="$MONGO_URI" \
       -e NODE_NO_WARNINGS=1 "$ETHORA_API_IMAGE" script "$@"
   else
-    node "$@"
+    # Prefer the compiled copy under dist/ (src/helpers is TypeScript; see
+    # backend_node_args in init-services.sh), then ts-node's hook, then node.
+    local script="$1"; shift
+    if [ -f "$API_DIR/dist/$script" ]; then
+      node "dist/$script" "$@"
+    elif [ -f "$API_DIR/node_modules/ts-node/register/transpile-only.js" ]; then
+      node -r ts-node/register/transpile-only "$script" "$@"
+    else
+      node "$script" "$@"
+    fi
   fi
 }
 
