@@ -252,6 +252,9 @@ if command -v yq >/dev/null 2>&1 && [ -f "$CONFIG_FILE" ]; then
     if [ -z "${REPORT_TIMEZONE:-}" ] || [ "${REPORT_TIMEZONE:-}" == "null" ]; then
         REPORT_TIMEZONE="$(yq eval '.integrations.analytics.timezone // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
     fi
+    if [ -z "${DEFAULT_ROOMS_INACTIVE_DAYS:-}" ] || [ "${DEFAULT_ROOMS_INACTIVE_DAYS:-}" == "null" ]; then
+        DEFAULT_ROOMS_INACTIVE_DAYS="$(yq eval '.features.default_rooms_inactive_days // "0"' "$CONFIG_FILE" 2>/dev/null || echo "0")"
+    fi
     if [ -z "${LEGAL_CONTACT_EMAIL:-}" ] || [ "${LEGAL_CONTACT_EMAIL:-}" == "null" ]; then
         LEGAL_CONTACT_EMAIL="$(yq eval '.integrations.analytics.legal_email // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
     fi
@@ -489,6 +492,7 @@ replace_template() {
     replace_literal "{{REPORT_WEEKLY_SCHEDULE}}" "${REPORT_WEEKLY_SCHEDULE:-30 8 * * 1}"
     replace_literal "{{REPORT_MONTHLY_SCHEDULE}}" "${REPORT_MONTHLY_SCHEDULE:-30 8 1 * *}"
     replace_literal "{{REPORT_TIMEZONE}}" "${REPORT_TIMEZONE:-}"
+    replace_literal "{{DEFAULT_ROOMS_INACTIVE_DAYS}}" "${DEFAULT_ROOMS_INACTIVE_DAYS:-0}"
     replace_literal "{{LEGAL_CONTACT_EMAIL}}" "${LEGAL_CONTACT_EMAIL:-}"
     replace_literal "{{ALERT_RECIPIENTS}}" "${ALERT_RECIPIENTS:-}"
 

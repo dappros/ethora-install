@@ -311,6 +311,11 @@ features:
   # Swagger UI (internal/advanced)
   # Recommended default: disabled.
   swagger_internal: false
+  # Drop users from an app's default rooms after this many days without a
+  # login or an API call (user records are kept; a returning user is re-added
+  # on login). 0 = never. Keeps member counts meaningful on long-running
+  # installs where every sign-up is auto-joined to the default rooms.
+  default_rooms_inactive_days: 0
   hubspot: false            # Disable for enterprise (prevents sending CRM events to Ethora.com HubSpot)
   stripe: false              # Disable for enterprise
   postmark: false            # Disable for enterprise
