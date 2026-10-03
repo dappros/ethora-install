@@ -100,6 +100,20 @@ ones being created and cannot decrypt existing ones — and nothing in an
 encrypted room is moderatable, searchable, exportable or recoverable by the
 operator. No migration: apps that predate the setting read as off.
 
+**Stats email.** The daily and weekly report to
+`analytics.daily_report_receivers` now opens with activity figures (signups,
+active people, messages from people and from agents, AI agent replies, API /
+MCP calls, files) compared with the trailing week, then the top apps by
+messages, API calls, agent replies and new users, then the signup tables.
+Logins are listed per person rather than per login; the per-login rows stay
+in the CSV attachment. Anonymous widget visitors are counted, not listed, and
+synthetic uptime traffic is excluded. The AI block reads the ai-service
+database: new optional `AI_SERVICE_MONGO_URI` in the backend env (rendered by
+the template; defaults to the `aiservice` db on the main Mongo). To check a
+report against real data without waiting for the cron:
+`node dist/scripts/deploy/report-preview.js [--weekly] [--date YYYY-MM-DD] --out /tmp/report.html`
+from `ethora-backend/services/api`.
+
 **Host.** No new ports. Node.js 24 as in 2609.
 
 ## 2609 (production line, promoted 2026-09-15)

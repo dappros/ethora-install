@@ -38,6 +38,7 @@
 # Internal endpoints default to the compose service names; the Helm chart and
 # installs with external databases override them (all optional):
 #   ETHORA_MONGO_URI, ETHORA_CHAT_DATABASE_URI   Mongo, app data and chat archive
+#   ETHORA_AI_SERVICE_MONGO_URI                  Mongo, the ai-service db (stats email reads it)
 #   ETHORA_REDIS_HOST, ETHORA_REDIS_PORT         Redis (no password: the API has none)
 #   ETHORA_MYSQL_HOST, ETHORA_MYSQL_PORT, ETHORA_MYSQL_USER
 #                                                ejabberd's SQL store; the password is
@@ -56,7 +57,7 @@
 #
 # Differences from the host installer, all because the services talk over the
 # compose network instead of the host's loopback:
-#   - backend.env: MONGO_URI, CHAT_DATABASE, REDIS_HOST, MINIO_HOST,
+#   - backend.env: MONGO_URI, CHAT_DATABASE, AI_SERVICE_MONGO_URI, REDIS_HOST, MINIO_HOST,
 #     MAM_MYSQL_HOST, CENTRIFUGO_API_URL and XMPP_PATH point at the compose
 #     service names (mongo, redis, minio, mysql, centrifugo, xmpp).
 #   - ejabberd.yml: the tracking / audit URLs point at http://api:8080
@@ -313,6 +314,7 @@ done
 render "$TEMPLATES/backend.env.template" "$stage/api/backend.env"
 set_env_line "$stage/api/backend.env" MONGO_URI "${ETHORA_MONGO_URI:-mongodb://mongo:27017/$MONGO_DB?directConnection=true}"
 set_env_line "$stage/api/backend.env" CHAT_DATABASE "${ETHORA_CHAT_DATABASE_URI:-mongodb://mongo:27017/chat_archive?directConnection=true}"
+set_env_line "$stage/api/backend.env" AI_SERVICE_MONGO_URI "${ETHORA_AI_SERVICE_MONGO_URI:-mongodb://mongo:27017/aiservice?directConnection=true}"
 set_env_line "$stage/api/backend.env" REDIS_HOST "$ETHORA_REDIS_HOST"
 set_env_line "$stage/api/backend.env" MAM_MYSQL_HOST "$ETHORA_MYSQL_HOST"
 set_env_line "$stage/api/backend.env" MAM_MYSQL_USER "$ETHORA_MYSQL_USER"
