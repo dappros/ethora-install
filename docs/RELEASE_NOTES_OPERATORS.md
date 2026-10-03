@@ -114,6 +114,24 @@ report against real data without waiting for the cron:
 `node dist/scripts/deploy/report-preview.js [--weekly] [--date YYYY-MM-DD] --out /tmp/report.html`
 from `ethora-backend/services/api`.
 
+**Website widget: visitors on demand.** The hosted widget (`assistant.js`,
+served from every line) creates its anonymous visitor account, XMPP account
+and room when the launcher is first hovered or opened, not on every page
+view, and a returning visitor gets the same account and conversation back
+(the API returns their existing room on resume; both lines carry the API
+change). Expect far fewer `isVisitor` users and widget rooms per day; the
+stats email counts the remaining ones separately.
+
+**AI agents: room replay.** The ai-service no longer persists widget rooms
+to an agent's joined-room list and replays at most `AI_BOT_MAX_REPLAY_ROOMS`
+(default 200) persisted rooms when an agent comes online; refused joins are
+logged as `room join refused`. Installs that ran a widget before this change
+should run, from `ethora-backend/services/api`,
+`node dist/scripts/deploy/prune-bot-widget-rooms.js --dry-run` and then
+without the flag, to drop the accumulated rooms; a long list made the agent
+miss new conversations after a restart once it passed ejabberd's
+`max_user_conferences`.
+
 **Host.** No new ports. Node.js 24 as in 2609.
 
 ## 2609 (production line, promoted 2026-09-15)
