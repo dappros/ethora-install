@@ -1280,6 +1280,7 @@ parse_config() {
     export REPORT_WEEKLY_SCHEDULE=$(yq eval '.integrations.analytics.weekly_schedule // "30 8 * * 1"' "$CONFIG_FILE")
     export REPORT_MONTHLY_SCHEDULE=$(yq eval '.integrations.analytics.monthly_schedule // "30 8 1 * *"' "$CONFIG_FILE")
     export REPORT_TIMEZONE=$(yq eval '.integrations.analytics.timezone // ""' "$CONFIG_FILE")
+    export DEFAULT_ROOMS_INACTIVE_DAYS=$(yq eval '.features.default_rooms_inactive_days // "0"' "$CONFIG_FILE")
     export LEGAL_CONTACT_EMAIL=$(yq eval '.integrations.analytics.legal_email // ""' "$CONFIG_FILE")
     export ALERT_RECIPIENTS=$(yq eval '.integrations.analytics.alert_email // ""' "$CONFIG_FILE")
 
@@ -1565,6 +1566,7 @@ export REPORT_DAILY_SCHEDULE="${REPORT_DAILY_SCHEDULE:-30 8 * * *}"
 export REPORT_WEEKLY_SCHEDULE="${REPORT_WEEKLY_SCHEDULE:-30 8 * * 1}"
 export REPORT_MONTHLY_SCHEDULE="${REPORT_MONTHLY_SCHEDULE:-30 8 1 * *}"
 export REPORT_TIMEZONE="${REPORT_TIMEZONE:-}"
+export DEFAULT_ROOMS_INACTIVE_DAYS="${DEFAULT_ROOMS_INACTIVE_DAYS:-0}"
 export LEGAL_CONTACT_EMAIL="${LEGAL_CONTACT_EMAIL:-}"
 export ALERT_RECIPIENTS="${ALERT_RECIPIENTS:-}"
 export STRIPE_SECRET="${STRIPE_SECRET:-}"
