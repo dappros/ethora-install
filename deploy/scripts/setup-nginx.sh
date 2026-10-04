@@ -202,6 +202,18 @@ remove_config_if_present() {
     fi
 }
 
+# Compression for the assets nginx serves itself (admin panel, widget). The
+# distribution nginx.conf compresses text/html only. Skipped when the main
+# config already defines gzip_types: nginx refuses the directive twice at the
+# same level, and an operator who set their own list keeps it.
+if grep -qE '^\s*gzip_types' /etc/nginx/nginx.conf 2>/dev/null; then
+    log "nginx.conf already sets gzip_types; leaving compression config as is"
+    remove_config_if_present "$NGINX_CONF_DIR/ethora-gzip.conf"
+else
+    cp "$DEPLOY_DIR/nginx/gzip.conf" "$NGINX_CONF_DIR/ethora-gzip.conf"
+    log "Generated Nginx config: $NGINX_CONF_DIR/ethora-gzip.conf"
+fi
+
 # Generate API configuration
 replace_template \
     "$DEPLOY_DIR/nginx/api.conf.template" \
