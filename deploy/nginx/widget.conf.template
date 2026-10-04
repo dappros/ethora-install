@@ -52,6 +52,18 @@ server {
         try_files /chat-component.css =404;
     }
 
+    # pdf.js, loaded by the widget only when a PDF is shown (kept out of
+    # assistant.js, which it would otherwise double in size). ES modules need
+    # a JavaScript MIME type and the stock mime.types has no entry for .mjs.
+    location ^~ /pdfjs/ {
+        types { text/javascript mjs; }
+        add_header Cache-Control "public, max-age=86400" always;
+        # The widget runs on the embedding site's origin; a module import()
+        # from there is a CORS request.
+        add_header Access-Control-Allow-Origin "*" always;
+        try_files $uri =404;
+    }
+
     location / {
         return 404;
     }
