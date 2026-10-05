@@ -14,3 +14,8 @@ export APP_ETHORA_CENTRIFUGO_API_KEY="$(derive_entropy "${app_entropy_identifier
 export APP_ETHORA_CENTRIFUGO_HMAC_SECRET="$(derive_entropy "${app_entropy_identifier}-centrifugo-hmac-secret")"
 export APP_ETHORA_CENTRIFUGO_ADMIN_PASSWORD="$(derive_entropy "${app_entropy_identifier}-centrifugo-admin-password")"
 export APP_ETHORA_CENTRIFUGO_ADMIN_SECRET="$(derive_entropy "${app_entropy_identifier}-centrifugo-admin-secret")"
+# At-rest encryption: a passphrase for wallet keys, and "<64 hex>:<32 hex>" AES
+# key and IV pairs (derive_entropy yields 64 hex characters).
+export APP_ETHORA_CRYPTOPAIR_SECRET="$(derive_entropy "${app_entropy_identifier}-cryptopair-secret")"
+export APP_ETHORA_SECRET_FOR_DB_ENCRYPTION="$(derive_entropy "${app_entropy_identifier}-db-encryption-key"):$(derive_entropy "${app_entropy_identifier}-db-encryption-iv" | head -c 32)"
+export APP_ETHORA_SECRET_FOR_FILES_ENCRYPTION="$(derive_entropy "${app_entropy_identifier}-files-encryption-key"):$(derive_entropy "${app_entropy_identifier}-files-encryption-iv" | head -c 32)"

@@ -94,6 +94,9 @@ prompt() { # prompt VAR "question" "default": only when interactive and VAR is e
 }
 # Letters and digits only: safe in .env, YAML, JSON, URLs and sed.
 rand() { local n="$1" s=""; while [ "${#s}" -lt "$n" ]; do s="$s$(head -c 256 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9')"; done; printf '%s' "${s:0:$n}"; }
+# AES-256-CBC key and IV as hex ("<64 hex>:<32 hex>"), the format the API expects
+# for its at-rest encryption secrets.
+keyiv() { local h; h="$(head -c 48 /dev/urandom | od -An -tx1 | tr -d ' \n')"; printf '%s:%s' "${h:0:64}" "${h:64:32}"; }
 
 # Values of an existing .env (plain KEY=value, optionally quoted, as this
 # script writes them), kept as OLD_<KEY>; bash 3.2 compatible (macOS).
@@ -240,6 +243,13 @@ secret JWT_SECRET 64
 secret REFRESH_SECRET 64
 secret XMPP_JWT_SECRET 64
 secret XMPP_SECRET 32
+# At-rest encryption: wallet private keys (CRYPTOPAIR_SECRET, a passphrase),
+# custom object fields and the legacy encrypted upload path (key:iv). Never
+# shared between installs; rotating them needs the re-encrypt tool.
+secret CRYPTOPAIR_SECRET 48
+secret_keyiv() { local v; v="$(old "$1")"; [ -n "$v" ] || v="$(keyiv)"; set_new "$1" "$v"; }
+secret_keyiv SECRET_FOR_DB_ENCRYPTION
+secret_keyiv SECRET_FOR_FILES_ENCRYPTION
 secret XMPP_ADMIN_PASSWORD 24
 secret INTERNAL_REQUESTS_SECRET 32
 secret MYSQL_ROOT_PASSWORD 32

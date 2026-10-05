@@ -92,7 +92,9 @@ if mkdir -p "$SECRETS_DIR" 2>/dev/null && touch "$SECRETS_FILE" 2>/dev/null; the
   chmod 700 "$SECRETS_DIR"; chmod 600 "$SECRETS_FILE"
   store=1
 fi
-rand() { tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c "$1"; }
+rand() { if [ "$1" = keyiv ]; then keyiv; else tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c "$1"; fi; }
+# "<64 hex>:<32 hex>": AES-256-CBC key and IV for the API's at-rest encryption.
+keyiv() { h="$(head -c 48 /dev/urandom | od -An -tx1 | tr -d ' \n')"; printf '%s:%s' "$(printf '%s' "$h" | cut -c1-64)" "$(printf '%s' "$h" | cut -c65-96)"; }
 stored() { [ -n "$store" ] && sed -n "s/^$1=//p" "$SECRETS_FILE" | head -n 1; }
 record() {
   awk -v k="$1" 'index($0, k "=") != 1' "$SECRETS_FILE" > "$SECRETS_FILE.tmp"
@@ -116,6 +118,9 @@ secret JWT_SECRET 64
 secret REFRESH_SECRET 64
 secret XMPP_JWT_SECRET 64
 secret XMPP_SECRET 32
+secret CRYPTOPAIR_SECRET 48
+secret SECRET_FOR_DB_ENCRYPTION keyiv
+secret SECRET_FOR_FILES_ENCRYPTION keyiv
 secret XMPP_ADMIN_PASSWORD 24
 secret INTERNAL_REQUESTS_SECRET 32
 secret MYSQL_ROOT_PASSWORD 32

@@ -549,12 +549,16 @@ EOF
             fi
         fi
 
-        # ffmpeg/ffprobe — required by backend file upload paths for video
-        # preview generation and audio/video duration probing. The audio
-        # upload route 500s without ffprobe present.
-        if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
-            warn "ffmpeg/ffprobe not found. Installing..."
-            install_ffmpeg_ubuntu
+        # ffmpeg/ffprobe: the backend's upload paths need them for video
+        # previews and audio/video duration probing (the audio upload route
+        # 500s without ffprobe). Only on a host that runs the backend from
+        # source; the API image carries its own, and the host package pulls
+        # in libraries that marketplace scanners flag (Ubuntu Pro only fixes).
+        if [ "$(yq eval '.services.backend.mode // "source"' "$CONFIG_FILE" 2>/dev/null || echo source)" != "image" ]; then
+            if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+                warn "ffmpeg/ffprobe not found. Installing..."
+                install_ffmpeg_ubuntu
+            fi
         fi
 
         install_pm2_global

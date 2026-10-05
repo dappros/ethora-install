@@ -13,7 +13,7 @@ install_cloud_init latest
 systemctl disable --now apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service >/dev/null 2>&1 || true
 apt_update_safe
 apt_upgrade_safe
-apt_safe ca-certificates curl gnupg git jq unzip rsync acl nginx certbot python3-certbot-nginx ffmpeg ufw
+apt_safe ca-certificates curl gnupg git jq unzip rsync acl nginx certbot python3-certbot-nginx ufw
 
 # docker (official repo)
 install -m 0755 -d /etc/apt/keyrings

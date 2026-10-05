@@ -35,6 +35,18 @@ users keep working; they cannot create more until they register or install
 a key, so get the key before upgrading a production install. Chat is never
 gated. Reference: [LICENSING.md](LICENSING.md).
 
+**At-rest encryption secrets are now per install.** `CRYPTOPAIR_SECRET`
+(wallet private keys), `SECRET_FOR_DB_ENCRYPTION` (custom object fields)
+and `SECRET_FOR_FILES_ENCRYPTION` (legacy encrypted uploads) used to be
+fixed values in the backend env template, shared by every install. They
+are generated at install time now and persisted in `deploy/.deploy.env`.
+An existing install keeps its current values on update (read back from
+the rendered `.env`), so nothing stops decrypting; to replace them, run
+the re-encrypt tool described in [LICENSING.md](LICENSING.md)'s companion
+note on the API tools (`tools/security/rotate-encryption-secrets.js`)
+once per install, then update. Do this on every install that was set up
+before this change.
+
 **Image mode.** Every Node service can run from a prebuilt container
 instead of being built on the host: `services.<name>.mode: source | image`
 and `services.<name>.image` for `backend`, `frontend`, `ai_service`,

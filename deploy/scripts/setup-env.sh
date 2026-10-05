@@ -438,6 +438,9 @@ replace_template() {
         persist_env_var "XMPP_JWT_SECRET" "$XMPP_JWT_SECRET"
     fi
     replace_literal "{{XMPP_JWT_SECRET}}" "${XMPP_JWT_SECRET}"
+    replace_literal "{{CRYPTOPAIR_SECRET}}" "${CRYPTOPAIR_SECRET:-}"
+    replace_literal "{{SECRET_FOR_DB_ENCRYPTION}}" "${SECRET_FOR_DB_ENCRYPTION:-}"
+    replace_literal "{{SECRET_FOR_FILES_ENCRYPTION}}" "${SECRET_FOR_FILES_ENCRYPTION:-}"
     replace_literal "{{API_DOMAIN}}" "${API_DOMAIN}"
     replace_literal "{{WEB_DOMAIN}}" "${WEB_DOMAIN}"
     replace_literal "{{XMPP_DOMAIN}}" "${XMPP_DOMAIN}"
@@ -1345,6 +1348,34 @@ else
     AI_SERVICE_DIR="$BACKEND_DIR/ai_service"
     DOCS_PARSE_DIR="$BACKEND_DIR/docs_parse_service"
 fi
+
+# At-rest encryption secrets (wallet private keys, custom object fields, the
+# legacy encrypted upload path). Per install, never shipped in the template:
+# a value already persisted wins, then the value of the install's current
+# .env (installs from before these were generated keep decrypting their
+# data), then a fresh one. Rotating an existing install is a separate step
+# (the re-encrypt tool), never done here.
+ensure_encryption_secret() {
+    local key="$1" kind="$2" current val
+    eval "current=\${$key:-}"
+    if [ -n "$current" ] && [ "$current" != "null" ]; then
+        return 0
+    fi
+    val="$(grep -E "^${key}=" "$BACKEND_API_DIR/.env" 2>/dev/null | head -n 1 | cut -d= -f2- | sed -e "s/^'//" -e "s/'\$//" -e 's/^"//' -e 's/"$//')"
+    if [ -z "$val" ] || [ "$val" = "{{$key}}" ]; then
+        if [ "$kind" = "keyiv" ]; then
+            val="$(openssl rand -hex 32):$(openssl rand -hex 16)"
+        else
+            val="$(openssl rand -base64 36 | tr -d '\n')"
+        fi
+        log "Generated $key"
+    fi
+    export "$key=$val"
+    persist_env_var "$key" "$val"
+}
+ensure_encryption_secret CRYPTOPAIR_SECRET passphrase
+ensure_encryption_secret SECRET_FOR_DB_ENCRYPTION keyiv
+ensure_encryption_secret SECRET_FOR_FILES_ENCRYPTION keyiv
 
 # Generate backend .env
 replace_template \

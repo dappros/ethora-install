@@ -61,6 +61,12 @@ secrets:
   centrifugoHmacSecret: ""
   centrifugoAdminPassword: ""
   centrifugoAdminSecret: ""
+  # At-rest encryption: wallet private keys (passphrase), object fields and the
+  # legacy encrypted upload path ("<64 hex>:<32 hex>"). Rotation needs the
+  # re-encrypt tool; a changed value alone makes existing data unreadable.
+  cryptopairSecret: ""
+  secretForDbEncryption: ""
+  secretForFilesEncryption: ""
 
 # --------------------------------------------------------------- images --
 # An empty tag means the chart's appVersion (the release line, e.g. 2610).

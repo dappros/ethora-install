@@ -150,7 +150,9 @@ else
   renv=(ROOT_DOMAIN=chat.example.com ADMIN_EMAIL=ops@example.com 'ADMIN_PASSWORD=p&w|d\1' JWT_SECRET=jwt REFRESH_SECRET=ref
         XMPP_SECRET='x+s/ec=' XMPP_JWT_SECRET='jwt+/=secret' XMPP_ADMIN_PASSWORD=xadm 'MYSQL_ROOT_PASSWORD=my|sq&l\1/x'
         MINIO_ROOT_USER=mu MINIO_ROOT_PASSWORD=mp INTERNAL_REQUESTS_SECRET=irs CENTRIFUGO_API_KEY=cak
-        CENTRIFUGO_HMAC_SECRET=chs CENTRIFUGO_ADMIN_PASSWORD=cap CENTRIFUGO_ADMIN_SECRET=cas 'BASE_APP_DISPLAY_NAME=Acme Chat')
+        CENTRIFUGO_HMAC_SECRET=chs CENTRIFUGO_ADMIN_PASSWORD=cap CENTRIFUGO_ADMIN_SECRET=cas 'BASE_APP_DISPLAY_NAME=Acme Chat'
+  CRYPTOPAIR_SECRET=testpassphrase SECRET_FOR_DB_ENCRYPTION=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb SECRET_FOR_FILES_ENCRYPTION=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc:dddddddddddddddddddddddddddddddd
+)
   R="$T/r"; mkdir -p "$R"
   # rcfg <out dir> [VAR=value ...]: run the renderer on the host (GNU tools).
   rcfg() {
@@ -202,8 +204,8 @@ else
   # Secrets left out are generated once into the secrets volume and reused.
   R3="$T/r3"; mkdir -p "$R3"
   rcfg "$R3" ROOT_DOMAIN=chat.example.com ADMIN_EMAIL=ops@example.com >"$T/out3" 2>&1 && ok "renders with only ROOT_DOMAIN and ADMIN_EMAIL" || fail "minimal render" "$(cat "$T/out3")"
-  [ "$(grep -c '=' "$R3/secrets/secrets.env")" = "14" ] && [ "$(stat -c %a "$R3/secrets/secrets.env")" = "600" ] \
-    && ok "14 secrets generated into the secrets volume (600)" || fail "generated secrets" "$(cut -d= -f1 "$R3/secrets/secrets.env" | tr '\n' ' ')"
+  [ "$(grep -c '=' "$R3/secrets/secrets.env")" = "17" ] && [ "$(stat -c %a "$R3/secrets/secrets.env")" = "600" ] \
+    && ok "17 secrets generated into the secrets volume (600)" || fail "generated secrets" "$(cut -d= -f1 "$R3/secrets/secrets.env" | tr '\n' ' ')"
   pw="$(sed -n 's/^ADMIN_PASSWORD=//p' "$R3/secrets/secrets.env")"
   grep -q "admin password (generated, shown once): $pw" "$T/out3" && ok "generated admin password printed" || fail "admin password printed"
   cp "$R3/secrets/secrets.env" "$T/secrets.1"

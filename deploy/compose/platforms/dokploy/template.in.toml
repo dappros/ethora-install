@@ -27,6 +27,10 @@ centrifugo_api_key = "${password:64}"
 centrifugo_hmac_secret = "${password:64}"
 centrifugo_admin_password = "${password:24}"
 centrifugo_admin_secret = "${password:64}"
+# At-rest encryption: a passphrase for wallet keys, and "<64 hex>:<32 hex>" AES key and IV pairs.
+cryptopair_secret = "${password:48}"
+secret_for_db_encryption = "${hash:64}:${hash:32}"
+secret_for_files_encryption = "${hash:64}:${hash:32}"
 
 [config]
 # The keys of the bundle's .env.example (deploy/compose/.env.example in
@@ -47,6 +51,9 @@ env = [
   "REFRESH_SECRET=${refresh_secret}",
   "XMPP_SECRET=${xmpp_secret}",
   "XMPP_JWT_SECRET=${xmpp_jwt_secret}",
+  "CRYPTOPAIR_SECRET=${cryptopair_secret}",
+  "SECRET_FOR_DB_ENCRYPTION=${secret_for_db_encryption}",
+  "SECRET_FOR_FILES_ENCRYPTION=${secret_for_files_encryption}",
   "XMPP_ADMIN_PASSWORD=${xmpp_admin_password}",
   "INTERNAL_REQUESTS_SECRET=${internal_requests_secret}",
   "MYSQL_ROOT_PASSWORD=${mysql_root_password}",
