@@ -56,7 +56,7 @@ for kv in 'ETHORA_MONGO_URI: "mongodb://ethora-ethora-core-mongo:27017/ethora_pr
   echo "$S" | grep -qF "$kv" && ok "settings: ${kv%%:*}" || fail "settings: $kv"
 done
 SEC="$(doc Secret ethora-ethora-core-secrets "$H")"
-[ "$(echo "$SEC" | grep -cE '^  [A-Z_]+: "')" = 14 ] && ok "secret: 14 keys generated" || fail "secret keys" "$(echo "$SEC" | grep -cE '^  [A-Z_]+: "')"
+[ "$(echo "$SEC" | grep -cE '^  [A-Z_]+: "')" = 17 ] && ok "secret: 17 keys generated" || fail "secret keys" "$(echo "$SEC" | grep -cE '^  [A-Z_]+: "')"
 echo "$SEC" | grep -q 'helm.sh/resource-policy: keep' && ok "secret kept on uninstall" || fail "secret resource-policy"
 MY="$(doc StatefulSet ethora-ethora-core-mysql "$H")"
 echo "$MY" | grep -q 'subPath: mysql' && echo "$MY" | grep -q MYSQL_ROOT_PASSWORD_FILE && ok "mysql: subPath data, password from file" || fail "mysql volume/password"
