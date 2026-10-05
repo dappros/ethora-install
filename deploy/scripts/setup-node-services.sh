@@ -1737,6 +1737,21 @@ else
 fi
 
 # Save PM2 process list
+# pm2-exporter: CPU / memory / restarts per pm2 process for the monitoring
+# stack (deploy/monitoring/pm2-exporter). Follows services.monitoring.mode,
+# read from monitoring/.env (written by setup-nginx.sh earlier in the run):
+# runs in local and remote mode, is removed when monitoring is off.
+PM2_EXPORTER_DIR="$DEPLOY_DIR/monitoring/pm2-exporter"
+MONITORING_MODE_FOR_PM2="$(sed -n 's/^MONITORING_MODE=//p' "$DEPLOY_DIR/monitoring/.env" 2>/dev/null | head -n1 | tr -d '"')"
+if [ "${MONITORING_MODE_FOR_PM2:-off}" != "off" ] && [ -f "$PM2_EXPORTER_DIR/pm2-exporter.js" ]; then
+    log "Starting pm2-exporter (pm2 process metrics for monitoring, port ${PM2_EXPORTER_PORT:-9209})..."
+    run_as_deploy_user "pm2 delete pm2-exporter 2>/dev/null || true"
+    run_as_deploy_user "cd \"$PM2_EXPORTER_DIR\" && PM2_EXPORTER_PORT=${PM2_EXPORTER_PORT:-9209} pm2 start ./pm2-exporter.js --name pm2-exporter --time --update-env" \
+        || warn "Failed to start pm2-exporter (the PM2 panels in Grafana stay empty)"
+else
+    run_as_deploy_user "pm2 delete pm2-exporter 2>/dev/null || true"
+fi
+
 run_as_deploy_user "pm2 save" || warn "Failed to save PM2 process list"
 
 # Ensure PM2 restarts on reboot (systemd).

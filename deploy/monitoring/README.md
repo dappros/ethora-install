@@ -8,8 +8,8 @@ touches the app deploy.
 | Mode | On this host | Where to look |
 |---|---|---|
 | `off` | nothing | – |
-| `local` | Prometheus, Grafana, cAdvisor, node_exporter; VictoriaLogs + Vector with `logs.enabled` | `https://<uptime domain>/grafana/` (uptime basic-auth) |
-| `remote` | cAdvisor, node_exporter, Prometheus in agent mode; Vector with `logs.enabled` | the central monitoring server (`services.monitoring.remote.url`) |
+| `local` | Prometheus, Grafana, cAdvisor, node_exporter, pm2-exporter (under pm2); VictoriaLogs + Vector with `logs.enabled` | `https://<uptime domain>/grafana/` (uptime basic-auth) |
+| `remote` | cAdvisor, node_exporter, pm2-exporter (under pm2), Prometheus in agent mode; Vector with `logs.enabled` | the central monitoring server (`services.monitoring.remote.url`) |
 
 `deploy.yml` files that still have `services.monitoring.enabled: true` run
 the local mode.
@@ -86,6 +86,7 @@ files from their end.
 | `vector/vector.yaml` | Vector sources and transforms |
 | `vector/sink-local.yaml`, `vector/sink-remote.yaml.template` | where Vector sends the lines, per mode |
 | `grafana/` | provisioning (datasources, alerting) and dashboards of the local mode |
+| `pm2-exporter/pm2-exporter.js` | CPU / memory / restarts per pm2 process, scrape job `pm2` on host port 9209; `setup-node-services.sh` starts it under pm2 with the mode, no dependencies |
 | `.env` | written by `setup-nginx.sh` from `deploy.yml`: mode, profiles, alert settings, rendered config paths |
 
 `setup-nginx.sh` renders the per-mode files into `deploy/generated/monitoring/`;
@@ -106,5 +107,8 @@ docker compose -f deploy/monitoring/docker-compose.monitoring.yml down
 
 The ports bind to loopback only; reach them through an SSH tunnel. The
 `ethora_load` scrape job expects the uptime container on host port 8099.
-The backend runs under pm2 on the host, so it is not a container in cAdvisor;
-its load is part of the node_exporter **host** CPU/memory.
+The Node services run under pm2 on the host, so they are not containers in
+cAdvisor: `pm2-exporter.js` reports their CPU / memory per process (panels
+"PM2 — CPU % by process" and "PM2 — memory (MB) by process"), and their load is
+part of the node_exporter **host** CPU/memory as well. The exporter answers
+loopback and private-range clients only; keep port 9209 closed in the firewall.

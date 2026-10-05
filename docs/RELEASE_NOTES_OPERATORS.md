@@ -66,6 +66,15 @@ member one row, so ejabberd lost such rooms on restart. The
 in Mongo but not in ejabberd and sets the missing affiliations; it logs
 one line per room it touches. Runbook: TROUBLESHOOTING.md 7d.
 
+**PM2 process metrics.** With monitoring on (`local` or `remote`),
+`setup-node-services.sh` also starts `pm2-exporter` under pm2
+(`deploy/monitoring/pm2-exporter/pm2-exporter.js`, host port 9209, no
+dependencies): CPU, memory, restarts and status per pm2 process (backend,
+backend-jobs, push, ai-service, ...). Prometheus scrapes it as job `pm2` and
+the dashboards gain "PM2 — CPU % by process" and "PM2 — memory (MB) by
+process". The exporter answers loopback and private-range clients only;
+keep port 9209 closed in the firewall. With monitoring off it is removed.
+
 **Monitoring modes.** `services.monitoring.mode: off | local | remote`
 replaces `enabled` (still honoured: `enabled: true` is `local`). `local`
 is the stack as before, on the host. `remote` keeps only the agents on

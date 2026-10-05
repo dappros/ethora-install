@@ -237,6 +237,13 @@ main() {
         fi
     fi
     
+    # pm2-exporter (pm2 process metrics for the monitoring stack) runs only
+    # when services.monitoring.mode is local or remote; see setup-node-services.sh.
+    MONITORING_MODE_FOR_PM2="$(sed -n 's/^MONITORING_MODE=//p' "$DEPLOY_DIR/monitoring/.env" 2>/dev/null | head -n1 | tr -d '"')"
+    if [ "${MONITORING_MODE_FOR_PM2:-off}" != "off" ] && [ -f "$DEPLOY_DIR/monitoring/pm2-exporter/pm2-exporter.js" ]; then
+        check_pm2_service "pm2-exporter" "$DEPLOY_DIR/monitoring/pm2-exporter" "pm2 start ./pm2-exporter.js --name pm2-exporter --time --update-env"
+    fi
+
     # Summary
     log "========================================"
     log "Maintenance check completed"
