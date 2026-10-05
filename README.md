@@ -89,6 +89,25 @@ compose up -d`. Caddy obtains the certificates; nothing is installed on the
 host beyond Docker. Details, backup and update steps in its
 [README](deploy/compose/README.md).
 
+## Other ways to install
+
+The same images are packaged for the places people already get software.
+The full, current list with status is at <https://ethora.com/get/>; this
+repository holds the sources.
+
+| Channel | What you get | Where |
+|---|---|---|
+| AWS Marketplace | AMI with a first-boot setup page; CloudFormation template for unattended installs | [listing](https://aws.amazon.com/marketplace/pp/prodview-xgn2obhnb5au4), sources in [deploy/aws/](deploy/aws/) |
+| Azure, DigitalOcean, Vultr, Akamai (Linode) | Same first-boot setup page as a VM offer, 1-Click Droplet, app image, StackScript | Listings pending; links appear at <https://ethora.com/get/> |
+| Kubernetes (Helm) | `helm install ethora oci://registry-1.docker.io/dappros/ethora-core --set rootDomain=... --set admin.email=...` | [Artifact Hub](https://artifacthub.io/packages/helm/ethora/ethora-core), chart in [deploy/helm/](deploy/helm/) |
+| Portainer, Coolify, Dokploy | App template / git deploy from the compose project | [deploy/compose/platforms/](deploy/compose/platforms/) |
+| Cloudron | One-click app | [Cloudron App Store](https://ca.cloudron.io/app/ethora), package in [deploy/cloudron/](deploy/cloudron/) |
+| Umbrel, CasaOS / ZimaOS | App store packages | Store listings pending |
+| Docker Hub | `dappros/ethora-api`, `ethora-frontend`, `ethora-xmpp`, `ethora-compose-init`, the chart and the Cloudron package | <https://hub.docker.com/u/dappros> |
+
+A managed dedicated server with an enterprise SLA, run by Ethora in your
+cloud account or ours, is the direct route: <https://ethora.com/chat-sdk/self-hosted-chat-server-aws/>.
+
 ## Update
 
 ```bash
@@ -148,7 +167,8 @@ sudo deploy/scripts/install.sh --reinstall --yes   # wipe the install (keeps you
   proxying can be switched on afterwards for `app.` and `api.`.
   `xmpp.` must stay unproxied.
 - **Mobile apps?** The Ethora SDKs for iOS, Android and React connect to
-  `api.<root>` and `xmpp.<root>`; see https://ethora.com/docs.
+  `api.<root>` and `xmpp.<root>`; see <https://ethora.com/chat-sdk/> for each
+  SDK and <https://ethora.com/get/#requirements> for the DNS layout.
 - **Where is the source?** Ethora Core ships as images. The SDKs and the
   web client are open source under the `dappros` organisation.
 
