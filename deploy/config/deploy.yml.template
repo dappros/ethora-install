@@ -238,7 +238,7 @@ services:
       token: ""
       tenant: ""
     # Grafana alert e-mails (mode: local; host CPU/memory, container CPU, API
-    # 5xx rate and latency). Recipients are comma-separated. SMTP defaults to
+    # 5xx rate and latency, pm2 restart loops). Recipients are comma-separated. SMTP defaults to
     # the platform's Postmark server token (integrations.postmark); set smtp_*
     # for another relay.
     alerts:

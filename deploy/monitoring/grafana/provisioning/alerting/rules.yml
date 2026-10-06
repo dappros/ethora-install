@@ -200,3 +200,131 @@ groups:
               expression: B
               conditions:
                 - evaluator: { type: gt, params: [2] }
+
+  - orgId: 1
+    name: ethora-pm2
+    folder: Ethora
+    interval: 1m
+    rules:
+      # pm2 brings a crashed process back by itself, so a crash loop looks
+      # "online" almost all the time; the restart counter is what gives it
+      # away. increase() extrapolates, hence 2.5 for "three or more". A deploy
+      # does not trip it: the processes are deleted and started anew, which is
+      # a new series counting from zero.
+      - uid: ethora-pm2-restart-loop
+        title: PM2 process restart loop
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          scope: pm2
+        annotations:
+          __dashboardUid__: ethora-load
+          __panelId__: "10"
+          summary: "pm2 process {{ $labels.name }} keeps restarting"
+          description: "{{ $labels.name }} restarted {{ printf \"%.0f\" $values.B.Value }} times in the last 15 minutes. pm2 brings it back each time, so it looks online; the reason is in its error log."
+        data:
+          - refId: A
+            datasourceUid: ethora-prom
+            relativeTimeRange: { from: 600, to: 0 }
+            model:
+              refId: A
+              expr: sum by (name) (increase(pm2_process_restarts_total[15m]))
+              instant: false
+              range: true
+              intervalMs: 15000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [2.5] }
+
+      # pm2 gave up on the process after too many unstable restarts and left
+      # it "errored". A process stopped by hand ("stopped") is somebody's
+      # decision and is not alerted.
+      - uid: ethora-pm2-errored
+        title: PM2 process errored
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          scope: pm2
+        annotations:
+          __dashboardUid__: ethora-load
+          __panelId__: "10"
+          summary: "pm2 process {{ $labels.name }} is in the errored state"
+          description: "pm2 stopped restarting {{ $labels.name }}. Read its error log, then start it again with pm2 restart {{ $labels.name }}."
+        data:
+          - refId: A
+            datasourceUid: ethora-prom
+            relativeTimeRange: { from: 600, to: 0 }
+            model:
+              refId: A
+              expr: max by (name) (pm2_process_info{status="errored"})
+              instant: false
+              range: true
+              intervalMs: 15000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+      # The exporter stopped answering, or pm2 itself did, while the host
+      # still reports: the two rules above would be blind. Same shape as the
+      # stale-sample check for hosts; a server that never had pm2 metrics has
+      # no data here and stays OK.
+      - uid: ethora-pm2-silent
+        title: PM2 metrics stopped
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          scope: pm2
+        annotations:
+          __dashboardUid__: ethora-load
+          __panelId__: "10"
+          summary: "No pm2 metrics for over 10 minutes"
+          description: "The pm2 exporter last reported {{ printf \"%.0f\" $values.B.Value }} seconds ago. Check pm2 list for pm2-exporter."
+        data:
+          - refId: A
+            datasourceUid: ethora-prom
+            relativeTimeRange: { from: 600, to: 0 }
+            model:
+              refId: A
+              expr: time() - max(max_over_time(timestamp(pm2_exporter_up == 1)[24h:5m]))
+              instant: false
+              range: true
+              intervalMs: 60000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [600] }

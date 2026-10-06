@@ -32,7 +32,8 @@ Needs `services.uptime`: the UIs are served on the uptime domain at
 Load Testing** (host and per-container CPU/memory next to the load tool's
 RPS/latency/errors) and, with logs, **Ethora Logs** (service, level and
 text filters; LogsQL in Explore, e.g. `service:backend AND level:error`).
-Alerts (host CPU/memory, container CPU, API 5xx rate and latency) go to the
+Alerts (host CPU/memory, container CPU, API 5xx rate and latency, a pm2
+process in a restart loop or left errored, pm2 metrics gone) go to the
 addresses in `alerts.emails` through the Postmark token of
 `integrations.postmark`, or through `alerts.smtp_*`.
 
@@ -69,6 +70,9 @@ host).
 
 Vector reads the output of every docker container and the pm2 log files of
 the Node services (the API writes JSON lines, so their levels are exact).
+For container output the level comes from a JSON field, a bracketed word,
+logfmt `level=`, klog's leading letter or PostgreSQL's `WARNING:` /
+`ERROR:` prefix; a line with none of these is info.
 Every line gets the stream fields `source` (docker / pm2),
 `service`, `stream` (out / error) and `level`; everything else stays text.
 Vector keeps its read positions and a disk buffer in a volume, so restarts

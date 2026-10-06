@@ -60,8 +60,11 @@ transforms:
       if strip_whitespace(.message) == "" { abort }
 
       # Level, from whichever convention the container uses: a JSON `level`
-      # field, bracketed words as in ejabberd's "[warning]" or MySQL's
-      # "[Warning]" / "[System]", or MongoDB's one-letter severity `s`.
+      # field, MongoDB's one-letter severity `s`, bracketed words as in
+      # ejabberd's "[warning]" or MySQL's "[Warning]" / "[System]", logfmt
+      # `level=warn` (the Prometheus agent, node_exporter, Grafana), klog's
+      # leading letter (cAdvisor: "W1005 12:00:00...") or PostgreSQL's
+      # "WARNING:" / "ERROR:" prefix. A line with none of these is info.
       .level = "info"
       parsed, err = parse_json(.message)
       if err == null && is_object(parsed) {
@@ -71,9 +74,26 @@ transforms:
         }
       } else {
         bracket, berr = parse_regex(.message, r'(?i)\[(?P<lvl>debug|info|notice|note|system|warning|warn|error|critical|fatal)\]')
-        if berr == null { .level = downcase(string!(bracket.lvl)) }
+        if berr == null {
+          .level = downcase(string!(bracket.lvl))
+        } else {
+          kv, kerr = parse_regex(.message, r'(?i)(?:^|\s)level=(?P<lvl>debug|info|warning|warn|error|err|critical|crit|fatal|panic)\b')
+          if kerr == null {
+            .level = downcase(string!(kv.lvl))
+          } else {
+            klog, gerr = parse_regex(.message, r'^(?P<lvl>[IWEF])\d{4} \d{2}:\d{2}:\d{2}')
+            if gerr == null {
+              .level = if klog.lvl == "W" { "warn" } else if klog.lvl == "I" { "info" } else { "error" }
+            } else {
+              pg, pgerr = parse_regex(.message, r'\b(?P<lvl>WARNING|ERROR|FATAL|PANIC):\s')
+              if pgerr == null {
+                .level = if pg.lvl == "WARNING" { "warn" } else { "error" }
+              }
+            }
+          }
+        }
       }
-      .level = if .level == "warning" { "warn" } else if includes(["notice", "note", "system"], .level) { "info" } else if includes(["critical", "fatal"], .level) { "error" } else { .level }
+      .level = if .level == "warning" { "warn" } else if includes(["notice", "note", "system"], .level) { "info" } else if includes(["critical", "crit", "fatal", "panic", "err"], .level) { "error" } else { .level }
 
       del(.container_created_at); del(.container_id); del(.container_name)
       del(.image); del(.label); del(.host); del(.source_type); del(._partial)

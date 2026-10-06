@@ -87,6 +87,15 @@ the dashboards gain "PM2 — CPU % by process" and "PM2 — memory (MB) by
 process". The exporter answers loopback and private-range clients only;
 keep port 9209 closed in the firewall. With monitoring off it is removed.
 
+**PM2 alerts and agent log levels.** Three alert rules join the set: a pm2
+process that restarted three or more times in 15 minutes, a process pm2
+left in the `errored` state, and pm2 metrics that stopped while the host
+still reports. Their e-mails link the warn/error logs of that process.
+Vector now also reads the level from logfmt (`level=warn`, as the
+Prometheus agent and node_exporter write it), klog (cAdvisor) and
+PostgreSQL prefixes, so warnings of the monitoring agents no longer land
+as info.
+
 **Monitoring modes.** `services.monitoring.mode: off | local | remote`
 replaces `enabled` (still honoured: `enabled: true` is `local`). `local`
 is the stack as before, on the host. `remote` keeps only the agents on
