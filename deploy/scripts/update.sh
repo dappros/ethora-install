@@ -1123,6 +1123,10 @@ else
     # which is committed and should sync.)
     --exclude ".env"
     --exclude ".env.*"
+    # ejabberd's JWT key is rendered per install by setup-ejabberd-config.sh
+    # and bind-mounted into the running container; the source never ships it,
+    # so without this the prune preview offered it for deletion.
+    --exclude "jwt.key"
     # Runtime user uploads are target-only state - must survive --delete.
     --exclude "uploads"
     # Databases / docker volume data: never read or delete these. They are
