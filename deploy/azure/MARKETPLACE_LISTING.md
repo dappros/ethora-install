@@ -11,7 +11,7 @@ images and the Ethora logo; keep copies with the listing text.
 ## Properties
 - Categories: Collaboration (primary), Developer Tools.
 - Legal: **Custom** terms. Terms URL: https://ethora.com/legal/ethora-core-license/
-  Privacy policy URL: https://ethora.com/legal/privacy-and-telemetry/
+  Privacy policy URL: https://ethora.com/privacy-policy/ (the company privacy policy; certification rejected the server telemetry notice as the privacy link)
 
 ## Offer listing
 - Name: Ethora Core: Self-Hosted Chat and Messaging Server
@@ -23,7 +23,7 @@ images and the Ethora logo; keep copies with the listing text.
   and the user data sentence replaced by: "For automated deployments the
   same answers can be passed through cloud-init custom data."
 - Search keywords (3): self-hosted chat, xmpp server, chat sdk
-- Privacy policy link: https://ethora.com/legal/privacy-and-telemetry/
+- Privacy policy link: https://ethora.com/privacy-policy/
 - Useful links: Documentation https://github.com/dappros/ethora-install;
   Support https://ethora.com/legal/support-policy/; Website https://ethora.com
 - Support contact: support@ethora.com, Dappros Ltd. Engineering contact: the same.
