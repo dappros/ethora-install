@@ -16,7 +16,7 @@ the compose bundle in this directory's parent:
    but it is not yet in Coolify's template catalogue.
 
 Either way the bundled Caddy stays off (Coolify's proxy terminates TLS and
-routes the four hosts), the data lives in Docker volumes prefixed with the
+routes the five hosts), the data lives in Docker volumes prefixed with the
 resource's uuid, and the installed stack is the one described in
 `../../README.md`.
 
@@ -25,7 +25,7 @@ itself (2 GB); 8 GB in total is comfortable.
 
 ## DNS
 
-Point the four hosts at the Coolify server before deploying, all plain A
+Point the five hosts at the Coolify server before deploying, all plain A
 records (a wildcard `*.chat.example.com` covers them):
 
 | Host | Routed to |
@@ -34,6 +34,7 @@ records (a wildcard `*.chat.example.com` covers them):
 | `app.chat.example.com` | `frontend:8080`; `centrifugo:8000` for `/connection/websocket` |
 | `xmpp.chat.example.com` | `xmpp:5280`, paths `/ws` and `/bosh` only |
 | `files.chat.example.com` | `minio:9000` |
+| `secure-files.chat.example.com` | `api:8080` (chat attachments, gated by chat membership; the API serves this host itself) |
 
 `chat.example.com` is the root domain; every host derives from it. For a
 test without DNS use `<server IP with dashes>.sslip.io` as the root.
@@ -50,7 +51,7 @@ In Coolify: project > environment > **+ New** > **Public Repository**.
    release line such as `2610`.)
 2. **Domains**, one per routed service (the port after the host tells
    Coolify's proxy which container port to use):
-   - `api`: `https://api.chat.example.com:8080`
+   - `api`: `https://api.chat.example.com:8080,https://secure-files.chat.example.com:8080`
    - `frontend`: `https://app.chat.example.com:8080`
    - `centrifugo`: `https://app.chat.example.com:8000/connection/websocket`
    - `xmpp`: `https://xmpp.chat.example.com:5280/ws,https://xmpp.chat.example.com:5280/bosh`
@@ -75,8 +76,9 @@ In Coolify: project > environment > **+ New** > **Public Repository**.
      value of 32+ letters and digits each; `./configure.sh --no-caddy
      --domain ... --admin-email ... --out /tmp/ethora.env` on any machine
      with bash writes a complete file to paste);
-   - set `API_DOMAIN`, `WEB_DOMAIN`, `XMPP_DOMAIN` and `FILES_DOMAIN` to the
-     four hosts, or delete those four lines. Do not leave them empty:
+   - set `API_DOMAIN`, `WEB_DOMAIN`, `XMPP_DOMAIN`, `FILES_DOMAIN` and
+     `SECURE_FILES_DOMAIN` to the five hosts, or delete those five lines.
+     Do not leave them empty:
      Coolify resolves the compose defaults (`${XMPP_DOMAIN:-xmpp.${ROOT_DOMAIN}}`)
      itself at parse time and writes the current value, so an empty
      override reaches the containers as an empty variable;
@@ -169,11 +171,12 @@ Until it is in Coolify's catalogue, use it as a custom service: **+ New** >
 **Docker Compose Empty**, paste the file, save, then before the first
 deploy:
 
-1. Domains: `api` -> `https://api.<root>`, `frontend` -> `https://app.<root>`,
-   `xmpp` -> `https://xmpp.<root>/ws`, `minio` -> `https://files.<root>`,
-   `centrifugo` -> `https://app.<root>/connection/websocket` (the ports and
-   paths are declared in the template, only the hosts are needed). The
-   hosts must be these four: they derive from `ROOT_DOMAIN` inside the
+1. Domains: `api` -> `https://api.<root>,https://secure-files.<root>`,
+   `frontend` -> `https://app.<root>`, `xmpp` -> `https://xmpp.<root>/ws`,
+   `minio` -> `https://files.<root>`, `centrifugo` ->
+   `https://app.<root>/connection/websocket` (the ports and paths are
+   declared in the template, only the hosts are needed). The hosts must be
+   these five: they derive from `ROOT_DOMAIN` inside the
    stack. Coolify's `SERVICE_FQDN_*` values are deliberately not used for
    them, because Coolify appends a route's path to them
    (`xmpp.example.com/ws` is not an XMPP host).

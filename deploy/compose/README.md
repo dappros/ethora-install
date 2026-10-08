@@ -26,7 +26,7 @@ pulls the images and takes a few minutes; `docker compose logs -f init` ends
 with `done` when the base app and admin account are ready. Then open
 `https://app.chat.example.com` and sign in with your e-mail and that password.
 
-Before you start, create four DNS records pointing at the server, all plain
+Before you start, create five DNS records pointing at the server, all plain
 `A` (or `AAAA`) records, no proxy:
 
 | Record | Points to |
@@ -35,9 +35,12 @@ Before you start, create four DNS records pointing at the server, all plain
 | `app.chat.example.com` | your server's IP |
 | `xmpp.chat.example.com` | your server's IP |
 | `files.chat.example.com` | your server's IP |
+| `secure-files.chat.example.com` | your server's IP |
 
 (`chat.example.com` is your root; every host derives from it. A wildcard
-`*.chat.example.com` record covers all four.)
+`*.chat.example.com` record covers all five. `secure-files.` serves chat
+attachments, gated by chat membership; `SECURE_FILES_DOMAIN=off` in `.env`
+drops it and attachments go to the public `files.` bucket.)
 
 **No domain yet?** Use a magic DNS name for a test install: with server IP
 `203.0.113.10`, pass `--domain 203-0-113-10.sslip.io`. It resolves
@@ -73,12 +76,14 @@ file; behind a proxy of your own, start it with
 `docker-compose.yml` by `single/build.sh`, and the tests fail when it is out
 of date.
 
-### One address instead of four hosts
+### One address instead of five hosts
 
 Set `PUBLIC_URL` instead of `ROOT_DOMAIN` (`./configure.sh --public-url ...`)
 to put everything on one address, routed by path: the web app at `/`, the
 API at `/v1`, `/v2` and `/api-docs`, XMPP at `/ws` and `/bosh`, Centrifugo at
-`/connection/websocket`, files at `/files/`.
+`/connection/websocket`, files at `/files/`. Chat attachments then go to the
+public files bucket (the membership-gated `secure-files.` host needs a host
+of its own).
 
 - `PUBLIC_URL=https://chat.example.com`: one DNS record, a Let's Encrypt
   certificate for it.
@@ -108,7 +113,7 @@ message sent over `wss://xmpp.<root>/ws`, a file uploaded and read back from
 
 | Service | Image | Role |
 |---|---|---|
-| `caddy` | `caddy` | TLS and routing for the four hosts (ports 80, 443) |
+| `caddy` | `caddy` | TLS and routing for the five hosts (ports 80, 443) |
 | `frontend` | `dappros/ethora-frontend` | web chat and admin panel (`app.<root>`) |
 | `api`, `jobs` | `dappros/ethora-api` | HTTP API (`api.<root>`, Swagger at `/api-docs/`), cron and queue workers |
 | `xmpp` | `dappros/ethora-xmpp` | ejabberd with the Ethora modules (`xmpp.<root>`, WebSocket at `/ws`) |
@@ -212,7 +217,7 @@ docker run --rm -v ethora_minio:/v:ro -v "$PWD/backup:/b" alpine tar czf /b/mini
 
 Coolify, Dokploy and similar platforms run their own reverse proxy on ports
 80 and 443. Leave the bundled one off (`./configure.sh --no-caddy`, or an
-empty `COMPOSE_PROFILES`) and route the four hosts to these containers, with
+empty `COMPOSE_PROFILES`) and route the five hosts to these containers, with
 WebSocket upgrades allowed:
 
 | Host | Container and port | Paths |
@@ -221,6 +226,7 @@ WebSocket upgrades allowed:
 | `app.<root>` | `frontend:8080`; `centrifugo:8000` for `/connection/websocket` | all |
 | `xmpp.<root>` | `xmpp:5280` | `/ws` and `/bosh` only; never `/api` or `/admin` |
 | `files.<root>` | `minio:9000` | all, with the original `Host` header |
+| `secure-files.<root>` | `api:8080` | all, with the original `Host` header (the API serves this host itself) |
 
 For Coolify the exact steps (git-based application, and a draft one-click
 service template) are in `platforms/coolify/README.md`; for Dokploy

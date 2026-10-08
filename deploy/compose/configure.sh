@@ -10,16 +10,17 @@
 #   ./configure.sh --domain 203-0-113-10.sslip.io --admin-email ops@example.com --yes
 #
 # Answers (flag, or env ETHORA_SETUP_<NAME>, or prompt):
-#   --domain ROOT            root domain: api./app./xmpp./files. derive from it
+#   --domain ROOT            root domain: api./app./xmpp./files./secure-files. derive from it
 #   --public-url URL         one origin instead: https://chat.example.com, or
 #                            http://<LAN address>:<port> (sets HTTP_PORT)
 #   --api/--web/--xmpp/--files HOST   explicit host overrides
+#   --secure-files HOST|off  chat attachments host (default secure-files.<root>); off = public bucket
 #   --admin-email EMAIL      platform admin, base app owner, Let's Encrypt contact
 #   --admin-password PASS    default: generated, printed once
 #   --display-name NAME      base app display name (default: Ethora)
 #   --license-key KEY        ETHORA1.<payload>.<signature>; empty = Ethora Core
 #   --no-call-home           air-gapped install (needs an offline key)
-#   --no-caddy               no bundled proxy; the platform routes the four hosts
+#   --no-caddy               no bundled proxy; the platform routes the five hosts
 #   --local-certs            Caddy issues self-signed certificates (LAN tests)
 #   --out FILE               default: .env next to this script
 #   --force                  start over: regenerate every secret (fresh installs only)
@@ -41,6 +42,7 @@ die()  { echo "[configure] ERROR: $*" >&2; exit 1; }
 A_DOMAIN="${ETHORA_SETUP_DOMAIN:-}"
 A_PUBLIC_URL="${ETHORA_SETUP_PUBLIC_URL:-}"
 A_API="${ETHORA_SETUP_API:-}"; A_WEB="${ETHORA_SETUP_WEB:-}"; A_XMPP="${ETHORA_SETUP_XMPP:-}"; A_FILES="${ETHORA_SETUP_FILES:-}"
+A_SECURE_FILES="${ETHORA_SETUP_SECURE_FILES:-}"
 A_ADMIN_EMAIL="${ETHORA_SETUP_ADMIN_EMAIL:-}"
 A_ADMIN_PASSWORD="${ETHORA_SETUP_ADMIN_PASSWORD:-}"
 A_DISPLAY_NAME="${ETHORA_SETUP_DISPLAY_NAME:-}"
@@ -59,6 +61,7 @@ while [ $# -gt 0 ]; do
     --web) A_WEB="$2"; shift 2 ;;
     --xmpp) A_XMPP="$2"; shift 2 ;;
     --files) A_FILES="$2"; shift 2 ;;
+    --secure-files) A_SECURE_FILES="$2"; shift 2 ;;
     --admin-email) A_ADMIN_EMAIL="$2"; shift 2 ;;
     --admin-password) A_ADMIN_PASSWORD="$2"; shift 2 ;;
     --display-name) A_DISPLAY_NAME="$2"; shift 2 ;;
@@ -124,7 +127,7 @@ if [ -f "$OUT_FILE" ]; then
 fi
 
 # ------------------------------------------------------------ gather answers --
-# One origin (PUBLIC_URL) or four hosts under a root domain.
+# One origin (PUBLIC_URL) or five hosts under a root domain.
 [ -z "$A_PUBLIC_URL" ] && [ -z "$A_DOMAIN" ] && A_PUBLIC_URL="$(old PUBLIC_URL)"
 PORT_FROM_URL=""
 if [ -n "$A_PUBLIC_URL" ]; then
@@ -134,16 +137,16 @@ if [ -n "$A_PUBLIC_URL" ]; then
   valid_host "$_host" || [[ "$_host" =~ ^[0-9]+(\.[0-9]+){3}$ ]] || [[ "$_host" =~ ^[a-z0-9-]+$ ]] || die "not a valid host in --public-url: $_host"
   A_PUBLIC_URL="$_scheme://$_host${_port:+:$_port}"
   if [ "$_scheme" = http ]; then PORT_FROM_URL="${_port:-80}"; elif [ -n "$_port" ]; then die "an https --public-url uses port 443; drop :$_port"; fi
-  A_DOMAIN=""; V_API=""; V_WEB=""; V_XMPP=""; V_FILES=""
+  A_DOMAIN=""; V_API=""; V_WEB=""; V_XMPP=""; V_FILES=""; V_SECURE_FILES=""
 else
   [ -z "$A_DOMAIN" ] && A_DOMAIN="$(old ROOT_DOMAIN)"
   if [ "$YES" != true ] && is_tty && [ -z "$A_DOMAIN" ]; then
     echo
     echo "Ethora Core, compose bundle. Two questions; everything else is derived or generated."
-    echo "Root domain: the four service hosts derive from it, e.g. chat.example.com ->"
-    echo "  api.chat.example.com, app.chat.example.com, xmpp.chat.example.com, files.chat.example.com"
+    echo "Root domain: the five service hosts derive from it, e.g. chat.example.com ->"
+    echo "  api., app., xmpp., files. and secure-files.chat.example.com"
     echo "No domain yet? Use <server IP with dashes>.sslip.io, e.g. 203-0-113-10.sslip.io."
-    echo "(One address instead of four hosts: re-run with --public-url.)"
+    echo "(One address instead of five hosts: re-run with --public-url.)"
     echo
   fi
   prompt A_DOMAIN "Root domain" ""
@@ -167,6 +170,13 @@ else
   V_WEB="$(host_value "$A_WEB" WEB_DOMAIN app)"
   V_XMPP="$(host_value "$A_XMPP" XMPP_DOMAIN xmpp)"
   V_FILES="$(host_value "$A_FILES" FILES_DOMAIN files)"
+  # Attachments host: derived (written empty) unless answered; `off` is kept
+  # literally and the renderer then leaves the fifth host out.
+  [ -z "$A_SECURE_FILES" ] && A_SECURE_FILES="$(old SECURE_FILES_DOMAIN)"
+  case "$(printf '%s' "$A_SECURE_FILES" | tr 'A-Z' 'a-z')" in
+    off|none|false|no) V_SECURE_FILES="off" ;;
+    *) V_SECURE_FILES="$(host_value "$A_SECURE_FILES" SECURE_FILES_DOMAIN secure-files)" ;;
+  esac
 fi
 
 prompt A_ADMIN_EMAIL "Admin email (platform admin, base app owner, TLS contact)" "$(old ADMIN_EMAIL)"
@@ -209,11 +219,12 @@ if [ -n "$A_PUBLIC_URL" ]; then
 else
   echo "  Hosts:           api=${V_API:-api.$A_DOMAIN} web=${V_WEB:-app.$A_DOMAIN}"
   echo "                   xmpp=${V_XMPP:-xmpp.$A_DOMAIN} files=${V_FILES:-files.$A_DOMAIN}"
+  echo "                   secure-files=$([ "$V_SECURE_FILES" = off ] && echo "off (public bucket)" || echo "${V_SECURE_FILES:-secure-files.$A_DOMAIN}")"
 fi
 echo "  Admin:           $A_ADMIN_EMAIL  ($([ "$GENERATED_PASSWORD" = true ] && echo "password generated" || echo "password kept/supplied"))"
 echo "  Display name:    $A_DISPLAY_NAME"
 echo "  License:         $([ -n "$A_LICENSE_KEY" ] && echo "key ${A_LICENSE_KEY:0:24}..." || echo "none (Ethora Core; register from the admin panel)")  call-home=$A_CALL_HOME"
-echo "  Proxy:           $([ -n "$PROFILES" ] && echo "bundled Caddy (ports ${PORT_FROM_URL:-$(old HTTP_PORT | grep . || echo 80)}/$(old HTTPS_PORT | grep . || echo 443))${CADDY_OPTS:+, $CADDY_OPTS}" || echo "none (route the four hosts yourself)")"
+echo "  Proxy:           $([ -n "$PROFILES" ] && echo "bundled Caddy (ports ${PORT_FROM_URL:-$(old HTTP_PORT | grep . || echo 80)}/$(old HTTPS_PORT | grep . || echo 443))${CADDY_OPTS:+, $CADDY_OPTS}" || echo "none (route the five hosts yourself)")"
 echo "  Output:          $OUT_FILE"
 echo
 echo "  Installing accepts the Ethora Core Software License:"
@@ -232,6 +243,7 @@ set_new ROOT_DOMAIN "$A_DOMAIN"
 set_new PUBLIC_URL "$A_PUBLIC_URL"
 [ -n "$PORT_FROM_URL" ] && set_new HTTP_PORT "$PORT_FROM_URL"
 set_new API_DOMAIN "$V_API"; set_new WEB_DOMAIN "$V_WEB"; set_new XMPP_DOMAIN "$V_XMPP"; set_new FILES_DOMAIN "$V_FILES"
+set_new SECURE_FILES_DOMAIN "$V_SECURE_FILES"
 set_new ADMIN_EMAIL "$A_ADMIN_EMAIL"; set_new ADMIN_PASSWORD "$A_ADMIN_PASSWORD"
 set_new BASE_APP_DISPLAY_NAME "$A_DISPLAY_NAME"
 set_new ETHORA_LICENSE_KEY "$A_LICENSE_KEY"; set_new ETHORA_LICENSE_CALL_HOME "$A_CALL_HOME"

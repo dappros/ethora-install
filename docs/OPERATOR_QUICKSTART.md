@@ -31,7 +31,7 @@ deploy/scripts/health-check.sh
 ```
 
 `setup.sh` writes `deploy/config/deploy.yml`, derives every host from the
-root domain (`api.`, `app.`, `xmpp.`, `files.`, `playground.`, `uptime.`),
+root domain (`api.`, `app.`, `xmpp.`, `files.`, `secure-files.`, `playground.`, `uptime.`),
 generates all secrets and prints the admin password once (it is also kept
 in `deploy/.deploy.env`). Run it without `--yes` to be prompted, or edit
 `deploy/config/deploy.yml` afterwards: the file is fully commented. The

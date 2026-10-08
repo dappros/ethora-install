@@ -33,15 +33,18 @@ cmp -s <(sed '1,4d' "$CHART/ci/external-values.yaml") "$CHART/values-external-da
 grep -rn $'\xe2\x80\x94' "$CHART" >/dev/null && fail "em dash in the chart" || ok "no em dashes in the chart"
 grep -qE '^version: [0-9]{2}\.[0-9]{1,2}\.[0-9]+$' "$CHART/Chart.yaml" && ok "chart version is CalVer YY.M.patch" || fail "chart version is not YY.M.patch"
 
-echo "# four hosts"
+echo "# five hosts"
 H="$T/hosts.yaml"
 for kind in StatefulSet Deployment; do
   for c in $( [ $kind = StatefulSet ] && echo "mongo mysql redis minio" || echo "api jobs frontend xmpp centrifugo"); do
     doc "$kind" "ethora-ethora-core-$c" "$H" | grep -q . && ok "$kind $c" || fail "$kind $c missing"
   done
 done
-[ "$(grep -c '^kind: Ingress$' "$H")" = 4 ] && ok "four ingresses" || fail "ingress count" "$(grep -c '^kind: Ingress$' "$H")"
-[ "$(grep -c 'cert-manager.io/cluster-issuer: letsencrypt-prod' "$H")" = 4 ] && ok "cert-manager annotation on every ingress" || fail "cert-manager annotation"
+[ "$(grep -c '^kind: Ingress$' "$H")" = 5 ] && ok "five ingresses" || fail "ingress count" "$(grep -c '^kind: Ingress$' "$H")"
+[ "$(grep -c 'cert-manager.io/cluster-issuer: letsencrypt-prod' "$H")" = 5 ] && ok "cert-manager annotation on every ingress" || fail "cert-manager annotation"
+SF="$(doc Ingress ethora-ethora-core-secure-files "$H")"
+echo "$SF" | grep -q 'host: "secure-files.chat.example.com"' && echo "$SF" | grep -A6 'path: /' | grep -q 'name: ethora-ethora-core-api' \
+  && ok "secure-files ingress routes the host to the API" || fail "secure-files ingress" "$(echo "$SF" | grep -E 'host:|name:')"
 X="$(doc Ingress ethora-ethora-core-xmpp "$H")"
 echo "$X" | grep -q 'path: /ws$' && echo "$X" | grep -q 'path: /bosh$' && ! echo "$X" | grep -qE 'path: /(api|admin)?$' \
   && ok "xmpp ingress: /ws and /bosh only" || fail "xmpp ingress paths" "$(echo "$X" | grep 'path:')"
@@ -52,7 +55,8 @@ doc Ingress ethora-ethora-core-web "$H" | grep -q 'proxy-read-timeout: "3600"' &
 S="$(doc ConfigMap ethora-ethora-core-settings "$H")"
 for kv in 'ETHORA_MONGO_URI: "mongodb://ethora-ethora-core-mongo:27017/ethora_prod?directConnection=true"' 'ETHORA_REDIS_HOST: "ethora-ethora-core-redis"' \
           'ETHORA_MYSQL_HOST: "ethora-ethora-core-mysql"' 'ETHORA_MINIO_HOST: "ethora-ethora-core-minio"' 'ETHORA_API_URL: "http://ethora-ethora-core-api:8080"' \
-          'ETHORA_XMPP_URL: "http://ethora-ethora-core-xmpp:5280"' 'ETHORA_CENTRIFUGO_URL: "http://ethora-ethora-core-centrifugo:8000"' 'API_DOMAIN: "api.chat.example.com"'; do
+          'ETHORA_XMPP_URL: "http://ethora-ethora-core-xmpp:5280"' 'ETHORA_CENTRIFUGO_URL: "http://ethora-ethora-core-centrifugo:8000"' 'API_DOMAIN: "api.chat.example.com"' \
+          'SECURE_FILES_DOMAIN: "secure-files.chat.example.com"'; do
   echo "$S" | grep -qF "$kv" && ok "settings: ${kv%%:*}" || fail "settings: $kv"
 done
 SEC="$(doc Secret ethora-ethora-core-secrets "$H")"

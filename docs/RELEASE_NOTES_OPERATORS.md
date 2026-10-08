@@ -57,6 +57,20 @@ note on the API tools (`tools/security/rotate-encryption-secrets.js`)
 once per install, then update. Do this on every install that was set up
 before this change.
 
+**Chat attachments host on every install.** `setup.sh` now derives
+`domains.secure_files` (`secure-files.<root>`) like the other hosts, so a
+fifth DNS record is needed (a wildcard covers it); `--secure-files off`
+keeps the old four-host layout, with attachments in the public `files.`
+bucket. Until now the host was blank unless set by hand, and on such
+installs every chat attachment failed to load: the API stored it behind a
+URL nothing served. The API now serves the host itself (any proxy only has
+to route `secure-files.<root>` to it; the nginx vhost is unchanged) and
+answers `503` on the secure upload route when the host is not configured,
+which the web client takes as "use the public bucket". The compose bundle
+(`SECURE_FILES_DOMAIN`), the Helm chart (`hosts.secureFiles`) and the cloud
+images follow the same rule. Existing installs are not changed by an
+update; add `domains.secure_files` and the DNS record, then run the update.
+
 **Image mode.** Every Node service can run from a prebuilt container
 instead of being built on the host: `services.<name>.mode: source | image`
 and `services.<name>.image` for `backend`, `frontend`, `ai_service`,

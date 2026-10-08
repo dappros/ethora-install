@@ -24,8 +24,11 @@ helm install ethora oci://docker.io/dappros/ethora-core \
   --set ingress.clusterIssuer=letsencrypt-prod
 ```
 
-Point four DNS records at the ingress controller's external address:
-`api.`, `app.`, `xmpp.` and `files.chat.example.com` (or one wildcard record).
+Point five DNS records at the ingress controller's external address:
+`api.`, `app.`, `xmpp.`, `files.` and `secure-files.chat.example.com` (or one
+wildcard record). `secure-files.` serves chat attachments, gated by chat
+membership; `hosts.secureFiles=off` drops it and attachments go to the
+public files bucket.
 No domain yet: `rootDomain=<ingress IP with dashes>.sslip.io` resolves
 everywhere and gets real certificates. With `publicUrl=https://chat.example.com`
 instead of `rootDomain`, everything is served on that one host, routed by path.
@@ -90,8 +93,8 @@ The commonly set ones; `values.yaml` documents every key.
 
 | Key | Default | |
 |---|---|---|
-| `rootDomain` | | four hosts: api., app., xmpp., files.<rootDomain> |
-| `hosts.api` / `web` / `xmpp` / `files` | derived | per-host overrides |
+| `rootDomain` | | five hosts: api., app., xmpp., files., secure-files.<rootDomain> |
+| `hosts.api` / `web` / `xmpp` / `files` / `secureFiles` | derived | per-host overrides (`secureFiles: off` for no attachments host) |
 | `publicUrl` | | one origin instead, e.g. `https://chat.example.com` |
 | `admin.email` | | platform admin and base app owner (required) |
 | `admin.password` | generated | initial password of that account |

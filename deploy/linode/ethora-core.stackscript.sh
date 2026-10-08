@@ -1,5 +1,5 @@
 #!/bin/bash
-# <UDF name="root_domain" label="Root domain (api., app., xmpp. and files. derive from it). Leave empty to use <ip-with-dashes>.sslip.io, which needs no DNS." default="" />
+# <UDF name="root_domain" label="Root domain (api., app., xmpp., files. and secure-files. derive from it; a wildcard DNS record covers them). Leave empty to use <ip-with-dashes>.sslip.io, which needs no DNS." default="" />
 # <UDF name="admin_email" label="Admin e-mail (platform admin, base app owner, Let's Encrypt contact)" example="you@example.com" />
 # <UDF name="admin_password" label="Admin password (empty: generated, then in /root/ethora-admin-password.txt)" default="" />
 # <UDF name="license_key" label="Enterprise license key (empty: Ethora Core, free)" default="" />

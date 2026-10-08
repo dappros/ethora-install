@@ -456,7 +456,7 @@ fi
 # Check SSL certificates (skip for localhost)
 if [ "$API_DOMAIN" != "localhost" ]; then
     log "Checking SSL certificates..."
-    for domain in "$API_DOMAIN" "$WEB_DOMAIN" "$FILES_DOMAIN" "$WIDGET_DOMAIN" "${MCP_DOMAIN:-}"; do
+    for domain in "$API_DOMAIN" "$WEB_DOMAIN" "$FILES_DOMAIN" "${SECURE_FILES_DOMAIN:-}" "$WIDGET_DOMAIN" "${MCP_DOMAIN:-}"; do
         if [ -z "$domain" ] || [ "$domain" == "null" ]; then
             continue
         fi

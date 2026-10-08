@@ -3,7 +3,7 @@
 # (docker-compose.yml and template.toml in this directory) from the bundle.
 #
 #   docker-compose.yml  the bundle's deploy/compose/docker-compose.yml without
-#                       the bundled proxy (Dokploy's Traefik routes the four
+#                       the bundled proxy (Dokploy's Traefik routes the five
 #                       hosts, see template.toml) and with ./scripts and
 #                       ./templates read from ../files/, where Dokploy writes
 #                       a template's mounts.

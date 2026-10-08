@@ -9,6 +9,8 @@ One ingress per public host, routed like the compose bundle's Caddyfile:
   app.   -> frontend, /connection/websocket -> centrifugo
   xmpp.  -> xmpp, /ws and /bosh only (never ejabberd's /api or /admin)
   files. -> minio
+  secure-files. -> api (chat attachments; the API serves the host itself,
+                   gated by chat membership), unless hosts.secureFiles is off
 With publicUrl, one ingress routes all of them by path.
 */ -}}
 {{- $routes := list
@@ -24,6 +26,10 @@ With publicUrl, one ingress routes all of them by path.
   (dict "role" "files" "extra" $ing.uploadAnnotations "paths" (list
     (dict "path" "/" "type" "Prefix" "svc" "minio" "port" 9000)))
 -}}
+{{- if $hosts.secureFiles -}}
+{{- $routes = append $routes (dict "role" "secure-files" "host" $hosts.secureFiles "extra" (dict) "paths" (list
+    (dict "path" "/" "type" "Prefix" "svc" "api"))) -}}
+{{- end -}}
 {{- if .Values.publicUrl -}}
 {{- $routes = list (dict "role" "web" "extra" (merge (dict) $ing.websocketAnnotations $ing.uploadAnnotations) "paths" (list
     (dict "path" "/metrics" "type" "Exact" "svc" "frontend")
@@ -37,7 +43,7 @@ With publicUrl, one ingress routes all of them by path.
     (dict "path" "/" "type" "Prefix" "svc" "frontend"))) -}}
 {{- end -}}
 {{- range $i, $r := $routes }}
-{{- $host := index $hosts $r.role }}
+{{- $host := default (index $hosts $r.role) $r.host }}
 {{- if $i }}
 ---
 {{- end }}

@@ -12,6 +12,11 @@
 //    login's XMPP JWT, and a message sent to it comes back from the room.
 // 4. A file is uploaded and read back through https://files.<root>, then
 //    deleted.
+// 5. A chat attachment is uploaded to the room (POST /v2/files/secure) and
+//    read back from https://secure-files.<root> with the login's fileToken;
+//    the same URL without a token is refused. On an install without the
+//    secure files host (one origin) the route must answer 503, which the
+//    web client treats as "use the public bucket".
 //
 // Exits non-zero on the first failure. The room it creates is left in place
 // (named "verify <timestamp>").
@@ -26,10 +31,12 @@ const origin = (u) => String(u || '').replace(/\/+$/, '')
 const WEB_URL = origin(env.VERIFY_WEB_URL || env.ETHORA_PUBLIC_WEB_URL)
 const API_URL = origin(env.VERIFY_API_URL || env.ETHORA_PUBLIC_API_URL)
 const FILES_URL = origin(env.VERIFY_FILES_URL || env.ETHORA_PUBLIC_FILES_URL)
+const SECURE_FILES_URL = origin(env.VERIFY_SECURE_FILES_URL || env.ETHORA_PUBLIC_SECURE_FILES_URL)
 const XMPP_WS = env.VERIFY_XMPP_WS_URL || env.ETHORA_PUBLIC_XMPP_WS_URL
 const WEB = hostOf(WEB_URL, '')
 const API = hostOf(API_URL, '')
 const FILES = hostOf(FILES_URL, '')
+const SECURE_FILES = hostOf(SECURE_FILES_URL, '')
 const XMPP = env.XMPP_HOST
 const ONE_ORIGIN = WEB_URL === API_URL
 const EMAIL = env.VERIFY_EMAIL || env.PLATFORM_ACCOUNT_EMAIL
@@ -99,7 +106,7 @@ async function xmppRoundTrip({ username, token, roomJid }) {
 }
 
 async function main() {
-  console.log(`Ethora Core compose bundle: verify (web=${WEB_URL} api=${API_URL} xmpp=${XMPP_WS} files=${FILES_URL})\n`)
+  console.log(`Ethora Core compose bundle: verify (web=${WEB_URL} api=${API_URL} xmpp=${XMPP_WS} files=${FILES_URL} secure-files=${SECURE_FILES_URL || 'off'})\n`)
   if (!WEB_URL || !API_URL || !XMPP_WS || !FILES_URL || !XMPP || !EMAIL || !PASSWORD) die('could not derive the public URLs or admin credentials from backend.env')
 
   // 1. public endpoints and certificates
@@ -166,6 +173,36 @@ async function main() {
     else if (got.status === 200 && got.text === payload) ok(`file uploaded and read back from ${location}`)
     else fail(`uploaded file at ${location} -> HTTP ${got.status}`)
     if (file._id) await http(`${API_URL}/v2/files/${file._id}`, { method: 'DELETE', headers: auth }).catch(() => {})
+  }
+
+  // 5. chat attachment through secure-files.<root>
+  const secureForm = new FormData()
+  secureForm.append('files', new Blob([payload], { type: 'text/plain' }), 'verify-attachment.txt')
+  secureForm.append('chatName', String(localpart).split('@')[0])
+  const sup = await http(`${API_URL}/v2/files/secure`, { method: 'POST', headers: auth, body: secureForm })
+  if (!SECURE_FILES) {
+    if (sup.status === 503) ok('secure files off: /v2/files/secure answers 503 (attachments use the public bucket)')
+    else fail(`secure files off, but /v2/files/secure -> HTTP ${sup.status} ${sup.text.slice(0, 160)} (expected 503)`)
+  } else {
+    const sfile = sup.json && ((sup.json.results && sup.json.results[0]) || sup.json.result)
+    const sloc = sfile && (sfile.location || sfile.url)
+    if (sup.status !== 200 && sup.status !== 201) fail(`attachment upload -> HTTP ${sup.status} ${sup.text.slice(0, 200)}`)
+    else if (!sloc) fail(`attachment upload returned no location: ${sup.text.slice(0, 200)}`)
+    else if (hostOf(sloc, '') !== SECURE_FILES) fail(`attachment is served from ${hostOf(sloc, '')}, expected ${SECURE_FILES}`)
+    else {
+      const anon = await http(sloc).catch((e) => ({ status: 0, text: e.message }))
+      if (anon.status === 401 || anon.status === 403) ok(`attachment without a token is refused (HTTP ${anon.status})`)
+      else fail(`attachment without a token -> HTTP ${anon.status} (expected 401 or 403)`)
+      const fileToken = login.json.fileToken || ''
+      if (!fileToken) fail('login response carries no fileToken to fetch the attachment with')
+      else {
+        const signed = new URL(sloc); signed.searchParams.set('ft', fileToken)
+        const got = await http(signed.toString()).catch((e) => ({ status: 0, text: e.message }))
+        if (got.status === 200 && got.text === payload) ok(`attachment uploaded and read back from ${sloc} with the fileToken`)
+        else fail(`attachment at ${sloc} with the fileToken -> HTTP ${got.status}`)
+      }
+      if (sfile._id) await http(`${API_URL}/v2/files/${sfile._id}`, { method: 'DELETE', headers: auth }).catch(() => {})
+    }
   }
 
   summary()

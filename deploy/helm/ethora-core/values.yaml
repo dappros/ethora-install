@@ -8,7 +8,7 @@
 #     --set ingress.clusterIssuer=letsencrypt-prod
 
 # ---------------------------------------------------------------- hosts --
-# Four hosts derive from rootDomain: api., app., xmpp., files.<rootDomain>.
+# Five hosts derive from rootDomain: api., app., xmpp., files., secure-files.<rootDomain>.
 rootDomain: ""
 # Per-host overrides (default: derived from rootDomain).
 hosts:
@@ -16,6 +16,10 @@ hosts:
   web: ""
   xmpp: ""
   files: ""
+  # Chat attachments, served by the API and gated by chat membership
+  # (default secure-files.<rootDomain>). "off" drops the fifth host; attachments
+  # then go to the public files bucket.
+  secureFiles: ""
 # Or everything on one address, routed by path (the ingress then has one host):
 # e.g. https://chat.example.com. Set rootDomain or publicUrl, not both.
 publicUrl: ""

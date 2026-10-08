@@ -28,7 +28,7 @@
 # ADMIN_EMAIL is a complete install.
 #
 # Two routing modes, chosen by PUBLIC_URL:
-#   unset  four hosts, api./app./xmpp./files.<ROOT_DOMAIN>, TLS by Caddy
+#   unset  five hosts, api./app./xmpp./files./secure-files.<ROOT_DOMAIN>, TLS by Caddy
 #          (the host installer's layout).
 #   set    one origin, e.g. https://chat.example.com or http://nas.local:8420
 #          (appliances: Umbrel, CasaOS): Caddy routes by path, and the web
@@ -156,6 +156,8 @@ if [ -n "$PUBLIC_URL" ]; then
   # WebSocket URL, so the two must match, even when the host is an IP address.
   export ROOT_DOMAIN="${ROOT_DOMAIN:-$host}"
   export API_DOMAIN="$host" WEB_DOMAIN="$host" FILES_DOMAIN="$host" XMPP_DOMAIN="$host"
+  # No fifth host on one origin: attachments use the public files bucket.
+  export SECURE_FILES_DOMAIN=""
   export BASE_APP_DOMAIN_NAME="${BASE_APP_DOMAIN_NAME:-ethora}"
 else
   [ -n "${ROOT_DOMAIN:-}" ] || die "ROOT_DOMAIN is not set (or set PUBLIC_URL for a one-origin install)"
@@ -164,6 +166,13 @@ else
   export WEB_DOMAIN="${WEB_DOMAIN:-app.$ROOT_DOMAIN}"
   export XMPP_DOMAIN="${XMPP_DOMAIN:-xmpp.$ROOT_DOMAIN}"
   export FILES_DOMAIN="${FILES_DOMAIN:-files.$ROOT_DOMAIN}"
+  # Chat attachments: their own host, served by the API and gated by chat
+  # membership. Derived like the others; `off` leaves it empty (public bucket).
+  case "$(printf '%s' "${SECURE_FILES_DOMAIN:-}" | tr 'A-Z' 'a-z')" in
+    off|none|false|no) SECURE_FILES_DOMAIN="" ;;
+    "") SECURE_FILES_DOMAIN="secure-files.$ROOT_DOMAIN" ;;
+  esac
+  export SECURE_FILES_DOMAIN
   # Base app slug: first label of the web host (app.chat.example.com -> app).
   export BASE_APP_DOMAIN_NAME="${BASE_APP_DOMAIN_NAME:-${WEB_DOMAIN%%.*}}"
 fi
@@ -344,6 +353,7 @@ set_env_line "$stage/api/backend.env" CENTRIFUGO_API_URL "$ETHORA_CENTRIFUGO_URL
   echo "ETHORA_PUBLIC_WEB_URL=$web_url"
   echo "ETHORA_PUBLIC_API_URL=$api_url"
   echo "ETHORA_PUBLIC_FILES_URL=$files_url"
+  echo "ETHORA_PUBLIC_SECURE_FILES_URL=${SECURE_FILES_DOMAIN:+https://$SECURE_FILES_DOMAIN}"
   echo "ETHORA_PUBLIC_XMPP_WS_URL=$xmpp_ws"
   echo "# The API as the other services reach it (scripts/init.sh)."
   echo "API_INTERNAL_URL=$ETHORA_API_URL"
@@ -478,6 +488,9 @@ printf '%s' "$MINIO_ROOT_PASSWORD" > "$stage/minio/root-password"
 if [ -z "$PUBLIC_URL" ]; then
   ETHORA_SITES="$(printf '%s {\n\timport api\n}\n%s {\n\timport web\n}\n%s {\n\timport xmpp\n}\n%s {\n\timport files\n}' \
     "$API_DOMAIN" "$WEB_DOMAIN" "$XMPP_DOMAIN" "$FILES_DOMAIN")"
+  if [ -n "$SECURE_FILES_DOMAIN" ]; then
+    ETHORA_SITES="$ETHORA_SITES$(printf '\n%s {\n\timport secure_files\n}' "$SECURE_FILES_DOMAIN")"
+  fi
 elif [ -n "${ETHORA_SITE_ADDRESS:-}" ]; then
   ETHORA_SITES="$(printf '%s {\n\timport single_origin\n}' "$ETHORA_SITE_ADDRESS")"
 elif [ "$scheme" = https ]; then
@@ -552,5 +565,5 @@ chmod 644 "$MYSQL_INITDB/01-ejabberd.sql"
 if [ -n "$PUBLIC_URL" ]; then
   log "rendered for one origin $PUBLIC_URL (xmpp domain $XMPP_DOMAIN, base app slug $BASE_APP_DOMAIN_NAME)"
 else
-  log "rendered for $ROOT_DOMAIN: api=$API_DOMAIN web=$WEB_DOMAIN xmpp=$XMPP_DOMAIN files=$FILES_DOMAIN (base app slug: $BASE_APP_DOMAIN_NAME)"
+  log "rendered for $ROOT_DOMAIN: api=$API_DOMAIN web=$WEB_DOMAIN xmpp=$XMPP_DOMAIN files=$FILES_DOMAIN secure-files=${SECURE_FILES_DOMAIN:-off} (base app slug: $BASE_APP_DOMAIN_NAME)"
 fi

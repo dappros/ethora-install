@@ -3,7 +3,7 @@
 # service fills in the placeholders (Caddy's own environment syntax, a dollar
 # sign and a NAME in braces) and writes the result to the config volume,
 # where the caddy service reads it. The site blocks in ETHORA_SITES depend on
-# the routing mode (render-config.sh): four hosts, each importing one of the
+# the routing mode (render-config.sh): five hosts, each importing one of the
 # role snippets below, or one origin importing single_origin. The upstreams
 # (UPSTREAM_API and the like) are the compose services (api:8080, ...)
 # unless the internal endpoints are overridden; ETHORA_EXTRA_SITES carries
@@ -69,6 +69,15 @@
 # MinIO's presigned URLs depend on; Caddy sets no body size limit.
 (files) {
 	reverse_proxy {$UPSTREAM_MINIO}
+}
+
+# Chat attachments (secure-files.conf.template): the API serves this host
+# itself, authorizing every object by chat membership (the fileToken cookie
+# or ?ft=) and answering 404 for anything that is not <bucket>/<key>. The
+# referrer policy keeps a tokenised URL out of other sites' logs.
+(secure_files) {
+	header Referrer-Policy "no-referrer"
+	reverse_proxy {$UPSTREAM_API}
 }
 
 # Everything on one origin (PUBLIC_URL), routed by path. The web app owns

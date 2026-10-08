@@ -17,6 +17,7 @@ data:
   WEB_DOMAIN: {{ $hosts.web | quote }}
   XMPP_DOMAIN: {{ $hosts.xmpp | quote }}
   FILES_DOMAIN: {{ $hosts.files | quote }}
+  SECURE_FILES_DOMAIN: {{ default "off" $hosts.secureFiles | quote }}
   {{- end }}
   ADMIN_EMAIL: {{ .Values.admin.email | quote }}
   BASE_APP_DISPLAY_NAME: {{ .Values.displayName | quote }}

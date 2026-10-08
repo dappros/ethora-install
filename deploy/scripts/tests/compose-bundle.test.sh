@@ -72,14 +72,15 @@ c = d["config"]
 doms = {(x["serviceName"], x["port"], x["host"], x.get("path", "/")) for x in c["domains"]}
 assert doms == {("api", 8080, "api.${root_domain}", "/"), ("frontend", 8080, "app.${root_domain}", "/"),
                 ("centrifugo", 8000, "app.${root_domain}", "/connection/websocket"), ("xmpp", 5280, "xmpp.${root_domain}", "/ws"),
-                ("xmpp", 5280, "xmpp.${root_domain}", "/bosh"), ("minio", 9000, "files.${root_domain}", "/")}, doms
+                ("xmpp", 5280, "xmpp.${root_domain}", "/bosh"), ("minio", 9000, "files.${root_domain}", "/"),
+                ("api", 8080, "secure-files.${root_domain}", "/")}, doms
 assert d["variables"]["root_domain"] == "${domain}"
 for m in c["mounts"]:
     assert m["content"] == open(bundle + m["filePath"]).read(), m["filePath"]
 env = dict(l.split("=", 1) for l in c["env"])
 example = [l.split("=", 1)[0] for l in open(bundle + "/.env.example") if re.match(r"^[A-Z_]+=", l)]
-skipped = {"API_DOMAIN", "WEB_DOMAIN", "XMPP_DOMAIN", "FILES_DOMAIN", "ACME_EMAIL", "CADDY_GLOBAL_OPTIONS", "HTTP_PORT", "HTTPS_PORT",
-           "PUBLIC_URL", "ETHORA_COMPOSE_INIT_IMAGE"}  # four hosts routed by Traefik; the dev form renders with the xmpp image
+skipped = {"API_DOMAIN", "WEB_DOMAIN", "XMPP_DOMAIN", "FILES_DOMAIN", "SECURE_FILES_DOMAIN", "ACME_EMAIL", "CADDY_GLOBAL_OPTIONS", "HTTP_PORT", "HTTPS_PORT",
+           "PUBLIC_URL", "ETHORA_COMPOSE_INIT_IMAGE"}  # five hosts routed by Traefik; the dev form renders with the xmpp image
 assert [k for k in example if k not in skipped] == list(env), list(env)
 assert env["COMPOSE_PROFILES"] == "" and env["ROOT_DOMAIN"] == "${root_domain}"
 secrets = [k for k in env if k.endswith(("_SECRET", "_PASSWORD", "_KEY")) and k != "ETHORA_LICENSE_KEY"] + ["MINIO_ROOT_USER"]
@@ -97,6 +98,7 @@ E="$B/.env"
 [ -f "$E" ] && ok "wrote .env" || fail "wrote .env" "$(cat "$T/err")"
 [ "$(envval ROOT_DOMAIN "$E")" = "chat.example.com" ] && ok "root domain normalised" || fail "root domain" "$(envval ROOT_DOMAIN "$E")"
 [ -z "$(envval API_DOMAIN "$E")" ] && ok "hosts left to derive from ROOT_DOMAIN" || fail "hosts derived" "$(envval API_DOMAIN "$E")"
+[ -z "$(envval SECURE_FILES_DOMAIN "$E")" ] && ok "secure files host left to derive" || fail "secure files derived" "$(envval SECURE_FILES_DOMAIN "$E")"
 [ "$(stat -c %a "$E")" = "600" ] && ok ".env mode 600" || fail ".env mode" "$(stat -c %a "$E")"
 missing=""
 for k in ADMIN_PASSWORD JWT_SECRET REFRESH_SECRET XMPP_SECRET XMPP_JWT_SECRET XMPP_ADMIN_PASSWORD INTERNAL_REQUESTS_SECRET \
@@ -177,7 +179,8 @@ else
   [ -z "$missing" ] && ok "frontend.env carries every variable of frontend.env.template" || fail "frontend.env misses:$missing"
   for kv in 'MONGO_URI=mongodb://mongo:27017/ethora_prod?directConnection=true' REDIS_HOST=redis MINIO_HOST=minio MAM_MYSQL_HOST=mysql \
             'CENTRIFUGO_API_URL=http://centrifugo:8000/api' 'XMPP_PATH=http://xmpp:5280/api' 'XMPP_SERVICE=wss://xmpp.chat.example.com/ws' \
-            'MINIO_URL=https://files.chat.example.com' ENABLE_SWAGGER=true BASE_APP_DOMAIN_NAME=app 'PLATFORM_ACCOUNT_PASSWORD="p&w|d\1"' \
+            'MINIO_URL=https://files.chat.example.com' 'MINIO_SECURE_URL=https://secure-files.chat.example.com' 'AUTH_COOKIE_DOMAIN=.chat.example.com' \
+            ENABLE_SWAGGER=true BASE_APP_DOMAIN_NAME=app 'PLATFORM_ACCOUNT_PASSWORD="p&w|d\1"' \
             'ETHORA_LICENSED_HOSTS=api.chat.example.com,app.chat.example.com,xmpp.chat.example.com,files.chat.example.com'; do
     grep -qxF "$kv" "$be" && ok "backend.env: $kv" || fail "backend.env: $kv" "$(grep "^${kv%%=*}=" "$be")"
   done
@@ -197,9 +200,17 @@ else
   n="$(ls "$R/config/scripts" | wc -l)"; [ "$n" = "$(ls "$BUNDLE"/scripts/*.sh "$BUNDLE"/scripts/*.js | wc -l)" ] \
     && ok "scripts published into the config volume ($n)" || fail "scripts published" "$n"
   grep -q '^api.chat.example.com {$' "$R/config/caddy/Caddyfile" && grep -q '^	import files$' "$R/config/caddy/Caddyfile" \
-    && ! grep -q '{\$' <(grep -v '^[[:space:]]*#' "$R/config/caddy/Caddyfile") && ok "Caddyfile rendered for four hosts" || fail "Caddyfile (four hosts)"
+    && grep -q '^secure-files.chat.example.com {$' "$R/config/caddy/Caddyfile" && grep -q '^	import secure_files$' "$R/config/caddy/Caddyfile" \
+    && ! grep -q '{\$' <(grep -v '^[[:space:]]*#' "$R/config/caddy/Caddyfile") && ok "Caddyfile rendered for five hosts" || fail "Caddyfile (five hosts)"
   grep -qxF 'ETHORA_PUBLIC_XMPP_WS_URL=wss://xmpp.chat.example.com/ws' "$be" && grep -qxF 'ETHORA_PUBLIC_FILES_URL=https://files.chat.example.com' "$be" \
+    && grep -qxF 'ETHORA_PUBLIC_SECURE_FILES_URL=https://secure-files.chat.example.com' "$be" \
     && ok "backend.env names the public entry points" || fail "ETHORA_PUBLIC_* in backend.env"
+  # SECURE_FILES_DOMAIN=off: four hosts, attachments in the public bucket.
+  R2b="$T/r2b"; mkdir -p "$R2b"
+  rcfg "$R2b" ROOT_DOMAIN=chat.example.com ADMIN_EMAIL=ops@example.com SECURE_FILES_DOMAIN=off >/dev/null 2>&1
+  grep -qxF 'MINIO_SECURE_URL=' "$R2b/config/api/backend.env" && ! grep -q '^secure-files' "$R2b/config/caddy/Caddyfile" \
+    && grep -qxF 'ETHORA_PUBLIC_SECURE_FILES_URL=' "$R2b/config/api/backend.env" \
+    && ok "SECURE_FILES_DOMAIN=off: no fifth host, MINIO_SECURE_URL empty" || fail "SECURE_FILES_DOMAIN=off" "$(grep -n 'MINIO_SECURE_URL\|secure-files' "$R2b/config/api/backend.env" "$R2b/config/caddy/Caddyfile")"
 
   # Secrets left out are generated once into the secrets volume and reused.
   R3="$T/r3"; mkdir -p "$R3"
@@ -224,7 +235,8 @@ else
   rcfg "$R6" PUBLIC_URL=http://192.168.1.20:8456/ ADMIN_EMAIL=ops@example.com >"$T/out6" 2>&1 && ok "renders for one origin" || fail "one-origin render" "$(cat "$T/out6")"
   be6="$R6/config/api/backend.env"; fe6="$R6/config/frontend/frontend.env"
   for kv in 'DEFAULT_APP_URL=http://192.168.1.20:8456' 'MINIO_URL=http://192.168.1.20:8456' 'XMPP_SERVICE=ws://192.168.1.20:8456/ws' \
-            'XMPP_HOST=192.168.1.20' 'AUTH_COOKIE_DOMAIN=' 'BASE_APP_DOMAIN_NAME=ethora' 'ETHORA_PUBLIC_API_URL=http://192.168.1.20:8456'; do
+            'XMPP_HOST=192.168.1.20' 'AUTH_COOKIE_DOMAIN=' 'BASE_APP_DOMAIN_NAME=ethora' 'ETHORA_PUBLIC_API_URL=http://192.168.1.20:8456' \
+            'MINIO_SECURE_URL=' 'ETHORA_PUBLIC_SECURE_FILES_URL='; do
     grep -qxF "$kv" "$be6" && ok "one origin, backend.env: $kv" || fail "one origin, backend.env: $kv" "$(grep "^${kv%%=*}=" "$be6")"
   done
   for kv in 'VITE_API=__ETHORA_ORIGIN__/v1' 'VITE_APP_XMPP_SERVICE=ws://192.168.1.20:8456/ws' \

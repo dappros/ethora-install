@@ -33,8 +33,9 @@
     1. Log in over SSH as root, or read the instance IP from the panel. The
        login banner shows the setup URL http://<ip>:8888, user admin, and the
        password (also in /etc/ethora/setup-web.env).
-    2. Point DNS A records for api., app., xmpp. and files.<your domain> at
-       the instance, or use <ip-with-dashes>.sslip.io as the domain.
+    2. Point DNS A records for api., app., xmpp., files. and
+       secure-files.<your domain> at the instance (or one wildcard record),
+       or use <ip-with-dashes>.sslip.io as the domain.
     3. Open the setup page, enter the domain, your e-mail and optionally an
        Enterprise license key, submit once. About five minutes later open
        https://app.<your domain> and sign in with the password the page shows.

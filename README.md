@@ -30,7 +30,7 @@ asking for anything you leave out):
 curl -fsSL https://get.ethora.com | bash -s -- --domain chat.example.com --admin-email you@example.com
 ```
 
-Before you run it, create four DNS records pointing at the server, all plain
+Before you run it, create five DNS records pointing at the server, all plain
 `A` (or `AAAA`) records, no proxy:
 
 | Record | Points to |
@@ -39,9 +39,12 @@ Before you run it, create four DNS records pointing at the server, all plain
 | `app.chat.example.com` | your server's IP |
 | `xmpp.chat.example.com` | your server's IP |
 | `files.chat.example.com` | your server's IP |
+| `secure-files.chat.example.com` | your server's IP |
 
 (`chat.example.com` is your root; every host derives from it. A wildcard
-`*.chat.example.com` record covers all four.)
+`*.chat.example.com` record covers all five. `secure-files.` serves chat
+attachments, which only members of the chat can open; `--secure-files off`
+drops it and attachments go to the public `files.` bucket.)
 
 **No domain yet?** Use a magic DNS name for a test install: with server IP
 `203.0.113.10`, pass `--domain 203-0-113-10.sslip.io`. It resolves
@@ -58,7 +61,7 @@ in the corner) and the License page where you register for free:
 
 ## What the two commands do
 
-`setup.sh` writes `deploy/config/deploy.yml`: it derives the four hostnames
+`setup.sh` writes `deploy/config/deploy.yml`: it derives the five hostnames
 from your root domain, generates every secret and password, and prints the
 admin password once. Run it with no flags to be prompted instead. Nothing is
 installed yet; the file is fully commented and can be edited before the
@@ -77,6 +80,7 @@ What you get:
 | Web chat and admin panel | `dappros/ethora-frontend` | `app.<root>` |
 | XMPP server (ejabberd with the Ethora modules) | `dappros/ethora-xmpp` | `xmpp.<root>` |
 | File storage | MinIO | `files.<root>` |
+| Chat attachments (members only) | served by the API | `secure-files.<root>` |
 | MongoDB, MySQL, Redis, Centrifugo | stock images | internal |
 
 ## Prefer Docker Compose?

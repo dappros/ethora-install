@@ -54,7 +54,8 @@ snapshot before submitting (`docker image inspect`, `dpkg -l`).
 **Getting started** (shown on the listing and after creation)
 
     1. Create the droplet (4 GB RAM or more). Point DNS A records for api.,
-       app., xmpp. and files.<your domain> at its IP, or skip DNS and use
+       app., xmpp., files. and secure-files.<your domain> at its IP (or one
+       wildcard record), or skip DNS and use
        <ip-with-dashes>.sslip.io as the domain for a test install.
     2. Open http://<droplet ip>:8888. User: admin. Password: the droplet id
        (the number in the control panel URL, also printed at SSH login).

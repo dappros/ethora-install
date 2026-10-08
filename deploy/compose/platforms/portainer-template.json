@@ -4,7 +4,7 @@
     {
       "type": 3,
       "title": "Ethora Core",
-      "description": "Self-hosted chat and messaging server: API, web chat and admin panel, XMPP server (ejabberd with the Ethora modules), MongoDB, MySQL, Redis, MinIO, Centrifugo, with Caddy for TLS. Free edition, no license key. Point api., app., xmpp. and files.<root domain> at the host first, or use <ip-with-dashes>.sslip.io as the root domain.",
+      "description": "Self-hosted chat and messaging server: API, web chat and admin panel, XMPP server (ejabberd with the Ethora modules), MongoDB, MySQL, Redis, MinIO, Centrifugo, with Caddy for TLS. Free edition, no license key. Point api., app., xmpp., files. and secure-files.<root domain> at the host first (one wildcard record covers them), or use <ip-with-dashes>.sslip.io as the root domain.",
       "categories": [
         "Chat",
         "Messaging",
@@ -20,7 +20,7 @@
       "env": [
         {
           "name": "ROOT_DOMAIN",
-          "label": "Root domain (hosts api., app., xmpp., files. derive from it)"
+          "label": "Root domain (hosts api., app., xmpp., files., secure-files. derive from it)"
         },
         {
           "name": "ADMIN_EMAIL",

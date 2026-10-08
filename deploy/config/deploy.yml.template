@@ -11,7 +11,7 @@ domains:
   web: app.messenger-dev.example.com          # Frontend web app domain
   xmpp: xmpp.messenger-dev.example.com        # XMPP server domain
   files: files.messenger-dev.example.com      # MinIO file storage domain
-  secure_files: ""                            # Optional: gated chat attachments, e.g. secure-files.messenger-dev.example.com. Blank = feature off.
+  secure_files: ""                            # Chat attachments, gated by chat membership, e.g. secure-files.messenger-dev.example.com (setup.sh derives it; blank = attachments in the public files bucket)
   playground: playground.messenger-dev.example.com # Optional SDK Playground domain
   # widget: widget.chat.example.com           # Optional. Defaults to "widget.<root-of-web>"
                                               # when services.widget.enabled = true and this

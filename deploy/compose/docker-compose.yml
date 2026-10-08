@@ -17,7 +17,7 @@
 #   api, jobs   the API image (HTTP API, cron + queue workers)
 #   init        first-boot steps through the API image's script mode (idempotent)
 #   frontend    web chat and admin panel
-#   caddy       TLS + routing for api., app., xmpp., files. (profile `caddy`,
+#   caddy       TLS + routing for api., app., xmpp., files., secure-files. (profile `caddy`,
 #               on through COMPOSE_PROFILES in .env)
 #
 # Only caddy publishes ports (80, 443). Data lives in named volumes
@@ -61,6 +61,7 @@ services:
       WEB_DOMAIN: ${WEB_DOMAIN:-}
       XMPP_DOMAIN: ${XMPP_DOMAIN:-}
       FILES_DOMAIN: ${FILES_DOMAIN:-}
+      SECURE_FILES_DOMAIN: ${SECURE_FILES_DOMAIN:-}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       BASE_APP_DISPLAY_NAME: ${BASE_APP_DISPLAY_NAME:-Ethora}

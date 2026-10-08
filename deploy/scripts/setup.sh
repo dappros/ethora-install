@@ -19,8 +19,10 @@
 #   deploy/scripts/setup.sh ... --run                 then run install.sh --yes
 #
 # Answers (flag, or env ETHORA_SETUP_<NAME>, or prompt):
-#   --domain ROOT            root domain: api./app./xmpp./files./playground./uptime. derive from it
+#   --domain ROOT            root domain: api./app./xmpp./files./secure-files./playground./uptime. derive from it
 #   --api/--web/--xmpp/--files/--playground/--uptime HOST   explicit host overrides
+#   --secure-files HOST|off  host of the membership-gated chat attachments (default secure-files.<root>);
+#                            off = attachments go to the public files bucket (no fifth DNS record)
 #   --admin-email EMAIL      platform admin + base app owner + Let's Encrypt contact
 #   --admin-password PASS    default: generated, printed once
 #   --display-name NAME      base app display name (default: Ethora)
@@ -70,6 +72,7 @@ die()  { echo -e "${RED}[setup] ERROR:${NC} $*" >&2; exit 1; }
 A_DOMAIN="${ETHORA_SETUP_DOMAIN:-}"
 A_API="${ETHORA_SETUP_API:-}"; A_WEB="${ETHORA_SETUP_WEB:-}"; A_XMPP="${ETHORA_SETUP_XMPP:-}"
 A_FILES="${ETHORA_SETUP_FILES:-}"; A_PLAYGROUND="${ETHORA_SETUP_PLAYGROUND:-}"; A_UPTIME_HOST="${ETHORA_SETUP_UPTIME_HOST:-}"
+A_SECURE_FILES="${ETHORA_SETUP_SECURE_FILES:-}"
 A_ADMIN_EMAIL="${ETHORA_SETUP_ADMIN_EMAIL:-}"
 A_ADMIN_PASSWORD="${ETHORA_SETUP_ADMIN_PASSWORD:-}"
 A_DISPLAY_NAME="${ETHORA_SETUP_DISPLAY_NAME:-}"
@@ -106,6 +109,7 @@ while [ $# -gt 0 ]; do
     --web) A_WEB="$2"; shift 2 ;;
     --xmpp) A_XMPP="$2"; shift 2 ;;
     --files) A_FILES="$2"; shift 2 ;;
+    --secure-files) A_SECURE_FILES="$2"; shift 2 ;;
     --playground) A_PLAYGROUND="$2"; shift 2 ;;
     --uptime-host) A_UPTIME_HOST="$2"; shift 2 ;;
     --admin-email) A_ADMIN_EMAIL="$2"; shift 2 ;;
@@ -232,8 +236,8 @@ fi
 if [ "$YES" != true ] && is_tty && [ -z "$A_DOMAIN" ]; then
   echo
   echo "Ethora setup. Six questions; everything else is derived or generated."
-  echo "Root domain: the four service hosts derive from it, e.g. chat.example.com ->"
-  echo "  api.chat.example.com, app.chat.example.com, xmpp.chat.example.com, files.chat.example.com"
+  echo "Root domain: the five service hosts derive from it, e.g. chat.example.com ->"
+  echo "  api., app., xmpp., files. and secure-files.chat.example.com"
   echo
 fi
 prompt A_DOMAIN "Root domain (or 'localhost' for a local install)" ""
@@ -244,6 +248,7 @@ valid_host "$A_DOMAIN" || die "not a valid domain: $A_DOMAIN"
 
 if [ "$MODE_LOCAL" = true ]; then
   A_API="localhost"; A_WEB="localhost"; A_XMPP="localhost"; A_FILES="localhost"; A_PLAYGROUND="localhost"; A_UPTIME_HOST="localhost"
+  A_SECURE_FILES=""   # no secure subdomain or cookie domain on localhost
 else
   A_API="$(norm_host "${A_API:-api.$A_DOMAIN}")"
   A_WEB="$(norm_host "${A_WEB:-app.$A_DOMAIN}")"
@@ -251,7 +256,15 @@ else
   A_FILES="$(norm_host "${A_FILES:-files.$A_DOMAIN}")"
   A_PLAYGROUND="$(norm_host "${A_PLAYGROUND:-playground.$A_DOMAIN}")"
   A_UPTIME_HOST="$(norm_host "${A_UPTIME_HOST:-uptime.$A_DOMAIN}")"
-  for h in "$A_API" "$A_WEB" "$A_XMPP" "$A_FILES" "$A_PLAYGROUND" "$A_UPTIME_HOST"; do
+  # Chat attachments are served from their own host, gated by chat
+  # membership (domains.secure_files). Derived like the others; "off" leaves
+  # it empty, and attachments then go to the public files bucket.
+  case "$(printf '%s' "$A_SECURE_FILES" | tr 'A-Z' 'a-z')" in
+    off|none|false|no) A_SECURE_FILES="" ;;
+    "") A_SECURE_FILES="secure-files.$A_DOMAIN" ;;
+    *) A_SECURE_FILES="$(norm_host "$A_SECURE_FILES")" ;;
+  esac
+  for h in "$A_API" "$A_WEB" "$A_XMPP" "$A_FILES" "$A_PLAYGROUND" "$A_UPTIME_HOST" ${A_SECURE_FILES:+"$A_SECURE_FILES"}; do
     valid_host "$h" || die "not a valid host: $h"
   done
 fi
@@ -421,7 +434,7 @@ show_summary() {
   echo
   echo "  Mode:            $([ "$MODE_LOCAL" = true ] && echo localhost || echo production)    Edition: $A_EDITION"
   echo "  Hosts:           api=$A_API web=$A_WEB xmpp=$A_XMPP files=$A_FILES"
-  echo "                   playground=$A_PLAYGROUND uptime=$A_UPTIME_HOST"
+  echo "                   secure-files=${A_SECURE_FILES:-off (public bucket)} playground=$A_PLAYGROUND uptime=$A_UPTIME_HOST"
   echo "  Admin:           $A_ADMIN_EMAIL  ($([ "$GENERATED_PASSWORD" = true ] && echo "password generated" || echo "password supplied"))"
   echo "  Display name:    $A_DISPLAY_NAME"
   echo "  License:         $([ -n "$A_LICENSE_KEY_FILE" ] && echo "file $A_LICENSE_KEY_FILE" || ([ -n "$A_LICENSE_KEY" ] && echo "key ${A_LICENSE_KEY:0:24}..." || echo "none (Ethora Core; register from the admin panel)"))  call-home=$A_CALL_HOME${A_LICENSE_SERVER:+ server=$A_LICENSE_SERVER}"
@@ -474,6 +487,7 @@ set_str '.domains.api' "$A_API"
 set_str '.domains.web' "$A_WEB"
 set_str '.domains.xmpp' "$A_XMPP"
 set_str '.domains.files' "$A_FILES"
+set_str '.domains.secure_files' "$A_SECURE_FILES"
 set_str '.domains.playground' "$A_PLAYGROUND"
 set_str '.domains.uptime' "$A_UPTIME_HOST"
 if [ -n "$A_HOSTED_APPS" ]; then

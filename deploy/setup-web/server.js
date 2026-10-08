@@ -255,7 +255,7 @@ pre{background:#0f1419;color:#d5dbe3;padding:14px;border-radius:12px;max-height:
 <fieldset><legend>Required</legend>
 <label for="domain">Root domain</label>
 <input id="domain" name="domain" type="text" required placeholder="chat.example.com" value="${v('domain')}">
-<div class="hint">Gives api., app., xmpp., files. subdomains. DNS for those must point at this server before TLS can be issued.</div>
+<div class="hint">Gives api., app., xmpp., files. and secure-files. subdomains. DNS for those must point at this server before TLS can be issued (a wildcard record covers them).</div>
 <label for="admin_email">Admin email</label>
 <input id="admin_email" name="admin_email" type="email" required placeholder="ops@example.com" value="${v('admin_email')}">
 <div class="hint">Platform admin login, base app owner, and Let's Encrypt contact. The admin password is generated and shown once at the end.</div>

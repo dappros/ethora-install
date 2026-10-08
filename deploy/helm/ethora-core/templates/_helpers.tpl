@@ -74,10 +74,12 @@ app.kubernetes.io/component: {{ .component }}
 {{- define "ethora.hosts" -}}
 {{- if .Values.publicUrl -}}
 {{- $h := (urlParse .Values.publicUrl).host | splitList ":" | first -}}
-{{- dict "api" $h "web" $h "xmpp" $h "files" $h | toYaml -}}
+{{- dict "api" $h "web" $h "xmpp" $h "files" $h "secureFiles" "" | toYaml -}}
 {{- else -}}
 {{- $r := .Values.rootDomain -}}
-{{- dict "api" (default (printf "api.%s" $r) .Values.hosts.api) "web" (default (printf "app.%s" $r) .Values.hosts.web) "xmpp" (default (printf "xmpp.%s" $r) .Values.hosts.xmpp) "files" (default (printf "files.%s" $r) .Values.hosts.files) | toYaml -}}
+{{- $sf := default (printf "secure-files.%s" $r) .Values.hosts.secureFiles -}}
+{{- if has (lower $sf) (list "off" "none" "false" "no") -}}{{- $sf = "" -}}{{- end -}}
+{{- dict "api" (default (printf "api.%s" $r) .Values.hosts.api) "web" (default (printf "app.%s" $r) .Values.hosts.web) "xmpp" (default (printf "xmpp.%s" $r) .Values.hosts.xmpp) "files" (default (printf "files.%s" $r) .Values.hosts.files) "secureFiles" $sf | toYaml -}}
 {{- end -}}
 {{- end -}}
 

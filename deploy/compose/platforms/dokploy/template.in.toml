@@ -3,11 +3,12 @@
 # are the bundle's deploy/compose/scripts and deploy/compose/templates.
 #
 # No input is required: root_domain is a Dokploy-generated
-# <name>-<hash>-<ip>.sslip.io host, the four public hosts api., app., xmpp. and
-# files.<root_domain> are the domains below, and every secret is generated.
-# To use your own domain change ROOT_DOMAIN and the six domains together.
-# Before the first deploy set ADMIN_EMAIL (the admin login), enable HTTPS
-# with Let's Encrypt on the six domains (the web app only works over https)
+# <name>-<hash>-<ip>.sslip.io host, the five public hosts api., app., xmpp.,
+# files. and secure-files.<root_domain> are the domains below, and every
+# secret is generated. To use your own domain change ROOT_DOMAIN and the
+# seven domains together. Before the first deploy set ADMIN_EMAIL (the admin
+# login), enable HTTPS with Let's Encrypt on the seven domains (the web app
+# only works over https)
 # and turn Isolated Deployment on (Advanced), so the service names stay
 # private to this stack. See README.md.
 
@@ -106,6 +107,11 @@ path = "/bosh"
 serviceName = "minio"
 port = 9000
 host = "files.${root_domain}"
+
+[[config.domains]]
+serviceName = "api"
+port = 8080
+host = "secure-files.${root_domain}"
 
 # The bundle's scripts and templates, mounted from ../files/ by docker-compose.yml.
 [[config.mounts]]

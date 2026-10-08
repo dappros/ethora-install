@@ -763,6 +763,7 @@ domains:
   web: app.chat.example.com          # Frontend web app domain
   xmpp: xmpp.chat.example.com        # XMPP server domain
   files: files.chat.example.com      # MinIO file storage domain
+  secure_files: secure-files.chat.example.com   # Chat attachments, gated by chat membership (setup.sh derives it; blank = public bucket)
   widget: widget.chat.example.com    # Dedicated AI widget host
   mcp: mcp.chat.example.com          # Optional hosted MCP server host (defaults to mcp.<root-of-web> when services.mcp.enabled)
   hosted_apps_root: chat.example.com   # Optional tenant suffix -> <app>.chat.example.com

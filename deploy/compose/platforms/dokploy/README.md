@@ -20,7 +20,7 @@ bundle in this directory's grandparent (`deploy/compose`):
    version; not yet in Dokploy's catalogue (see "Submit the template").
 
 Either way the bundled Caddy stays off (Dokploy's Traefik terminates TLS and
-routes the four hosts), the data lives in Docker volumes prefixed with the
+routes the five hosts), the data lives in Docker volumes prefixed with the
 service's app name, and the installed stack is the one described in
 `../../README.md`.
 
@@ -31,7 +31,7 @@ on a clean Ubuntu host, then register the first user on `http://<host>:3000`.
 
 ## DNS
 
-Point the four hosts at the Dokploy server before deploying, all plain A
+Point the five hosts at the Dokploy server before deploying, all plain A
 records (a wildcard `*.chat.example.com` covers them):
 
 | Host | Routed to |
@@ -40,6 +40,7 @@ records (a wildcard `*.chat.example.com` covers them):
 | `app.chat.example.com` | `frontend:8080`; `centrifugo:8000` for `/connection/websocket` |
 | `xmpp.chat.example.com` | `xmpp:5280`, paths `/ws` and `/bosh` only |
 | `files.chat.example.com` | `minio:9000` |
+| `secure-files.chat.example.com` | `api:8080` (chat attachments, gated by chat membership; the API serves this host itself) |
 
 `chat.example.com` is the root domain; every host derives from it. For a
 test without DNS use `<server IP with dashes>.sslip.io` as the root.
@@ -83,6 +84,7 @@ In Dokploy: project > **Create Service** > **Compose**.
    | `xmpp` | `xmpp.chat.example.com` | 5280 | `/ws` |
    | `xmpp` | `xmpp.chat.example.com` | 5280 | `/bosh` |
    | `minio` | `files.chat.example.com` | 9000 | `/` |
+   | `api` | `secure-files.chat.example.com` | 8080 | `/` |
 
    Leave "Strip Path" off (the default), so `/ws`, `/bosh` and
    `/connection/websocket` reach the containers. Traefik gives the longer

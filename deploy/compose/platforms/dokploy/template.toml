@@ -3,11 +3,12 @@
 # are the bundle's deploy/compose/scripts and deploy/compose/templates.
 #
 # No input is required: root_domain is a Dokploy-generated
-# <name>-<hash>-<ip>.sslip.io host, the four public hosts api., app., xmpp. and
-# files.<root_domain> are the domains below, and every secret is generated.
-# To use your own domain change ROOT_DOMAIN and the six domains together.
-# Before the first deploy set ADMIN_EMAIL (the admin login), enable HTTPS
-# with Let's Encrypt on the six domains (the web app only works over https)
+# <name>-<hash>-<ip>.sslip.io host, the five public hosts api., app., xmpp.,
+# files. and secure-files.<root_domain> are the domains below, and every
+# secret is generated. To use your own domain change ROOT_DOMAIN and the
+# seven domains together. Before the first deploy set ADMIN_EMAIL (the admin
+# login), enable HTTPS with Let's Encrypt on the seven domains (the web app
+# only works over https)
 # and turn Isolated Deployment on (Advanced), so the service names stay
 # private to this stack. See README.md.
 
@@ -106,6 +107,11 @@ path = "/bosh"
 serviceName = "minio"
 port = 9000
 host = "files.${root_domain}"
+
+[[config.domains]]
+serviceName = "api"
+port = 8080
+host = "secure-files.${root_domain}"
 
 # The bundle's scripts and templates, mounted from ../files/ by docker-compose.yml.
 [[config.mounts]]
@@ -279,6 +285,11 @@ content = '''
 //    login's XMPP JWT, and a message sent to it comes back from the room.
 // 4. A file is uploaded and read back through https://files.<root>, then
 //    deleted.
+// 5. A chat attachment is uploaded to the room (POST /v2/files/secure) and
+//    read back from https://secure-files.<root> with the login's fileToken;
+//    the same URL without a token is refused. On an install without the
+//    secure files host (one origin) the route must answer 503, which the
+//    web client treats as "use the public bucket".
 //
 // Exits non-zero on the first failure. The room it creates is left in place
 // (named "verify <timestamp>").
@@ -293,10 +304,12 @@ const origin = (u) => String(u || '').replace(/\/+$/, '')
 const WEB_URL = origin(env.VERIFY_WEB_URL || env.ETHORA_PUBLIC_WEB_URL)
 const API_URL = origin(env.VERIFY_API_URL || env.ETHORA_PUBLIC_API_URL)
 const FILES_URL = origin(env.VERIFY_FILES_URL || env.ETHORA_PUBLIC_FILES_URL)
+const SECURE_FILES_URL = origin(env.VERIFY_SECURE_FILES_URL || env.ETHORA_PUBLIC_SECURE_FILES_URL)
 const XMPP_WS = env.VERIFY_XMPP_WS_URL || env.ETHORA_PUBLIC_XMPP_WS_URL
 const WEB = hostOf(WEB_URL, '')
 const API = hostOf(API_URL, '')
 const FILES = hostOf(FILES_URL, '')
+const SECURE_FILES = hostOf(SECURE_FILES_URL, '')
 const XMPP = env.XMPP_HOST
 const ONE_ORIGIN = WEB_URL === API_URL
 const EMAIL = env.VERIFY_EMAIL || env.PLATFORM_ACCOUNT_EMAIL
@@ -366,7 +379,7 @@ async function xmppRoundTrip({ username, token, roomJid }) {
 }
 
 async function main() {
-  console.log(`Ethora Core compose bundle: verify (web=${WEB_URL} api=${API_URL} xmpp=${XMPP_WS} files=${FILES_URL})\n`)
+  console.log(`Ethora Core compose bundle: verify (web=${WEB_URL} api=${API_URL} xmpp=${XMPP_WS} files=${FILES_URL} secure-files=${SECURE_FILES_URL || 'off'})\n`)
   if (!WEB_URL || !API_URL || !XMPP_WS || !FILES_URL || !XMPP || !EMAIL || !PASSWORD) die('could not derive the public URLs or admin credentials from backend.env')
 
   // 1. public endpoints and certificates
@@ -435,6 +448,36 @@ async function main() {
     if (file._id) await http(`${API_URL}/v2/files/${file._id}`, { method: 'DELETE', headers: auth }).catch(() => {})
   }
 
+  // 5. chat attachment through secure-files.<root>
+  const secureForm = new FormData()
+  secureForm.append('files', new Blob([payload], { type: 'text/plain' }), 'verify-attachment.txt')
+  secureForm.append('chatName', String(localpart).split('@')[0])
+  const sup = await http(`${API_URL}/v2/files/secure`, { method: 'POST', headers: auth, body: secureForm })
+  if (!SECURE_FILES) {
+    if (sup.status === 503) ok('secure files off: /v2/files/secure answers 503 (attachments use the public bucket)')
+    else fail(`secure files off, but /v2/files/secure -> HTTP ${sup.status} ${sup.text.slice(0, 160)} (expected 503)`)
+  } else {
+    const sfile = sup.json && ((sup.json.results && sup.json.results[0]) || sup.json.result)
+    const sloc = sfile && (sfile.location || sfile.url)
+    if (sup.status !== 200 && sup.status !== 201) fail(`attachment upload -> HTTP ${sup.status} ${sup.text.slice(0, 200)}`)
+    else if (!sloc) fail(`attachment upload returned no location: ${sup.text.slice(0, 200)}`)
+    else if (hostOf(sloc, '') !== SECURE_FILES) fail(`attachment is served from ${hostOf(sloc, '')}, expected ${SECURE_FILES}`)
+    else {
+      const anon = await http(sloc).catch((e) => ({ status: 0, text: e.message }))
+      if (anon.status === 401 || anon.status === 403) ok(`attachment without a token is refused (HTTP ${anon.status})`)
+      else fail(`attachment without a token -> HTTP ${anon.status} (expected 401 or 403)`)
+      const fileToken = login.json.fileToken || ''
+      if (!fileToken) fail('login response carries no fileToken to fetch the attachment with')
+      else {
+        const signed = new URL(sloc); signed.searchParams.set('ft', fileToken)
+        const got = await http(signed.toString()).catch((e) => ({ status: 0, text: e.message }))
+        if (got.status === 200 && got.text === payload) ok(`attachment uploaded and read back from ${sloc} with the fileToken`)
+        else fail(`attachment at ${sloc} with the fileToken -> HTTP ${got.status}`)
+      }
+      if (sfile._id) await http(`${API_URL}/v2/files/${sfile._id}`, { method: 'DELETE', headers: auth }).catch(() => {})
+    }
+  }
+
   summary()
 }
 
@@ -474,7 +517,7 @@ content = '''
 # ADMIN_EMAIL is a complete install.
 #
 # Two routing modes, chosen by PUBLIC_URL:
-#   unset  four hosts, api./app./xmpp./files.<ROOT_DOMAIN>, TLS by Caddy
+#   unset  five hosts, api./app./xmpp./files./secure-files.<ROOT_DOMAIN>, TLS by Caddy
 #          (the host installer's layout).
 #   set    one origin, e.g. https://chat.example.com or http://nas.local:8420
 #          (appliances: Umbrel, CasaOS): Caddy routes by path, and the web
@@ -602,6 +645,8 @@ if [ -n "$PUBLIC_URL" ]; then
   # WebSocket URL, so the two must match, even when the host is an IP address.
   export ROOT_DOMAIN="${ROOT_DOMAIN:-$host}"
   export API_DOMAIN="$host" WEB_DOMAIN="$host" FILES_DOMAIN="$host" XMPP_DOMAIN="$host"
+  # No fifth host on one origin: attachments use the public files bucket.
+  export SECURE_FILES_DOMAIN=""
   export BASE_APP_DOMAIN_NAME="${BASE_APP_DOMAIN_NAME:-ethora}"
 else
   [ -n "${ROOT_DOMAIN:-}" ] || die "ROOT_DOMAIN is not set (or set PUBLIC_URL for a one-origin install)"
@@ -610,6 +655,13 @@ else
   export WEB_DOMAIN="${WEB_DOMAIN:-app.$ROOT_DOMAIN}"
   export XMPP_DOMAIN="${XMPP_DOMAIN:-xmpp.$ROOT_DOMAIN}"
   export FILES_DOMAIN="${FILES_DOMAIN:-files.$ROOT_DOMAIN}"
+  # Chat attachments: their own host, served by the API and gated by chat
+  # membership. Derived like the others; `off` leaves it empty (public bucket).
+  case "$(printf '%s' "${SECURE_FILES_DOMAIN:-}" | tr 'A-Z' 'a-z')" in
+    off|none|false|no) SECURE_FILES_DOMAIN="" ;;
+    "") SECURE_FILES_DOMAIN="secure-files.$ROOT_DOMAIN" ;;
+  esac
+  export SECURE_FILES_DOMAIN
   # Base app slug: first label of the web host (app.chat.example.com -> app).
   export BASE_APP_DOMAIN_NAME="${BASE_APP_DOMAIN_NAME:-${WEB_DOMAIN%%.*}}"
 fi
@@ -790,6 +842,7 @@ set_env_line "$stage/api/backend.env" CENTRIFUGO_API_URL "$ETHORA_CENTRIFUGO_URL
   echo "ETHORA_PUBLIC_WEB_URL=$web_url"
   echo "ETHORA_PUBLIC_API_URL=$api_url"
   echo "ETHORA_PUBLIC_FILES_URL=$files_url"
+  echo "ETHORA_PUBLIC_SECURE_FILES_URL=${SECURE_FILES_DOMAIN:+https://$SECURE_FILES_DOMAIN}"
   echo "ETHORA_PUBLIC_XMPP_WS_URL=$xmpp_ws"
   echo "# The API as the other services reach it (scripts/init.sh)."
   echo "API_INTERNAL_URL=$ETHORA_API_URL"
@@ -924,6 +977,9 @@ printf '%s' "$MINIO_ROOT_PASSWORD" > "$stage/minio/root-password"
 if [ -z "$PUBLIC_URL" ]; then
   ETHORA_SITES="$(printf '%s {\n\timport api\n}\n%s {\n\timport web\n}\n%s {\n\timport xmpp\n}\n%s {\n\timport files\n}' \
     "$API_DOMAIN" "$WEB_DOMAIN" "$XMPP_DOMAIN" "$FILES_DOMAIN")"
+  if [ -n "$SECURE_FILES_DOMAIN" ]; then
+    ETHORA_SITES="$ETHORA_SITES$(printf '\n%s {\n\timport secure_files\n}' "$SECURE_FILES_DOMAIN")"
+  fi
 elif [ -n "${ETHORA_SITE_ADDRESS:-}" ]; then
   ETHORA_SITES="$(printf '%s {\n\timport single_origin\n}' "$ETHORA_SITE_ADDRESS")"
 elif [ "$scheme" = https ]; then
@@ -998,7 +1054,7 @@ chmod 644 "$MYSQL_INITDB/01-ejabberd.sql"
 if [ -n "$PUBLIC_URL" ]; then
   log "rendered for one origin $PUBLIC_URL (xmpp domain $XMPP_DOMAIN, base app slug $BASE_APP_DOMAIN_NAME)"
 else
-  log "rendered for $ROOT_DOMAIN: api=$API_DOMAIN web=$WEB_DOMAIN xmpp=$XMPP_DOMAIN files=$FILES_DOMAIN (base app slug: $BASE_APP_DOMAIN_NAME)"
+  log "rendered for $ROOT_DOMAIN: api=$API_DOMAIN web=$WEB_DOMAIN xmpp=$XMPP_DOMAIN files=$FILES_DOMAIN secure-files=${SECURE_FILES_DOMAIN:-off} (base app slug: $BASE_APP_DOMAIN_NAME)"
 fi
 '''
 

@@ -3,8 +3,8 @@ Description: >
   Ethora single-instance deployment from the Ethora AMI. Give the six setup
   answers here to install unattended, or leave RootDomain empty and finish
   on the first-boot setup page (http://<PublicIp>:8888, user admin, password =
-  instance id). DNS A records for api./app./xmpp./files.<RootDomain> must
-  point at the instance before Let's Encrypt can issue certificates.
+  instance id). DNS A records for api./app./xmpp./files./secure-files.<RootDomain>
+  must point at the instance before Let's Encrypt can issue certificates.
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -178,5 +178,5 @@ Outputs:
     Condition: Unattended
     Value: !If
       - HasElasticIp
-      - !Sub "A records -> your Elastic IP: api.${RootDomain}, app.${RootDomain}, xmpp.${RootDomain}, files.${RootDomain}"
-      - !Sub "A records -> ${Instance.PublicIp}: api.${RootDomain}, app.${RootDomain}, xmpp.${RootDomain}, files.${RootDomain}"
+      - !Sub "A records -> your Elastic IP: api.${RootDomain}, app.${RootDomain}, xmpp.${RootDomain}, files.${RootDomain}, secure-files.${RootDomain}"
+      - !Sub "A records -> ${Instance.PublicIp}: api.${RootDomain}, app.${RootDomain}, xmpp.${RootDomain}, files.${RootDomain}, secure-files.${RootDomain}"

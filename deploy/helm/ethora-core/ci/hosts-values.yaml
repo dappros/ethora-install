@@ -1,4 +1,4 @@
-# Four hosts, cert-manager TLS (chart-testing fixture).
+# Five hosts, cert-manager TLS (chart-testing fixture).
 rootDomain: chat.example.com
 admin:
   email: ops@example.com
