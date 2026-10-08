@@ -3,7 +3,7 @@
 name: ethora
 services:
   config:
-    image: docker.io/dappros/ethora-compose-init:2610.10
+    image: docker.io/dappros/ethora-compose-init:2610.16
     user: "0:0"
     entrypoint: ["/bin/sh", "/ethora/scripts/render-config.sh"]
     environment:
@@ -143,7 +143,7 @@ services:
         max-size: "20m"
         max-file: "5"
   xmpp:
-    image: docker.io/dappros/ethora-xmpp:2610.10
+    image: docker.io/dappros/ethora-xmpp:2610.16
     entrypoint: ["/bin/sh", "/ethora/config/scripts/xmpp-start.sh"]
     volumes:
       - /DATA/AppData/$AppID/config:/ethora/config:ro
@@ -165,7 +165,7 @@ services:
         max-size: "20m"
         max-file: "5"
   api:
-    image: docker.io/dappros/ethora-api:2610.10
+    image: docker.io/dappros/ethora-api:2610.16
     entrypoint: ["tini", "--", "bash", "/ethora/config/scripts/api-entrypoint.sh"]
     volumes:
       - /DATA/AppData/$AppID/config:/ethora/config:ro
@@ -194,7 +194,7 @@ services:
       retries: 3
       start_period: 40s
   jobs:
-    image: docker.io/dappros/ethora-api:2610.10
+    image: docker.io/dappros/ethora-api:2610.16
     entrypoint: ["tini", "--", "bash", "/ethora/config/scripts/api-entrypoint.sh"]
     volumes:
       - /DATA/AppData/$AppID/config:/ethora/config:ro
@@ -211,7 +211,7 @@ services:
     healthcheck:
       disable: true
   init:
-    image: docker.io/dappros/ethora-api:2610.10
+    image: docker.io/dappros/ethora-api:2610.16
     entrypoint: ["tini", "--", "bash", "/ethora/config/scripts/api-entrypoint.sh"]
     volumes:
       - /DATA/AppData/$AppID/config:/ethora/config:ro
@@ -230,7 +230,7 @@ services:
     healthcheck:
       disable: true
   frontend:
-    image: docker.io/dappros/ethora-frontend:2610.10
+    image: docker.io/dappros/ethora-frontend:2610.16
     entrypoint: ["/bin/sh", "/ethora/config/scripts/frontend-start.sh"]
     command: ["serve"]
     volumes:
@@ -302,7 +302,7 @@ x-casaos:
   tips:
     before_install:
       en_US: 'Before installing, set two variables of the config container: PUBLIC_URL to the address you open this device by, with port 8456 (for example http://192.168.1.20:8456; shared file links point there), and ADMIN_PASSWORD to the password of the admin account (sign-in e-mail: ADMIN_EMAIL, admin@casaos.local by default). Left empty, a password is generated and printed once in the log of the config container. Every other secret is generated on the first start and kept under /DATA/AppData/ethora/secrets.'
-  version: 26.10.10
+  version: 26.10.16
   website: https://ethora.com
   repo: https://github.com/dappros/ethora-install
   support: https://github.com/dappros/ethora-install/issues
