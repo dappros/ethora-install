@@ -57,7 +57,8 @@ build VM may be any size with quota; the captured image is the same. To
 allow NVMe sizes later, create a new image definition with
 `--features DiskControllerTypes=SCSI,NVMe` and bake into it.
 
-Verified 2026-10-01 on version 2610.5.4 with a Standard_D2s_v4 VM: setup
+Baked 2026-10-09 as 2610.16.0 from ethora-install main (five hosts, secure-files
+served by the API). Verified 2026-10-01 on version 2610.5.4 with a Standard_D2s_v4 VM: setup
 page with the VM id as password, install in under four minutes with
 sslip.io and Let's Encrypt, second submit refused, health check green,
 a room created and messages delivered in the web app.

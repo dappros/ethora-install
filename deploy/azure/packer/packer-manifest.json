@@ -8,7 +8,25 @@
       "artifact_id": "/subscriptions/b8f901b7-2017-424e-ac8f-5c4d4025673c/resourceGroups/ethora-images/providers/Microsoft.Compute/images/ethora-core-2610.5.4",
       "packer_run_uuid": "dc688f3d-35cb-6460-04d0-ea8f284818b1",
       "custom_data": null
+    },
+    {
+      "name": "ethora",
+      "builder_type": "azure-arm",
+      "build_time": 1791216906,
+      "files": null,
+      "artifact_id": "/subscriptions/b8f901b7-2017-424e-ac8f-5c4d4025673c/resourceGroups/ethora-images/providers/Microsoft.Compute/images/ethora-core-2610.5.5",
+      "packer_run_uuid": "ef3b7a06-f981-5a28-2c97-9fc64074476d",
+      "custom_data": null
+    },
+    {
+      "name": "ethora",
+      "builder_type": "azure-arm",
+      "build_time": 1791501095,
+      "files": null,
+      "artifact_id": "/subscriptions/b8f901b7-2017-424e-ac8f-5c4d4025673c/resourceGroups/ethora-images/providers/Microsoft.Compute/images/ethora-core-2610.16.0",
+      "packer_run_uuid": "f9a1e402-cc01-8245-86dd-48bf3da37022",
+      "custom_data": null
     }
   ],
-  "last_run_uuid": "dc688f3d-35cb-6460-04d0-ea8f284818b1"
+  "last_run_uuid": "f9a1e402-cc01-8245-86dd-48bf3da37022"
 }
