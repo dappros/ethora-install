@@ -98,7 +98,8 @@ repository holds the sources.
 | Channel | What you get | Where |
 |---|---|---|
 | AWS Marketplace | AMI with a first-boot setup page; CloudFormation template for unattended installs | [listing](https://aws.amazon.com/marketplace/pp/prodview-xgn2obhnb5au4), sources in [deploy/aws/](deploy/aws/) |
-| Azure, DigitalOcean, Vultr, Akamai (Linode) | Same first-boot setup page as a VM offer, 1-Click Droplet, app image, StackScript | Listings pending; links appear at <https://ethora.com/get/> |
+| Azure Marketplace | VM offer with the same first-boot setup page | [listing in the Azure portal](https://portal.azure.com/#view/Microsoft_Azure_Marketplace/GalleryItemDetailsBladeNopdl/id/ethora.ethora-core) (sign-in required), sources in [deploy/azure/](deploy/azure/) |
+| DigitalOcean, Vultr, Akamai (Linode) | Same setup page as a 1-Click Droplet, app image, StackScript | Listings pending; links appear at <https://ethora.com/get/> |
 | Kubernetes (Helm) | `helm install ethora oci://registry-1.docker.io/dappros/ethora-core --set rootDomain=... --set admin.email=...` | [Artifact Hub](https://artifacthub.io/packages/helm/ethora/ethora-core), chart in [deploy/helm/](deploy/helm/) |
 | Portainer, Coolify, Dokploy | App template / git deploy from the compose project | [deploy/compose/platforms/](deploy/compose/platforms/) |
 | Cloudron | One-click app | [Cloudron App Store](https://ca.cloudron.io/app/ethora), package in [deploy/cloudron/](deploy/cloudron/) |
