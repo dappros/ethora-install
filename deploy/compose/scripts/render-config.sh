@@ -241,6 +241,13 @@ def E2EE_ENABLED false
 def DISABLE_FIREBASE false
 def DISABLE_GA true
 def DISABLE_CLARITY true
+# Error tracker (deploy/monitoring/README.md, "Errors"): a DSN in .env makes
+# the API or the web app report to a Bugsink; empty, nothing is reported. The
+# policy mirrors the installer's default.
+def ERRORS_API_DSN ""
+def ERRORS_WEB_DSN ""
+def ERRORS_ENVIRONMENT "$ROOT_DOMAIN"
+def ERRORS_SEND_PII true
 
 # Whole-line placeholders in the env templates. The values are the
 # production (non-localhost) branch of setup-env.sh replace_template(), with

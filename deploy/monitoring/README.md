@@ -79,6 +79,38 @@ Vector keeps its read positions and a disk buffer in a volume, so restarts
 neither lose nor repeat lines. On its very first start it tails the pm2
 files from their end.
 
+## Errors
+
+The Node services (API, backend-jobs, backend-bc-worker, push, push-worker,
+ai-service) and the web apps can report their exceptions to Bugsink on the
+central monitoring server over the Sentry protocol. `services.monitoring.errors`
+in `deploy.yml` holds one DSN per component (`api`, `push`, `ai`, `web`),
+copied from the project pages on that server (one project per component and
+server). An empty DSN keeps that component silent, which is the default; the
+host's own `mode` does not matter.
+
+An event always carries the exception with its stack trace and the source
+lines around each frame, the service name, the release (the deploy's build
+version) and commit, this host's tenant name (`services.monitoring.remote.tenant`,
+else the API domain) as the environment and, for a request, the request id,
+method, path, user id and app id. What else goes along is
+`services.monitoring.errors.pii`:
+
+- `true` (the default): the request's headers, cookies, query string and
+  body (capped at 64 KB), the client IP and the user's e-mail, so an issue
+  can be read without the server's logs;
+- `false`: none of those; the request keeps its method and bare path, the
+  user is an id, and JWT-looking strings and token query parameters in the
+  error text are redacted before sending.
+
+Reporting costs a normal request nothing: there is no per-request
+middleware, one HTTPS request leaves per escaped error, and the central
+server caps every project at 500 events per 5 minutes and 2000 per hour.
+
+An install whose data must stay on-site leaves every DSN empty, the same
+rule as `logs.enabled: false` in remote mode. A customer install that is
+given a DSN runs with `pii: false`.
+
 ## Files
 
 | Path | Role |

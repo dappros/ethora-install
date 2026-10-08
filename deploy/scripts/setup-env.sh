@@ -144,6 +144,23 @@ if command -v yq >/dev/null 2>&1 && [ -f "$CONFIG_FILE" ]; then
     if [ -z "${HOSTED_APPS_ROOT_DOMAIN:-}" ] || [ "${HOSTED_APPS_ROOT_DOMAIN:-}" == "null" ]; then
         HOSTED_APPS_ROOT_DOMAIN="$(yq eval '.domains.hosted_apps_root // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
     fi
+    # Error tracker DSNs (services.monitoring.errors.*): always re-read, so
+    # clearing one in deploy.yml switches that component off on the next
+    # update. The events are filed under this host's tenant name on the
+    # central monitoring server (services.monitoring.remote.tenant), else the
+    # API domain.
+    _errors_cfg() { local v; v="$(yq eval "$1 // \"\"" "$CONFIG_FILE" 2>/dev/null || echo "")"; [ "$v" = "null" ] && v=""; printf '%s' "$v"; }
+    ERRORS_API_DSN="$(_errors_cfg '.services.monitoring.errors.api')"
+    ERRORS_PUSH_DSN="$(_errors_cfg '.services.monitoring.errors.push')"
+    ERRORS_AI_DSN="$(_errors_cfg '.services.monitoring.errors.ai')"
+    ERRORS_WEB_DSN="$(_errors_cfg '.services.monitoring.errors.web')"
+    ERRORS_ENVIRONMENT="$(_errors_cfg '.services.monitoring.remote.tenant')"
+    # Data policy (services.monitoring.errors.pii): true sends the request
+    # (headers, cookies, body), the client IP and the user's e-mail with an
+    # event; false keeps ids only. Missing key = true, as in the template.
+    ERRORS_SEND_PII="$(_errors_cfg '.services.monitoring.errors.pii')"
+    if [ "$ERRORS_SEND_PII" = "false" ]; then ERRORS_SEND_PII="false"; else ERRORS_SEND_PII="true"; fi
+    export ERRORS_API_DSN ERRORS_PUSH_DSN ERRORS_AI_DSN ERRORS_WEB_DSN ERRORS_ENVIRONMENT ERRORS_SEND_PII
     if [ -z "${PLAYGROUND_ENABLED:-}" ] || [ "${PLAYGROUND_ENABLED:-}" == "null" ]; then
         PLAYGROUND_ENABLED="$(yq eval '.services.playground.enabled | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; PLAYGROUND_ENABLED="${PLAYGROUND_ENABLED:-true}"
     fi
@@ -709,6 +726,16 @@ replace_template() {
     replace_literal "{{PUSH_PLATFORM_DAILY_QUOTA}}" "${PUSH_PLATFORM_DAILY_QUOTA:-1000}"
     replace_literal "{{PUSH_GATEWAY_URL}}" "${PUSH_GATEWAY_URL:-}"
     replace_literal "{{PUSH_GATEWAY_TOKEN}}" "${PUSH_GATEWAY_TOKEN:-}"
+
+    # Error tracker (services.monitoring.errors.* in deploy.yml): one DSN per
+    # component, empty = off. Backend, push, ai-service, frontend and widget
+    # templates.
+    replace_literal "{{ERRORS_API_DSN}}" "${ERRORS_API_DSN:-}"
+    replace_literal "{{ERRORS_PUSH_DSN}}" "${ERRORS_PUSH_DSN:-}"
+    replace_literal "{{ERRORS_AI_DSN}}" "${ERRORS_AI_DSN:-}"
+    replace_literal "{{ERRORS_WEB_DSN}}" "${ERRORS_WEB_DSN:-}"
+    replace_literal "{{ERRORS_ENVIRONMENT}}" "${ERRORS_ENVIRONMENT:-${API_DOMAIN:-}}"
+    replace_literal "{{ERRORS_SEND_PII}}" "${ERRORS_SEND_PII:-true}"
 
     # Centrifugo (per-deployment, non-critical real-time stats).
     # Placeholders are shared between backend.env.template and centrifugo-config.json.template

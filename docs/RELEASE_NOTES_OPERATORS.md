@@ -14,6 +14,16 @@ default is not what you want.
 
 ## 2610 (development line, September 2026)
 
+**Error tracker.** New `services.monitoring.errors` block in `deploy.yml`
+(`api`, `push`, `ai`, `web`), all empty by default, so nothing changes on
+an unedited file. A DSN from the central monitoring server's Bugsink makes
+that component report its exceptions there: stack trace, request id, user
+and app ids, release and this host's tenant name, plus, with `pii: true`
+(the default), the request's headers, cookies and body, the client IP and
+the user's e-mail; `pii: false` keeps ids only. A host whose data must stay
+on-site leaves the DSNs empty. Details in `deploy/monitoring/README.md`,
+section "Errors".
+
 **Seed superadmin is bootstrap only.** The `admin:` block in `deploy.yml`
 (`email`, `password`) now creates the first administrator once, when the
 base app has no superadmin, and is never read again: changing it later does

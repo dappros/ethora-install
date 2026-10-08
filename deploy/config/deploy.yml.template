@@ -259,6 +259,23 @@ services:
     # default. Keep it off on a host whose logs must stay on-site.
     logs:
       enabled: false
+    # Error tracker: the Node services and the web apps report their
+    # exceptions to Bugsink on the central monitoring server (Sentry
+    # protocol). One DSN per component, copied from that server's project
+    # pages; an empty DSN means the component reports nothing, which is the
+    # default and the setting for a host whose data must stay on-site. An
+    # event always carries the stack trace, request id, user and app ids,
+    # release and this host's tenant name. With `pii: true` it also carries
+    # the request's headers, cookies, query string and body, the client IP and
+    # the user's e-mail; with `pii: false` those are dropped and tokens in the
+    # error text are redacted, the setting for a customer install that is
+    # given a DSN.
+    errors:
+      api: ""                # backend API, backend-jobs, backend-bc-worker
+      push: ""               # push service and push-worker
+      ai: ""                 # ai-service
+      web: ""                # admin panel, chat component and AI widget (browser side)
+      pii: true
   ejabberd:
     mode: source                                  # source | image (published ethora-xmpp image with the custom modules)
     image: docker.io/dappros/ethora-xmpp:2610
