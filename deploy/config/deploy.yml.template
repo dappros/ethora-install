@@ -128,26 +128,14 @@ services:
     common_post_url: ""
     # Optional VoIP push endpoint used by mod_offline_post for call events (if you run a VoIP push service).
     voip_post_url: ""
-    # Platform-key push delivery for the universal store build. Set to the appId
-    # whose uploaded Firebase/APNs credentials act as the platform keys (only on
-    # the install that holds them); empty disables local platform delivery.
+    # Push certificates uploaded to the base app serve every app on this
+    # server, with no limits and no settings: an app with no keys of its own
+    # sends with the base app's keys, an app that uploads its own keys sends
+    # with those, and parent/child relations between apps play no role. The
+    # push service finds the base app in the database; this key only
+    # overrides it with another appId whose uploaded keys should act as the
+    # platform keys. Leave empty.
     platform_project_id: ""
-    # Per-app daily cap for platform-key pushes (the app opts in through
-    # PUT /v1/push/platform/:appId or at creation with platformPushEnabled).
-    # 0 = no cap, the default; set a number on a multi-tenant install that
-    # hands its keys to apps it does not run itself.
-    platform_daily_quota: 0
-    # Install-wide opt-in: true makes every app of this install deliver over
-    # the platform keys until it is switched off per app (PUT
-    # /v1/push/platform/:appId with enabled: false); new apps are created
-    # opted in and the first device token of an app the push service has not
-    # seen yet creates its record. Keep false on a multi-tenant install, where
-    # each owner opts in.
-    platform_push_default: false
-    # Use the platform keys also for tokens registered as buildOrigin=tenant
-    # when the app has no credentials of its own (mobile builds whose SDK does
-    # not mark its tokens as platform builds).
-    platform_fallback: false
     # Installs without the platform keys forward platform-build pushes to the
     # central install's push gateway instead. Leave empty when not used.
     gateway_url: ""

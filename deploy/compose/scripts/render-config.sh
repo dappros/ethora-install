@@ -257,9 +257,6 @@ def ERRORS_API_DSN ""
 def ERRORS_WEB_DSN ""
 def ERRORS_ENVIRONMENT "$ROOT_DOMAIN"
 def ERRORS_SEND_PII true
-# Platform-push opt-in default for new apps (the push service is not part of
-# this bundle, so the flag only mirrors onto the App; same default as the installer).
-def PUSH_PLATFORM_DEFAULT_ENABLED false
 
 # Whole-line placeholders in the env templates. The values are the
 # production (non-localhost) branch of setup-env.sh replace_template(), with

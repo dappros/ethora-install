@@ -14,17 +14,22 @@ default is not what you want.
 
 ## 2610 (development line, September 2026)
 
-**Platform-key pushes for every app.** Three keys under `services.push` in
-`deploy.yml`, all with defaults that keep the old behaviour except the cap:
-`platform_daily_quota` now defaults to 0, no per-app daily cap (a file that
-still carries 1000 keeps its cap until the line is changed);
-`platform_push_default: true` opts every app of the install in, so an
-install whose apps are all its own needs no per-app switch, new apps are
-created opted in and the first device token of an app the push service has
-not seen creates its record (keep false on a multi-tenant install);
-`platform_fallback: true` uses the platform keys also for tokens registered
-as `buildOrigin: tenant` when the app has no keys of its own. Apps can also
-opt in at creation with `platformPushEnabled` on POST /v1/apps and /v2/apps.
+**Push certificates of the base app serve every app.** The rules, with no
+settings in `deploy.yml` and no limits:
+
+1. If push certificates are uploaded in the base app, they work for all apps
+   on the server automatically.
+2. If the owner of any other app uploads a push certificate into their app,
+   that certificate takes priority and the app sends with it.
+3. Parent / child relations between apps play no role: a child app without
+   its own certificate keeps using the base app's, not its parent's.
+
+Each server uses its own base app certificate; nothing is shared across
+servers. `services.push.platform_project_id` is now only an override of the
+base app and can stay empty; `platform_daily_quota`, `platform_push_default`
+and `platform_fallback` from earlier 2610 builds are ignored and can be
+removed. An app can be switched off with `PUT /v1/push/platform/:appId`
+(`enabled: false`) or created switched off with `platformPushEnabled: false`.
 Also applied to 2609.
 
 **Error tracker.** New `services.monitoring.errors` block in `deploy.yml`
