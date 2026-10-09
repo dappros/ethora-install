@@ -20,14 +20,16 @@
 #   --display-name NAME      base app display name (default: Ethora)
 #   --license-key KEY        ETHORA1.<payload>.<signature>; empty = Ethora Core
 #   --no-call-home           air-gapped install (needs an offline key)
-#   --modules LIST           Enterprise modules to run, comma-separated (ai), or
-#                            `none`; each one is a compose profile. The images
+#   --modules LIST           Enterprise modules to run, comma-separated (ai, push,
+#                            playground, mcp, uptime), or `none`; each one is a
+#                            compose profile. The images
 #                            are private: `docker login` with the registry token
 #                            from the admin panel's License page first.
 #   --ai-api-key KEY         ai module: key of the OpenAI-compatible provider
 #   --ai-api-url URL         ai module: provider base URL (default https://api.openai.com/v1)
 #   --widget HOST            ai module: widget host (default widget.<root>)
 #   --no-caddy               no bundled proxy; the platform routes the five hosts
+#   --caddy                  bundled proxy back on (the default on a fresh install)
 #   --local-certs            Caddy issues self-signed certificates (LAN tests)
 #   --out FILE               default: .env next to this script
 #   --force                  start over: regenerate every secret (fresh installs only)
@@ -81,6 +83,7 @@ while [ $# -gt 0 ]; do
     --ai-api-url) A_AI_API_URL="$2"; shift 2 ;;
     --widget) A_WIDGET="$2"; shift 2 ;;
     --no-caddy) A_CADDY="off"; shift ;;
+    --caddy) A_CADDY="on"; shift ;;
     --local-certs) A_LOCAL_CERTS=true; shift ;;
     --out) OUT_FILE="$2"; shift 2 ;;
     --force) FORCE=true; shift ;;
@@ -216,10 +219,11 @@ A_CALL_HOME="${A_CALL_HOME:-true}"
 
 # Profiles: the bundled proxy (caddy) and the Enterprise modules. The
 # modules answered replace the previous ones; the proxy choice is kept.
-KNOWN_MODULES=" ai "
+KNOWN_MODULES=" ai push playground mcp uptime "
 old_profiles="$(old COMPOSE_PROFILES)"; has_old COMPOSE_PROFILES || old_profiles="caddy"
 CADDY_ON=false; case ",$old_profiles," in *,caddy,*) CADDY_ON=true ;; esac
 [ "$A_CADDY" = "off" ] && CADDY_ON=false
+[ "$A_CADDY" = "on" ] && CADDY_ON=true
 MODULES=""
 if [ -n "$A_MODULES" ]; then
   for m in $(printf '%s' "$A_MODULES" | tr ',' ' ' | tr 'A-Z' 'a-z'); do
@@ -242,6 +246,11 @@ if [ "$AI_ON" = true ]; then
   [ -n "$A_LICENSE_KEY" ] || warn "WARNING: the ai module needs a licence key with the ai feature (--license-key); without one the API refuses agent requests"
   [ -n "$A_AI_API_KEY" ] || warn "WARNING: no AI provider key (--ai-api-key); agents cannot answer until AI_API_KEY is set in .env"
 fi
+if [ -n "$A_PUBLIC_URL" ]; then
+  for m in playground mcp uptime; do
+    case " $MODULES " in *" $m "*) die "the $m module needs a host of its own (api./app./... under a root domain); it cannot run on a one-origin install" ;; esac
+  done
+fi
 CADDY_OPTS="$(old CADDY_GLOBAL_OPTIONS)"
 [ "$A_LOCAL_CERTS" = true ] && CADDY_OPTS="local_certs"
 
@@ -263,8 +272,13 @@ fi
 echo "  Admin:           $A_ADMIN_EMAIL  ($([ "$GENERATED_PASSWORD" = true ] && echo "password generated" || echo "password kept/supplied"))"
 echo "  Display name:    $A_DISPLAY_NAME"
 echo "  License:         $([ -n "$A_LICENSE_KEY" ] && echo "key ${A_LICENSE_KEY:0:24}..." || echo "none (Ethora Core; register from the admin panel)")  call-home=$A_CALL_HOME"
-if [ "$AI_ON" = true ]; then
-  echo "  Modules:         $MODULES (widget=$([ -n "$A_PUBLIC_URL" ] && echo "$A_PUBLIC_URL/widget/" || echo "${V_WIDGET:-widget.$A_DOMAIN}"), AI provider $A_AI_API_URL, key $([ -n "$A_AI_API_KEY" ] && echo set || echo MISSING))"
+if [ -n "$MODULES" ]; then
+  echo "  Modules:         $MODULES"
+  [ "$AI_ON" != true ] || echo "                   ai: widget=$([ -n "$A_PUBLIC_URL" ] && echo "$A_PUBLIC_URL/widget/" || echo "${V_WIDGET:-widget.$A_DOMAIN}"), AI provider $A_AI_API_URL, key $([ -n "$A_AI_API_KEY" ] && echo set || echo MISSING)"
+  for m in playground mcp uptime; do
+    case " $MODULES " in *" $m "*) echo "                   $m: https://$m.$A_DOMAIN$([ "$m" = mcp ] && echo /mcp)$([ "$m" = uptime ] && echo ' (basic auth, password in .env as UPTIME_AUTH_PASSWORD)')" ;; esac
+  done
+  case " $MODULES " in *" push "*) echo "                   push: api.$A_DOMAIN/push/ for mobile apps; platform keys uploaded in the admin panel" ;; esac
 else
   echo "  Modules:         none (Ethora Core)"
 fi
@@ -323,6 +337,9 @@ secret CENTRIFUGO_ADMIN_SECRET 64
 secret AI_SERVICE_SECRET 32
 secret DOCS_PARSE_SECRET 32
 secret AI_POSTGRES_PASSWORD 32
+secret B2B_PUSH_SECRET 32
+secret UPTIME_POSTGRES_PASSWORD 32
+secret UPTIME_AUTH_PASSWORD 24
 v="$(old WIDGET_SCRIPT_VERSION)"; set_new WIDGET_SCRIPT_VERSION "${v:-$(date -u +%y%m)}"
 
 quote() { # plain when safe, else single-quoted (compose takes it literally)
@@ -366,6 +383,6 @@ if [ "$GENERATED_PASSWORD" = true ]; then
   echo
 fi
 echo "Next:"
-[ "$AI_ON" != true ] || echo "  docker login                # the ai module's images are private: the registry token from the License page"
+[ -z "$MODULES" ] || echo "  docker login                # the modules' images are private: the registry token from the License page"
 echo "  docker compose up -d        # first start takes a few minutes"
 echo "  docker compose logs -f init # first-boot steps; ends with 'done'"

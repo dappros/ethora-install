@@ -31,6 +31,9 @@ centrifugo_admin_secret = "${password:64}"
 ai_service_secret = "${password:32}"
 docs_parse_secret = "${password:32}"
 ai_postgres_password = "${password:32}"
+b2b_push_secret = "${password:32}"
+uptime_postgres_password = "${password:32}"
+uptime_auth_password = "${password:24}"
 # At-rest encryption: a passphrase for wallet keys, and "<64 hex>:<32 hex>" AES key and IV pairs.
 cryptopair_secret = "${password:48}"
 secret_for_db_encryption = "${hash:64}:${hash:32}"
@@ -40,8 +43,11 @@ secret_for_files_encryption = "${hash:64}:${hash:32}"
 # The keys of the bundle's .env.example (deploy/compose/.env.example in
 # github.com/dappros/ethora-install), same order, without the per-host
 # overrides (API_DOMAIN, WIDGET_DOMAIN, ...) and the bundled proxy's settings
-# (the Enterprise modules, COMPOSE_PROFILES=ai, need their hosts routed by
-# Traefik like the five below: widget.<root> to widget:8080). ADMIN_EMAIL
+# (the Enterprise modules, COMPOSE_PROFILES=ai,push,..., need their hosts
+# routed by Traefik like the five below: widget.<root> to widget:8080,
+# playground.<root> to playground:3020, mcp.<root> to mcp:3030, uptime.<root>
+# to uptime:8099 behind a basic-auth middleware, and api.<root>/push/ to
+# push:8098 with the prefix stripped). ADMIN_EMAIL
 # is the admin login; ADMIN_PASSWORD its initial password. MYSQL_ROOT_PASSWORD
 # and MINIO_ROOT_* are written into the databases on the first start and must
 # not change after it.
@@ -72,16 +78,28 @@ env = [
   "AI_SERVICE_SECRET=${ai_service_secret}",
   "DOCS_PARSE_SECRET=${docs_parse_secret}",
   "AI_POSTGRES_PASSWORD=${ai_postgres_password}",
+  "B2B_PUSH_SECRET=${b2b_push_secret}",
+  "UPTIME_POSTGRES_PASSWORD=${uptime_postgres_password}",
+  "UPTIME_AUTH_PASSWORD=${uptime_auth_password}",
   "AI_API_URL=https://api.openai.com/v1",
   "AI_API_KEY=",
   "AI_CHAT_MODEL=gpt-5.6-luna",
   "AI_EMBEDDING_MODEL=text-embedding-3-small",
   "AI_PG_URL=",
   "WIDGET_SCRIPT_VERSION=",
+  "PUSH_PLATFORM_PROJECT_ID=",
+  "PUSH_GATEWAY_URL=",
+  "PUSH_GATEWAY_TOKEN=",
+  "MCP_ENABLE_DANGEROUS_TOOLS=true",
+  "UPTIME_AUTH_USER=admin",
   "ETHORA_API_IMAGE=docker.io/dappros/ethora-api:2610",
   "ETHORA_FRONTEND_IMAGE=docker.io/dappros/ethora-frontend:2610",
   "ETHORA_XMPP_IMAGE=docker.io/dappros/ethora-xmpp:2610",
   "ETHORA_AI_IMAGE=docker.io/dappros/ethora-ai:2610",
+  "ETHORA_PUSH_IMAGE=docker.io/dappros/ethora-push:2610",
+  "ETHORA_PLAYGROUND_IMAGE=docker.io/dappros/ethora-playground:2610",
+  "ETHORA_MCP_IMAGE=docker.io/dappros/ethora-mcp:2610",
+  "ETHORA_UPTIME_IMAGE=docker.io/dappros/ethora-uptime:2610",
   "COMPOSE_PROFILES=",
 ]
 
@@ -166,6 +184,10 @@ filePath = "/scripts/ai-pg-schema.js"
 @content scripts/ai-pg-schema.js
 
 [[config.mounts]]
+filePath = "/scripts/module-start.sh"
+@content scripts/module-start.sh
+
+[[config.mounts]]
 filePath = "/templates/backend.env.template"
 @content templates/backend.env.template
 
@@ -188,3 +210,19 @@ filePath = "/templates/docs-parse.env.template"
 [[config.mounts]]
 filePath = "/templates/widget.env.template"
 @content templates/widget.env.template
+
+[[config.mounts]]
+filePath = "/templates/push.env.template"
+@content templates/push.env.template
+
+[[config.mounts]]
+filePath = "/templates/mcp.env.template"
+@content templates/mcp.env.template
+
+[[config.mounts]]
+filePath = "/templates/uptime.env.template"
+@content templates/uptime.env.template
+
+[[config.mounts]]
+filePath = "/templates/uptime-config.yml.template"
+@content templates/uptime-config.yml.template

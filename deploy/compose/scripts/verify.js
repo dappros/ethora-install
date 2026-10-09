@@ -21,6 +21,11 @@
 //    widget script is served from its public URL with this install's API
 //    URL in it, ai-service and docs-parse answer on the compose network,
 //    and the licence carries the ai feature.
+// 7. The other modules, each when on (PUSH_ENABLED, PLAYGROUND_ENABLED,
+//    MCP_ENABLED, UPTIME_ENABLED in backend.env): the push service answers
+//    internally and at api.<root>/push/, the playground page loads, the MCP
+//    server's health and the API's OAuth metadata answer, the uptime
+//    dashboard refuses without credentials and answers with them.
 //
 // Exits non-zero on the first failure. The room it creates is left in place
 // (named "verify <timestamp>").
@@ -39,6 +44,8 @@ const SECURE_FILES_URL = origin(env.VERIFY_SECURE_FILES_URL || env.ETHORA_PUBLIC
 const XMPP_WS = env.VERIFY_XMPP_WS_URL || env.ETHORA_PUBLIC_XMPP_WS_URL
 const WIDGET_URL = env.VERIFY_WIDGET_URL || env.ETHORA_PUBLIC_WIDGET_URL || ''
 const AI_MODULE = String(env.AI_SERVICE_ENABLED) === 'true'
+const on = (k) => String(env[k]) === 'true'
+const MODULES = { push: on('PUSH_ENABLED'), playground: on('PLAYGROUND_ENABLED'), mcp: on('MCP_ENABLED'), uptime: on('UPTIME_ENABLED') }
 const WEB = hostOf(WEB_URL, '')
 const API = hostOf(API_URL, '')
 const FILES = hostOf(FILES_URL, '')
@@ -112,7 +119,8 @@ async function xmppRoundTrip({ username, token, roomJid }) {
 }
 
 async function main() {
-  console.log(`Ethora Core compose bundle: verify (web=${WEB_URL} api=${API_URL} xmpp=${XMPP_WS} files=${FILES_URL} secure-files=${SECURE_FILES_URL || 'off'} ai=${AI_MODULE ? WIDGET_URL : 'off'})\n`)
+  const mods = Object.keys(MODULES).filter((k) => MODULES[k])
+  console.log(`Ethora Core compose bundle: verify (web=${WEB_URL} api=${API_URL} xmpp=${XMPP_WS} files=${FILES_URL} secure-files=${SECURE_FILES_URL || 'off'} ai=${AI_MODULE ? WIDGET_URL : 'off'}${mods.length ? ' modules=' + mods.join(',') : ''})\n`)
   if (!WEB_URL || !API_URL || !XMPP_WS || !FILES_URL || !XMPP || !EMAIL || !PASSWORD) die('could not derive the public URLs or admin credentials from backend.env')
 
   // 1. public endpoints and certificates
@@ -236,6 +244,47 @@ async function main() {
     const d = dp ? await http(`${dp}/health`).catch((e) => ({ status: 0, text: e.message })) : { status: 0, text: 'no URL' }
     if (d.status === 200) ok(`docs-parse answers at ${dp}`)
     else fail(`docs-parse at ${dp || 'unset'} -> ${d.status ? `HTTP ${d.status}` : d.text}`)
+  }
+
+  // 7. push, playground, mcp, uptime
+  const probe = (url, opts) => http(url, opts).catch((e) => ({ status: 0, text: e.cause ? e.cause.code || e.cause.message : e.message }))
+  const show = (r) => (r.status ? `HTTP ${r.status}` : r.text)
+  if (MODULES.push) {
+    const p = await probe(`${env.PUSH_INTERNAL_URL || 'http://push:8098'}/health`)
+    if (p.status === 200) ok(`push service answers at ${env.PUSH_INTERNAL_URL || 'http://push:8098'}`)
+    else fail(`push service -> ${show(p)}`)
+    const pub = await probe(`${API_URL}/push/health`)
+    if (pub.status === 200) ok(`push service reachable for mobile apps at ${API_URL}/push/`)
+    else fail(`${API_URL}/push/health -> ${show(pub)} (the proxy must route /push/ to the push service)`)
+  }
+  if (MODULES.playground) {
+    const u = origin(env.ETHORA_PUBLIC_PLAYGROUND_URL)
+    const r = u ? await probe(`${u}/`) : { status: 0, text: 'no URL' }
+    if (r.status === 200) ok(`SDK playground answers at ${u}`)
+    else fail(`SDK playground at ${u || 'unset'} -> ${show(r)} (its first start builds the app; try again in a few minutes)`)
+  }
+  if (MODULES.mcp) {
+    const h = await probe(`${env.MCP_INTERNAL_URL || 'http://mcp:3030'}/healthz`)
+    if (h.status === 200) ok(`MCP server answers at ${env.MCP_INTERNAL_URL || 'http://mcp:3030'}`)
+    else fail(`MCP server -> ${show(h)}`)
+    const pubUrl = String(env.ETHORA_PUBLIC_MCP_URL || '')
+    const base = pubUrl.replace(/\/mcp$/, '')
+    const m = base ? await probe(`${base}/healthz`) : { status: 0, text: 'no URL' }
+    if (m.status === 200) ok(`MCP server reachable at ${pubUrl}`)
+    else fail(`MCP server at ${base || 'unset'}/healthz -> ${show(m)}`)
+    const oauth = await probe(`${API_URL}/.well-known/oauth-authorization-server`)
+    if (oauth.status === 200 && oauth.json && oauth.json.issuer) ok(`OAuth authorization server on the API (issuer ${oauth.json.issuer})`)
+    else fail(`${API_URL}/.well-known/oauth-authorization-server -> ${show(oauth)}`)
+  }
+  if (MODULES.uptime) {
+    const u = origin(env.ETHORA_PUBLIC_UPTIME_URL)
+    const anon = u ? await probe(`${u}/health`) : { status: 0, text: 'no URL' }
+    if (anon.status === 401) ok(`uptime dashboard at ${u} asks for credentials`)
+    else fail(`uptime dashboard at ${u || 'unset'} without credentials -> ${show(anon)} (expected 401)`)
+    const cred = Buffer.from(`${env.UPTIME_AUTH_USER || 'admin'}:${env.UPTIME_AUTH_PASSWORD || ''}`).toString('base64')
+    const authed = u ? await probe(`${u}/health`, { headers: { Authorization: `Basic ${cred}` } }) : { status: 0, text: 'no URL' }
+    if (authed.status === 200) ok(`uptime dashboard answers with the configured credentials`)
+    else fail(`uptime dashboard with credentials -> ${show(authed)}`)
   }
 
   summary()

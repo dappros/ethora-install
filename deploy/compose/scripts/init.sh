@@ -104,6 +104,40 @@ else
   warn "translate language sync failed (non-fatal): $(printf '%s' "$out" | tr '\n' ' ' | head -c 240)"
 fi
 
+# ------------------------------------------ 5. base app credentials --
+# The playground and uptime modules drive the API as the base app (B2B):
+# leave its id and secret in the config volume for module-start.sh. Mongo
+# through the API image's own models (bytecode builds included).
+creds_dir="${ETHORA_CONFIG_DIR:-/ethora/config}/base-app"
+if mkdir -p "$creds_dir" 2>/dev/null && [ -w "$creds_dir" ]; then
+  if out="$(NODE_NO_WARNINGS=1 node -e '
+    try { require("/app/node_modules/bytenode") } catch (_) {}
+    const mongoose = require("/app/node_modules/mongoose")
+    const App = require("/app/dist/src/models/apps")
+    mongoose.connect(process.argv[1]).then(async () => {
+      const app = await App.findOne({ domainName: process.argv[2] }).lean()
+      if (!app) throw new Error("base app not found")
+      const b64 = (v) => Buffer.from(String(v || ""), "utf8").toString("base64")
+      process.stdout.write(`ID=${b64(app._id)}\nSECRET=${b64(app.tenantSecret || app.appSecret || "")}\n`)
+      await mongoose.disconnect()
+    }).catch((e) => { console.error(e.message); process.exit(1) })
+  ' "$MONGO_URI" "${BASE_APP_DOMAIN_NAME:-}" 2>&1)"; then
+    app_id="$(printf '%s\n' "$out" | sed -n 's/^ID=//p' | base64 -d)"
+    app_secret="$(printf '%s\n' "$out" | sed -n 's/^SECRET=//p' | base64 -d)"
+    if [ -n "$app_id" ] && [ -n "$app_secret" ]; then
+      umask 077
+      printf 'ETHORA_CHAT_APP_ID=%s\nETHORA_CHAT_APP_SECRET=%s\n' "$app_id" "$app_secret" > "$creds_dir/credentials.env.tmp" \
+        && mv "$creds_dir/credentials.env.tmp" "$creds_dir/credentials.env" && log "base app credentials written for the playground and uptime modules"
+    else
+      warn "base app credentials incomplete (non-fatal): $(printf '%s' "$out" | head -c 200)"
+    fi
+  else
+    warn "base app credentials lookup failed (non-fatal): $(printf '%s' "$out" | tail -n 2 | tr '\n' ' ')"
+  fi
+else
+  log "config volume not writable here; base app credentials for the modules skipped"
+fi
+
 # ----------------------------------------------------------------- done --
 if curl -fsS --max-time 5 "$API_URL/v1/apps/get-config?domainName=${BASE_APP_DOMAIN_NAME:-}" >/dev/null 2>&1; then
   log "base app config served by the API"

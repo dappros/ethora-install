@@ -27,12 +27,14 @@
 	}
 }
 
-# API (api.conf.template)
+# API (api.conf.template). With the push module, mobile apps reach the push
+# service at api.<root>/push/ (ETHORA_PUSH_ROUTE is empty without it).
 (api) {
 	import security_headers
 	# Prometheus metrics stay internal.
 	@metrics path /metrics
 	respond @metrics 404
+	{$ETHORA_PUSH_ROUTE}
 	reverse_proxy {$UPSTREAM_API}
 }
 
@@ -90,6 +92,23 @@
 	reverse_proxy {$UPSTREAM_WIDGET}
 }
 
+# SDK playground (playground.conf.template): a Next.js app of its own.
+(playground) {
+	import security_headers
+	reverse_proxy {$UPSTREAM_PLAYGROUND}
+}
+
+# Hosted MCP server (mcp.conf.template): Streamable HTTP at /mcp; the OAuth
+# server behind it is the API host.
+(mcp) {
+	import security_headers
+	reverse_proxy {$UPSTREAM_MCP}
+}
+
+# The uptime dashboard's site block is generated (render-config.sh): its
+# basic_auth line carries the bcrypt hash the caddy service computes from
+# the rendered password at start.
+
 # Everything on one origin (PUBLIC_URL), routed by path. The web app owns
 # every path the others do not: its routes are /, /login, /register and
 # /app/...; the public files bucket is /files/, the widget (ai module) is
@@ -99,10 +118,11 @@
 	header X-Robots-Tag "noindex, nofollow"
 	@metrics path /metrics
 	respond @metrics 404
-	@api path /v1 /v1/* /v2 /v2/* /api-docs /api-docs/*
+	@api path /v1 /v1/* /v2 /v2/* /api-docs /api-docs/* /oauth /oauth/* /.well-known/*
 	handle @api {
 		reverse_proxy {$UPSTREAM_API}
 	}
+	{$ETHORA_PUSH_ROUTE}
 	{$ETHORA_WIDGET_ROUTE}
 	handle /ws* {
 		reverse_proxy {$UPSTREAM_XMPP}

@@ -81,6 +81,17 @@ services:
       AI_PG_URL: ${AI_PG_URL:-}
       WIDGET_DOMAIN: ${WIDGET_DOMAIN:-}
       WIDGET_SCRIPT_VERSION: ${WIDGET_SCRIPT_VERSION:-}
+      B2B_PUSH_SECRET: ${B2B_PUSH_SECRET:-}
+      UPTIME_POSTGRES_PASSWORD: ${UPTIME_POSTGRES_PASSWORD:-}
+      UPTIME_AUTH_PASSWORD: ${UPTIME_AUTH_PASSWORD:-}
+      PUSH_PLATFORM_PROJECT_ID: ${PUSH_PLATFORM_PROJECT_ID:-}
+      PUSH_GATEWAY_URL: ${PUSH_GATEWAY_URL:-}
+      PUSH_GATEWAY_TOKEN: ${PUSH_GATEWAY_TOKEN:-}
+      PLAYGROUND_DOMAIN: ${PLAYGROUND_DOMAIN:-}
+      MCP_DOMAIN: ${MCP_DOMAIN:-}
+      UPTIME_DOMAIN: ${UPTIME_DOMAIN:-}
+      MCP_ENABLE_DANGEROUS_TOOLS: ${MCP_ENABLE_DANGEROUS_TOOLS:-true}
+      UPTIME_AUTH_USER: ${UPTIME_AUTH_USER:-admin}
     volumes:
       - config:/out/config
       - mysql-initdb:/out/mysql-initdb
@@ -260,6 +271,10 @@ services:
   init:
     <<: *api
     command: ["init"]
+    # Read-write: init leaves the base app's API credentials for the
+    # playground and uptime modules in base-app/ (see scripts/init.sh).
+    volumes:
+      - config:/ethora/config
     depends_on:
       api:
         condition: service_healthy
@@ -416,6 +431,144 @@ services:
     restart: unless-stopped
     <<: *logging
 
+  # ----------------------------------------------------- push module (push) --
+  # Profile `push`: push notifications (FCM/APNs). The API proxies /v1/push/*
+  # to the server; mobile apps reach it at api.<root>/push/ through the proxy.
+  # Uploaded platform keys live in the push-uploads volume.
+  push:
+    image: ${ETHORA_PUSH_IMAGE:-docker.io/dappros/ethora-push:2610}
+    profiles: ["push"]
+    entrypoint: ["tini", "--", "sh", "/ethora/config/scripts/module-start.sh"]
+    command: ["push", "server"]
+    volumes:
+      - config:/ethora/config:ro
+      - push-uploads:/app/push/uploads
+    depends_on:
+      config:
+        condition: service_completed_successfully
+      mongo-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8098"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    <<: *logging
+
+  push-worker:
+    image: ${ETHORA_PUSH_IMAGE:-docker.io/dappros/ethora-push:2610}
+    profiles: ["push"]
+    entrypoint: ["tini", "--", "sh", "/ethora/config/scripts/module-start.sh"]
+    command: ["push", "worker"]
+    volumes:
+      - config:/ethora/config:ro
+      - push-uploads:/app/push/uploads
+    depends_on:
+      push:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    <<: *logging
+
+  # ------------------------------------------------ playground (playground) --
+  # Profile `playground`: the SDK playground (Next.js) on playground.<root>.
+  # Next inlines its public URLs at build time, so the container builds on
+  # its first start for this install (about 1.5 GB of RAM for a few minutes)
+  # and keeps the build in the playground-next volume.
+  playground:
+    image: ${ETHORA_PLAYGROUND_IMAGE:-docker.io/dappros/ethora-playground:2610}
+    profiles: ["playground"]
+    entrypoint: ["tini", "--", "sh", "/ethora/config/scripts/module-start.sh"]
+    command: ["playground"]
+    volumes:
+      - config:/ethora/config:ro
+      - playground-next:/app/.next
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:3020/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 600s
+    <<: *logging
+
+  # ------------------------------------------------------- mcp module (mcp) --
+  # Profile `mcp`: the hosted MCP server on mcp.<root>; the API serves the
+  # OAuth authorization server on api.<root> when the module is on.
+  mcp:
+    image: ${ETHORA_MCP_IMAGE:-docker.io/dappros/ethora-mcp:2610}
+    profiles: ["mcp"]
+    entrypoint: ["sh", "/ethora/config/scripts/module-start.sh"]
+    command: ["mcp"]
+    volumes:
+      - config:/ethora/config:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3030/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    <<: *logging
+
+  # ------------------------------------------------- uptime module (uptime) --
+  # Profile `uptime`: synthetic checks and journeys against this install, with
+  # a dashboard on uptime.<root> behind basic auth (UPTIME_AUTH_USER /
+  # UPTIME_AUTH_PASSWORD), and a Postgres of its own.
+  uptime-db:
+    image: ${UPTIME_POSTGRES_IMAGE:-docker.io/library/postgres:16-alpine}
+    profiles: ["uptime"]
+    environment:
+      POSTGRES_USER: uptime
+      POSTGRES_DB: uptime
+      POSTGRES_PASSWORD_FILE: /ethora/config/uptime-db/password
+    volumes:
+      - uptime-postgres:/var/lib/postgresql/data
+      - config:/ethora/config:ro
+    depends_on:
+      config:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U uptime -d uptime"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    <<: *logging
+
+  uptime:
+    image: ${ETHORA_UPTIME_IMAGE:-docker.io/dappros/ethora-uptime:2610}
+    profiles: ["uptime"]
+    entrypoint: ["sh", "/ethora/config/scripts/module-start.sh"]
+    command: ["uptime"]
+    volumes:
+      - config:/ethora/config:ro
+    depends_on:
+      uptime-db:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8099"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    <<: *logging
+
 volumes:
   # Your data. Survive `docker compose down`; `down -v` deletes them.
   mongo:
@@ -424,6 +577,9 @@ volumes:
   redis:
   secrets:         # secrets generated for values left out of .env
   ai-postgres:     # ai module: embeddings (pgvector)
+  push-uploads:    # push module: uploaded platform keys
+  playground-next: # playground module: the built app (rebuilt when its URLs change)
+  uptime-postgres: # uptime module: check history
   # Regenerated on every start; safe to delete.
   mongo-config:
   config:

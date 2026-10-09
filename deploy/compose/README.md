@@ -127,6 +127,7 @@ message sent over `wss://xmpp.<root>/ws`, a file uploaded and read back from
 | `mongo`, `mysql`, `redis`, `centrifugo` | stock images | internal only |
 | `config`, `mongo-init`, `init` | the images above | one-shot steps, run on every `up`, then exit (0) |
 | `ai-service`, `docs-parse`, `widget`, `ai-postgres` | `dappros/ethora-ai`, `pgvector`, `caddy` | the `ai` module (profile `ai`; see Enterprise modules) |
+| `push`, `push-worker`, `playground`, `mcp`, `uptime`, `uptime-db` | `dappros/ethora-push`, `-playground`, `-mcp`, `-uptime`, `postgres` | the other modules, each behind its profile |
 
 `config` renders every service's configuration from `.env` with the same
 templates the host installer uses (and generates the secrets `.env` leaves
@@ -180,6 +181,9 @@ Named Docker volumes (under `/var/lib/docker/volumes/` on a default host):
 | `ethora_caddy-data` | certificates and the ACME account |
 | `ethora_secrets` | the secrets `.env` left out, generated on the first start |
 | `ethora_ai-postgres` | ai module: the agents' document embeddings |
+| `ethora_push-uploads` | push module: uploaded platform keys |
+| `ethora_uptime-postgres` | uptime module: check history |
+| `ethora_playground-next` | playground module: the built app (regenerated; no backup needed) |
 | `.env` (this directory) | your settings and the secrets it carries |
 
 They survive `docker compose down`, image updates and reboots.
@@ -201,7 +205,8 @@ done
 docker compose start
 ```
 
-(Add `ai-postgres` to the list with the ai module.)
+(Add `ai-postgres`, `push-uploads` and `uptime-postgres` to the list with
+those modules.)
 
 Restore on a new host: copy this directory with `backup/`, then, before
 anything has started there:
@@ -244,6 +249,20 @@ values in `.env` by hand (see `.env.example`, "modules").
 | Module | Profile | Runs | Host |
 |---|---|---|---|
 | AI agents | `ai` | `ai-service`, `docs-parse`, `ai-postgres` (pgvector), `ai-init`, `widget-export`, `widget` from `dappros/ethora-ai` | `widget.<root>` (the website chat widget; `/widget/` on one origin) |
+| Push notifications | `push` | `push`, `push-worker` from `dappros/ethora-push` | none of its own: the API proxies `/v1/push/*`, mobile apps use `api.<root>/push/` |
+| SDK playground | `playground` | `playground` from `dappros/ethora-playground` (builds on its first start, about 1.5 GB of RAM for a few minutes) | `playground.<root>` |
+| Hosted MCP server | `mcp` | `mcp` from `dappros/ethora-mcp`; the API serves OAuth on `api.<root>` | `mcp.<root>` (`/mcp`) |
+| Uptime | `uptime` | `uptime`, `uptime-db` (Postgres) from `dappros/ethora-uptime` | `uptime.<root>`, basic auth (`UPTIME_AUTH_USER`, `UPTIME_AUTH_PASSWORD` in `.env`) |
+
+`./configure.sh --modules ai,push,playground,mcp,uptime` takes any subset.
+The playground, mcp and uptime modules need the five-host layout (a host
+each, covered by a wildcard record); on a one-origin install only `ai` and
+`push` run. The push service sends with the platform keys uploaded in the
+admin panel; `PUSH_PLATFORM_PROJECT_ID` and the `PUSH_GATEWAY_*` values in
+`.env.example` cover the other arrangements. The uptime dashboard's
+password is generated into `.env`; behind a proxy of your own, protect
+`uptime.<root>` with that proxy's basic auth. Each module's checks are part
+of `verify`.
 
 The `ai` module turns the Agents section of the admin panel on, serves the
 embeddable website chat widget from `widget.<root>` (a sixth DNS record,
@@ -281,6 +300,10 @@ WebSocket upgrades allowed:
 | `files.<root>` | `minio:9000` | all, with the original `Host` header |
 | `secure-files.<root>` | `api:8080` | all, with the original `Host` header (the API serves this host itself) |
 | `widget.<root>` (ai module) | `widget:8080` | all |
+| `api.<root>/push/` (push module) | `push:8098`, with `/push` stripped | mobile apps' push registration |
+| `playground.<root>` (playground module) | `playground:3020` | all |
+| `mcp.<root>` (mcp module) | `mcp:3030` | all |
+| `uptime.<root>` (uptime module) | `uptime:8099` | all, behind basic auth of your proxy |
 
 For Coolify the exact steps (git-based application, and a draft one-click
 service template) are in `platforms/coolify/README.md`; for Dokploy

@@ -33,6 +33,21 @@ runs them meanwhile. Store packages (Umbrel, CasaOS) and the Coolify
 template stay Core-only; the Dokploy blueprint carries the module behind
 its profile.
 
+**The other modules in the compose bundle.** The profiles `push`,
+`playground`, `mcp` and `uptime` complete the set: `configure.sh --modules
+ai,push,playground,mcp,uptime` (any subset). The push service answers the
+API's `/v1/push/*` proxy and mobile apps at `api.<root>/push/`, and
+ejabberd's offline pushes go to it directly; the playground, MCP server
+(with the API's OAuth server switched on) and uptime dashboard get their
+own hosts (`playground.`, `mcp.`, `uptime.<root>`), the uptime one behind
+basic auth whose bcrypt hash the caddy service computes at start. The
+playground and uptime modules sign in as the base app with credentials the
+init step leaves in the config volume. Three more generated values
+(`B2B_PUSH_SECRET`, `UPTIME_POSTGRES_PASSWORD`, `UPTIME_AUTH_PASSWORD`; 24 in
+all) and a fifth private image, `dappros/ethora-uptime`, built by
+release-images from the submodule's own Dockerfile. Each private image
+moves to Docker Hub as its repository is created (`HUB_PRIVATE_IMAGES`).
+
 **Push certificates of the base app serve every app.** The rules, with no
 settings in `deploy.yml` and no limits:
 

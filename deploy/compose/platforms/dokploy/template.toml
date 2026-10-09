@@ -31,6 +31,9 @@ centrifugo_admin_secret = "${password:64}"
 ai_service_secret = "${password:32}"
 docs_parse_secret = "${password:32}"
 ai_postgres_password = "${password:32}"
+b2b_push_secret = "${password:32}"
+uptime_postgres_password = "${password:32}"
+uptime_auth_password = "${password:24}"
 # At-rest encryption: a passphrase for wallet keys, and "<64 hex>:<32 hex>" AES key and IV pairs.
 cryptopair_secret = "${password:48}"
 secret_for_db_encryption = "${hash:64}:${hash:32}"
@@ -40,8 +43,11 @@ secret_for_files_encryption = "${hash:64}:${hash:32}"
 # The keys of the bundle's .env.example (deploy/compose/.env.example in
 # github.com/dappros/ethora-install), same order, without the per-host
 # overrides (API_DOMAIN, WIDGET_DOMAIN, ...) and the bundled proxy's settings
-# (the Enterprise modules, COMPOSE_PROFILES=ai, need their hosts routed by
-# Traefik like the five below: widget.<root> to widget:8080). ADMIN_EMAIL
+# (the Enterprise modules, COMPOSE_PROFILES=ai,push,..., need their hosts
+# routed by Traefik like the five below: widget.<root> to widget:8080,
+# playground.<root> to playground:3020, mcp.<root> to mcp:3030, uptime.<root>
+# to uptime:8099 behind a basic-auth middleware, and api.<root>/push/ to
+# push:8098 with the prefix stripped). ADMIN_EMAIL
 # is the admin login; ADMIN_PASSWORD its initial password. MYSQL_ROOT_PASSWORD
 # and MINIO_ROOT_* are written into the databases on the first start and must
 # not change after it.
@@ -72,16 +78,28 @@ env = [
   "AI_SERVICE_SECRET=${ai_service_secret}",
   "DOCS_PARSE_SECRET=${docs_parse_secret}",
   "AI_POSTGRES_PASSWORD=${ai_postgres_password}",
+  "B2B_PUSH_SECRET=${b2b_push_secret}",
+  "UPTIME_POSTGRES_PASSWORD=${uptime_postgres_password}",
+  "UPTIME_AUTH_PASSWORD=${uptime_auth_password}",
   "AI_API_URL=https://api.openai.com/v1",
   "AI_API_KEY=",
   "AI_CHAT_MODEL=gpt-5.6-luna",
   "AI_EMBEDDING_MODEL=text-embedding-3-small",
   "AI_PG_URL=",
   "WIDGET_SCRIPT_VERSION=",
+  "PUSH_PLATFORM_PROJECT_ID=",
+  "PUSH_GATEWAY_URL=",
+  "PUSH_GATEWAY_TOKEN=",
+  "MCP_ENABLE_DANGEROUS_TOOLS=true",
+  "UPTIME_AUTH_USER=admin",
   "ETHORA_API_IMAGE=docker.io/dappros/ethora-api:2610",
   "ETHORA_FRONTEND_IMAGE=docker.io/dappros/ethora-frontend:2610",
   "ETHORA_XMPP_IMAGE=docker.io/dappros/ethora-xmpp:2610",
   "ETHORA_AI_IMAGE=docker.io/dappros/ethora-ai:2610",
+  "ETHORA_PUSH_IMAGE=docker.io/dappros/ethora-push:2610",
+  "ETHORA_PLAYGROUND_IMAGE=docker.io/dappros/ethora-playground:2610",
+  "ETHORA_MCP_IMAGE=docker.io/dappros/ethora-mcp:2610",
+  "ETHORA_UPTIME_IMAGE=docker.io/dappros/ethora-uptime:2610",
   "COMPOSE_PROFILES=",
 ]
 
@@ -284,6 +302,40 @@ else
   warn "translate language sync failed (non-fatal): $(printf '%s' "$out" | tr '\n' ' ' | head -c 240)"
 fi
 
+# ------------------------------------------ 5. base app credentials --
+# The playground and uptime modules drive the API as the base app (B2B):
+# leave its id and secret in the config volume for module-start.sh. Mongo
+# through the API image's own models (bytecode builds included).
+creds_dir="${ETHORA_CONFIG_DIR:-/ethora/config}/base-app"
+if mkdir -p "$creds_dir" 2>/dev/null && [ -w "$creds_dir" ]; then
+  if out="$(NODE_NO_WARNINGS=1 node -e '
+    try { require("/app/node_modules/bytenode") } catch (_) {}
+    const mongoose = require("/app/node_modules/mongoose")
+    const App = require("/app/dist/src/models/apps")
+    mongoose.connect(process.argv[1]).then(async () => {
+      const app = await App.findOne({ domainName: process.argv[2] }).lean()
+      if (!app) throw new Error("base app not found")
+      const b64 = (v) => Buffer.from(String(v || ""), "utf8").toString("base64")
+      process.stdout.write(`ID=${b64(app._id)}\nSECRET=${b64(app.tenantSecret || app.appSecret || "")}\n`)
+      await mongoose.disconnect()
+    }).catch((e) => { console.error(e.message); process.exit(1) })
+  ' "$MONGO_URI" "${BASE_APP_DOMAIN_NAME:-}" 2>&1)"; then
+    app_id="$(printf '%s\n' "$out" | sed -n 's/^ID=//p' | base64 -d)"
+    app_secret="$(printf '%s\n' "$out" | sed -n 's/^SECRET=//p' | base64 -d)"
+    if [ -n "$app_id" ] && [ -n "$app_secret" ]; then
+      umask 077
+      printf 'ETHORA_CHAT_APP_ID=%s\nETHORA_CHAT_APP_SECRET=%s\n' "$app_id" "$app_secret" > "$creds_dir/credentials.env.tmp" \
+        && mv "$creds_dir/credentials.env.tmp" "$creds_dir/credentials.env" && log "base app credentials written for the playground and uptime modules"
+    else
+      warn "base app credentials incomplete (non-fatal): $(printf '%s' "$out" | head -c 200)"
+    fi
+  else
+    warn "base app credentials lookup failed (non-fatal): $(printf '%s' "$out" | tail -n 2 | tr '\n' ' ')"
+  fi
+else
+  log "config volume not writable here; base app credentials for the modules skipped"
+fi
+
 # ----------------------------------------------------------------- done --
 if curl -fsS --max-time 5 "$API_URL/v1/apps/get-config?domainName=${BASE_APP_DOMAIN_NAME:-}" >/dev/null 2>&1; then
   log "base app config served by the API"
@@ -319,6 +371,11 @@ content = '''
 //    widget script is served from its public URL with this install's API
 //    URL in it, ai-service and docs-parse answer on the compose network,
 //    and the licence carries the ai feature.
+// 7. The other modules, each when on (PUSH_ENABLED, PLAYGROUND_ENABLED,
+//    MCP_ENABLED, UPTIME_ENABLED in backend.env): the push service answers
+//    internally and at api.<root>/push/, the playground page loads, the MCP
+//    server's health and the API's OAuth metadata answer, the uptime
+//    dashboard refuses without credentials and answers with them.
 //
 // Exits non-zero on the first failure. The room it creates is left in place
 // (named "verify <timestamp>").
@@ -337,6 +394,8 @@ const SECURE_FILES_URL = origin(env.VERIFY_SECURE_FILES_URL || env.ETHORA_PUBLIC
 const XMPP_WS = env.VERIFY_XMPP_WS_URL || env.ETHORA_PUBLIC_XMPP_WS_URL
 const WIDGET_URL = env.VERIFY_WIDGET_URL || env.ETHORA_PUBLIC_WIDGET_URL || ''
 const AI_MODULE = String(env.AI_SERVICE_ENABLED) === 'true'
+const on = (k) => String(env[k]) === 'true'
+const MODULES = { push: on('PUSH_ENABLED'), playground: on('PLAYGROUND_ENABLED'), mcp: on('MCP_ENABLED'), uptime: on('UPTIME_ENABLED') }
 const WEB = hostOf(WEB_URL, '')
 const API = hostOf(API_URL, '')
 const FILES = hostOf(FILES_URL, '')
@@ -410,7 +469,8 @@ async function xmppRoundTrip({ username, token, roomJid }) {
 }
 
 async function main() {
-  console.log(`Ethora Core compose bundle: verify (web=${WEB_URL} api=${API_URL} xmpp=${XMPP_WS} files=${FILES_URL} secure-files=${SECURE_FILES_URL || 'off'} ai=${AI_MODULE ? WIDGET_URL : 'off'})\n`)
+  const mods = Object.keys(MODULES).filter((k) => MODULES[k])
+  console.log(`Ethora Core compose bundle: verify (web=${WEB_URL} api=${API_URL} xmpp=${XMPP_WS} files=${FILES_URL} secure-files=${SECURE_FILES_URL || 'off'} ai=${AI_MODULE ? WIDGET_URL : 'off'}${mods.length ? ' modules=' + mods.join(',') : ''})\n`)
   if (!WEB_URL || !API_URL || !XMPP_WS || !FILES_URL || !XMPP || !EMAIL || !PASSWORD) die('could not derive the public URLs or admin credentials from backend.env')
 
   // 1. public endpoints and certificates
@@ -536,6 +596,47 @@ async function main() {
     else fail(`docs-parse at ${dp || 'unset'} -> ${d.status ? `HTTP ${d.status}` : d.text}`)
   }
 
+  // 7. push, playground, mcp, uptime
+  const probe = (url, opts) => http(url, opts).catch((e) => ({ status: 0, text: e.cause ? e.cause.code || e.cause.message : e.message }))
+  const show = (r) => (r.status ? `HTTP ${r.status}` : r.text)
+  if (MODULES.push) {
+    const p = await probe(`${env.PUSH_INTERNAL_URL || 'http://push:8098'}/health`)
+    if (p.status === 200) ok(`push service answers at ${env.PUSH_INTERNAL_URL || 'http://push:8098'}`)
+    else fail(`push service -> ${show(p)}`)
+    const pub = await probe(`${API_URL}/push/health`)
+    if (pub.status === 200) ok(`push service reachable for mobile apps at ${API_URL}/push/`)
+    else fail(`${API_URL}/push/health -> ${show(pub)} (the proxy must route /push/ to the push service)`)
+  }
+  if (MODULES.playground) {
+    const u = origin(env.ETHORA_PUBLIC_PLAYGROUND_URL)
+    const r = u ? await probe(`${u}/`) : { status: 0, text: 'no URL' }
+    if (r.status === 200) ok(`SDK playground answers at ${u}`)
+    else fail(`SDK playground at ${u || 'unset'} -> ${show(r)} (its first start builds the app; try again in a few minutes)`)
+  }
+  if (MODULES.mcp) {
+    const h = await probe(`${env.MCP_INTERNAL_URL || 'http://mcp:3030'}/healthz`)
+    if (h.status === 200) ok(`MCP server answers at ${env.MCP_INTERNAL_URL || 'http://mcp:3030'}`)
+    else fail(`MCP server -> ${show(h)}`)
+    const pubUrl = String(env.ETHORA_PUBLIC_MCP_URL || '')
+    const base = pubUrl.replace(/\/mcp$/, '')
+    const m = base ? await probe(`${base}/healthz`) : { status: 0, text: 'no URL' }
+    if (m.status === 200) ok(`MCP server reachable at ${pubUrl}`)
+    else fail(`MCP server at ${base || 'unset'}/healthz -> ${show(m)}`)
+    const oauth = await probe(`${API_URL}/.well-known/oauth-authorization-server`)
+    if (oauth.status === 200 && oauth.json && oauth.json.issuer) ok(`OAuth authorization server on the API (issuer ${oauth.json.issuer})`)
+    else fail(`${API_URL}/.well-known/oauth-authorization-server -> ${show(oauth)}`)
+  }
+  if (MODULES.uptime) {
+    const u = origin(env.ETHORA_PUBLIC_UPTIME_URL)
+    const anon = u ? await probe(`${u}/health`) : { status: 0, text: 'no URL' }
+    if (anon.status === 401) ok(`uptime dashboard at ${u} asks for credentials`)
+    else fail(`uptime dashboard at ${u || 'unset'} without credentials -> ${show(anon)} (expected 401)`)
+    const cred = Buffer.from(`${env.UPTIME_AUTH_USER || 'admin'}:${env.UPTIME_AUTH_PASSWORD || ''}`).toString('base64')
+    const authed = u ? await probe(`${u}/health`, { headers: { Authorization: `Basic ${cred}` } }) : { status: 0, text: 'no URL' }
+    if (authed.status === 200) ok(`uptime dashboard answers with the configured credentials`)
+    else fail(`uptime dashboard with credentials -> ${show(authed)}`)
+  }
+
   summary()
 }
 
@@ -567,6 +668,16 @@ content = '''
 #   /out/config/widget/widget.env          <- templates/widget.env.template
 #   /out/config/widget/Caddyfile           the static server of the widget bundle
 #   /out/config/ai-postgres/password       the bundled Postgres' password
+# and likewise for the push, playground, mcp and uptime modules (profiles of the
+# same names, or PUSH_ENABLED / PLAYGROUND_ENABLED / MCP_ENABLED / UPTIME_ENABLED):
+#   /out/config/push/push.env              <- templates/push.env.template
+#   /out/config/playground/playground.env  the SDK playground's public URLs
+#   /out/config/mcp/mcp.env                <- templates/mcp.env.template
+#   /out/config/uptime/uptime.env, uptime.yml, auth-password
+#                                          <- templates/uptime.env.template, uptime-config.yml.template
+#   /out/config/uptime-db/password         the uptime Postgres' password
+# (init.sh adds /out/config/base-app/credentials.env, the base app's API
+# credentials the playground and uptime modules sign in with.)
 #
 # It runs in the ethora-xmpp image (development form, scripts bind-mounted)
 # or in the ethora-compose-init image, which is the xmpp image plus this
@@ -606,12 +717,16 @@ content = '''
 #                                                http://widget:8080
 #   ETHORA_AI_POSTGRES_HOST, ETHORA_AI_POSTGRES_PORT   the bundled pgvector Postgres
 #                                                (ai-postgres, 5432) unless AI_PG_URL is set
+#   ETHORA_PUSH_URL, ETHORA_PLAYGROUND_URL, ETHORA_MCP_URL, ETHORA_UPTIME_URL
+#                                                http://push:8098, http://playground:3020,
+#                                                http://mcp:3030, http://uptime:8099
+#   ETHORA_UPTIME_POSTGRES_HOST, ETHORA_UPTIME_POSTGRES_PORT   uptime-db, 5432
 # and, for a host that is not compose (the Cloudron package):
 #   ETHORA_SITE_ADDRESS    the one-origin site's Caddy address, e.g. :3000
 #                          behind a proxy that terminates TLS itself
 #   ETHORA_EXTRA_SITES     more Caddy site blocks, appended as they are
 #   API_UID, XMPP_UID, CENTRIFUGO_UID, MYSQL_UID, MINIO_UID, FRONTEND_UID,
-#   AI_UID, AI_POSTGRES_UID
+#   AI_UID, AI_POSTGRES_UID, MODULE_UID, UPTIME_POSTGRES_UID
 #                          owners of the rendered files (the images' users)
 #
 # Differences from the host installer, all because the services talk over the
@@ -642,6 +757,8 @@ MINIO_UID="${MINIO_UID:-0}"         # minio: root
 FRONTEND_UID="${FRONTEND_UID:-0}"   # ethora-frontend: root
 AI_UID="${AI_UID:-1000}"            # ethora-ai: node
 AI_POSTGRES_UID="${AI_POSTGRES_UID:-999}"   # pgvector/pgvector: postgres
+MODULE_UID="${MODULE_UID:-1000}"            # ethora-push, ethora-playground, ethora-mcp: node
+UPTIME_POSTGRES_UID="${UPTIME_POSTGRES_UID:-70}"   # postgres:alpine: postgres
 
 log() { echo "[config] $*"; }
 die() { echo "[config] ERROR: $*" >&2; exit 1; }
@@ -698,6 +815,9 @@ secret AI_SERVICE_SECRET 32
 secret DOCS_PARSE_SECRET 32
 secret AI_POSTGRES_PASSWORD 32
 secret WIDGET_SCRIPT_VERSION yymm
+secret B2B_PUSH_SECRET 32
+secret UPTIME_POSTGRES_PASSWORD 32
+secret UPTIME_AUTH_PASSWORD 24
 [ -z "$missing" ] || die "missing:$missing (set them in .env, or mount the secrets volume at $SECRETS_DIR so they are generated)"
 [ -z "$generated" ] || log "generated and stored in the secrets volume:$generated"
 case " $generated " in
@@ -770,6 +890,10 @@ ETHORA_FRONTEND_URL="${ETHORA_FRONTEND_URL:-http://frontend:8080}"
 ETHORA_AI_SERVICE_URL="${ETHORA_AI_SERVICE_URL:-http://ai-service:8013}"
 ETHORA_DOCS_PARSE_URL="${ETHORA_DOCS_PARSE_URL:-http://docs-parse:8201}"
 ETHORA_WIDGET_URL="${ETHORA_WIDGET_URL:-http://widget:8080}"
+ETHORA_PUSH_URL="${ETHORA_PUSH_URL:-http://push:8098}"
+ETHORA_PLAYGROUND_URL="${ETHORA_PLAYGROUND_URL:-http://playground:3020}"
+ETHORA_MCP_URL="${ETHORA_MCP_URL:-http://mcp:3030}"
+ETHORA_UPTIME_URL="${ETHORA_UPTIME_URL:-http://uptime:8099}"
 export REDIS_PORT="${ETHORA_REDIS_PORT:-6379}"
 export MYSQL_PORT="${ETHORA_MYSQL_PORT:-3306}"
 MINIO_PORT="${ETHORA_MINIO_PORT:-9000}"
@@ -786,8 +910,26 @@ def() { # def NAME value: export NAME=value unless NAME is already set
 # explicit flag wins (hosts without profiles, e.g. the Helm chart, set the
 # flag). The crawler is not part of the ai module yet.
 profiles=",$(printf '%s' "${COMPOSE_PROFILES:-}" | tr -d ' '),"
-case "$profiles" in *,ai,*) def AI_SERVICE_ENABLED true ;; *) def AI_SERVICE_ENABLED false ;; esac
-AI_MODULE="$AI_SERVICE_ENABLED"
+has_profile() { case "$profiles" in *,"$1",*) return 0 ;; *) return 1 ;; esac; }
+flag_of() { if has_profile "$1"; then echo true; else echo false; fi; }
+def AI_SERVICE_ENABLED "$(flag_of ai)"
+def PUSH_ENABLED "$(flag_of push)"
+def PLAYGROUND_ENABLED "$(flag_of playground)"
+def MCP_ENABLED "$(flag_of mcp)"
+def UPTIME_ENABLED "$(flag_of uptime)"
+AI_MODULE="$AI_SERVICE_ENABLED"; PUSH_MODULE="$PUSH_ENABLED"; PLAYGROUND_MODULE="$PLAYGROUND_ENABLED"
+MCP_MODULE="$MCP_ENABLED"; UPTIME_MODULE="$UPTIME_ENABLED"
+if [ -n "$PUBLIC_URL" ] && { [ "$PLAYGROUND_MODULE" = true ] || [ "$MCP_MODULE" = true ] || [ "$UPTIME_MODULE" = true ]; }; then
+  die "the playground, mcp and uptime modules need hosts of their own (ROOT_DOMAIN), not a one-origin install (PUBLIC_URL)"
+fi
+def MCP_ENABLE_DANGEROUS_TOOLS true
+def MCP_OPENAI_APPS_CHALLENGE ""
+def UPTIME_AUTH_USER admin
+def PUSH_PLATFORM_PROJECT_ID ""
+def PUSH_GATEWAY_URL ""
+def PUSH_GATEWAY_TOKEN ""
+def ERRORS_PUSH_DSN ""
+export PUSH_PORT=8098 MCP_PORT=3030 UPTIME_PORT=8099 PLAYGROUND_PORT=3020
 def BLOCKCHAIN_ENABLED false
 def DOCS_PARSE_ENABLED "$AI_MODULE"
 def CRAWLER_ENABLED false
@@ -899,6 +1041,31 @@ export WIDGET_XMPP_CONFERENCE="conference.$XMPP_DOMAIN" WIDGET_QR_URL="$web_url/
 export AI_SERVICE_XMPP_SERVICE_PLACEHOLDER="XMPP_SERVICE=ws://$(hostport_of "$ETHORA_XMPP_URL")/ws"
 export PLATFORM_API_URL="$ETHORA_API_URL"
 
+# Hosts of the playground, mcp and uptime modules (five-host layout only).
+module_host() { # module_host VAR default-prefix on|off
+  eval "v=\${$1:-}"
+  if [ "$3" != true ]; then v=""; else
+    case "$(printf '%s' "$v" | tr 'A-Z' 'a-z')" in ""|off|none|false|no) v="$2.$ROOT_DOMAIN" ;; esac
+  fi
+  export "$1=$v"
+}
+module_host PLAYGROUND_DOMAIN playground "$PLAYGROUND_MODULE"
+module_host MCP_DOMAIN mcp "$MCP_MODULE"
+module_host UPTIME_DOMAIN uptime "$UPTIME_MODULE"
+playground_url="${PLAYGROUND_DOMAIN:+https://$PLAYGROUND_DOMAIN}"
+uptime_url="${UPTIME_DOMAIN:+https://$UPTIME_DOMAIN}"
+# Hosted MCP server: its public URL for the web app's "AI assistants" page,
+# and the API's OAuth authorization server (issuer = the API's public URL),
+# with the login and sign-up rate limits the host installer raises for it.
+export MCP_PUBLIC_URL="${MCP_DOMAIN:+https://$MCP_DOMAIN/mcp}"
+if [ "$MCP_MODULE" = true ]; then
+  def OAUTH_ISSUER "$api_url"
+  def RATE_LIMIT_AUTH_LOGIN_MAX 120
+  def RATE_LIMIT_AUTH_SIGNUP_MAX 30
+else
+  def OAUTH_ISSUER ""
+fi
+
 # ------------------------------------------------------------- render --
 # render TEMPLATE OUT: literal substitution of {{NAME}} with $NAME (empty
 # when unset, like setup-env.sh's ${NAME:-}) and of whole-line NAME_PLACEHOLDER
@@ -953,8 +1120,12 @@ set_env_line "$stage/api/backend.env" MINIO_PORT "$MINIO_PORT"
 set_env_line "$stage/api/backend.env" CENTRIFUGO_API_URL "$ETHORA_CENTRIFUGO_URL/api"
 set_env_line "$stage/api/backend.env" AI_SERVICE_URL "$ETHORA_AI_SERVICE_URL"
 set_env_line "$stage/api/backend.env" DOCS_PARSE_URL "$ETHORA_DOCS_PARSE_URL"
+set_env_line "$stage/api/backend.env" PUSH_SERVER_URL "$ETHORA_PUSH_URL"
 ai_internal_url=""; docs_parse_internal_url=""
 if [ "$AI_MODULE" = true ]; then ai_internal_url="$ETHORA_AI_SERVICE_URL"; docs_parse_internal_url="$ETHORA_DOCS_PARSE_URL"; fi
+push_internal_url=""; [ "$PUSH_MODULE" != true ] || push_internal_url="$ETHORA_PUSH_URL"
+mcp_internal_url=""; [ "$MCP_MODULE" != true ] || mcp_internal_url="$ETHORA_MCP_URL"
+uptime_internal_url=""; [ "$UPTIME_MODULE" != true ] || uptime_internal_url="$ETHORA_UPTIME_URL"
 {
   echo "# Rendered by the compose bundle's config service from backend.env.template"
   echo "# on every 'docker compose up'. Edit .env, not this file."
@@ -972,7 +1143,66 @@ if [ "$AI_MODULE" = true ]; then ai_internal_url="$ETHORA_AI_SERVICE_URL"; docs_
   echo "# The ai module's services as verify.js reaches them (empty without the module)."
   echo "AI_SERVICE_INTERNAL_URL=$ai_internal_url"
   echo "DOCS_PARSE_INTERNAL_URL=$docs_parse_internal_url"
+  echo "# The other modules (verify.js): switches, public URLs and internal endpoints, empty when off."
+  echo "PUSH_ENABLED=$PUSH_MODULE"
+  echo "PLAYGROUND_ENABLED=$PLAYGROUND_MODULE"
+  echo "MCP_ENABLED=$MCP_MODULE"
+  echo "UPTIME_ENABLED=$UPTIME_MODULE"
+  echo "ETHORA_PUBLIC_PLAYGROUND_URL=$playground_url"
+  echo "ETHORA_PUBLIC_MCP_URL=$MCP_PUBLIC_URL"
+  echo "ETHORA_PUBLIC_UPTIME_URL=$uptime_url"
+  echo "PUSH_INTERNAL_URL=$push_internal_url"
+  echo "MCP_INTERNAL_URL=$mcp_internal_url"
+  echo "UPTIME_INTERNAL_URL=$uptime_internal_url"
+  echo "UPTIME_AUTH_USER=$UPTIME_AUTH_USER"
+  echo "UPTIME_AUTH_PASSWORD=$UPTIME_AUTH_PASSWORD"
 } > "$stage/api/backend.env.tmp" && mv "$stage/api/backend.env.tmp" "$stage/api/backend.env"
+
+# push, playground, mcp and uptime modules.
+mkdir -p "$stage/push" "$stage/playground" "$stage/mcp" "$stage/uptime" "$stage/uptime-db"
+if [ "$PUSH_MODULE" = true ]; then
+  [ -f "$TEMPLATES/push.env.template" ] || die "template not found: $TEMPLATES/push.env.template (push module)"
+  export PUSH_UPLOADS_DIR=/app/push/uploads
+  render "$TEMPLATES/push.env.template" "$stage/push/push.env"
+  set_env_line "$stage/push/push.env" MONGO_URI "${ETHORA_MONGO_URI:-mongodb://mongo:27017/$MONGO_DB?directConnection=true}"
+  set_env_line "$stage/push/push.env" REDIS_HOST "$ETHORA_REDIS_HOST"
+fi
+if [ "$PLAYGROUND_MODULE" = true ]; then
+  # What the host installer writes to the playground's .env.local; the base
+  # app's id and secret are added at start from base-app/credentials.env.
+  {
+    echo "ETHORA_CHAT_API_URL=$api_url"
+    echo "NEXT_PUBLIC_ETHORA_CHAT_API_URL=$api_url"
+    echo "NEXT_PUBLIC_BACKEND_URL=$playground_url"
+    echo "PORT=$PLAYGROUND_PORT"
+  } > "$stage/playground/playground.env"
+fi
+if [ "$MCP_MODULE" = true ]; then
+  [ -f "$TEMPLATES/mcp.env.template" ] || die "template not found: $TEMPLATES/mcp.env.template (mcp module)"
+  render "$TEMPLATES/mcp.env.template" "$stage/mcp/mcp.env"
+  set_env_line "$stage/mcp/mcp.env" ETHORA_API_URL "$ETHORA_API_URL/v1"
+fi
+if [ "$UPTIME_MODULE" = true ]; then
+  for t in uptime.env.template uptime-config.yml.template; do
+    [ -f "$TEMPLATES/$t" ] || die "template not found: $TEMPLATES/$t (uptime module)"
+  done
+  export UPTIME_DATABASE_URL="postgresql://uptime:$UPTIME_POSTGRES_PASSWORD@${ETHORA_UPTIME_POSTGRES_HOST:-uptime-db}:${ETHORA_UPTIME_POSTGRES_PORT:-5432}/uptime"
+  export UPTIME_PUBLIC_ENABLED="${UPTIME_PUBLIC_ENABLED:-true}" UPTIME_ETHORA_ENABLED="${UPTIME_ETHORA_ENABLED:-false}"
+  export UPTIME_MCP_ENABLED="$MCP_MODULE" UPTIME_MCP_PUBLIC_ENABLED="$MCP_MODULE" UPTIME_MCP_DOMAIN="${MCP_DOMAIN:-mcp.localhost}"
+  export PLAYGROUND_APP_ID="" PLAYGROUND_APP_SECRET=""
+  render "$TEMPLATES/uptime.env.template" "$stage/uptime/uptime.env"
+  set_env_line "$stage/uptime/uptime.env" ETHORA_API_BASE "$ETHORA_API_URL"
+  set_env_line "$stage/uptime/uptime.env" ETHORA_XMPP_API_URL "$ETHORA_XMPP_URL/api"
+  set_env_line "$stage/uptime/uptime.env" ETHORA_XMPP_SERVICE "ws://$(hostport_of "$ETHORA_XMPP_URL")/ws"
+  set_env_line "$stage/uptime/uptime.env" UPTIME_CONFIG /ethora/config/uptime/uptime.yml
+  # The checks reach the services by their compose names, not the docker host.
+  render "$TEMPLATES/uptime-config.yml.template" "$stage/uptime/uptime.yml"
+  sed -i -e "s|host.docker.internal:$BACKEND_PORT|$(hostport_of "$ETHORA_API_URL")|g" \
+         -e "s|host.docker.internal:$MINIO_PORT|$ETHORA_MINIO_HOST:$MINIO_PORT|g" \
+         -e "s|host.docker.internal:$MCP_PORT|$(hostport_of "$ETHORA_MCP_URL")|g" "$stage/uptime/uptime.yml"
+  printf '%s' "$UPTIME_AUTH_PASSWORD" > "$stage/uptime/auth-password"
+  printf '%s' "$UPTIME_POSTGRES_PASSWORD" > "$stage/uptime-db/password"
+fi
 
 # ai module: ai-service.env, docs-parse.env, widget.env, the bundled
 # Postgres' password and the widget bundle's static server.
@@ -1010,7 +1240,10 @@ export TRACK_LAST_MESSAGE_URL="${TRACK_LAST_MESSAGE_URL:-$ETHORA_API_URL/v1/chat
 export TRACK_MESSAGE_URL="${TRACK_MESSAGE_URL:-$ETHORA_API_URL/v1/chats/archive-message}"
 export HISTORY_ACCESS_URL="${HISTORY_ACCESS_URL:-$ETHORA_API_URL/v1/chats/history-access}"
 export MESSAGE_AUDIT_URL="${MESSAGE_AUDIT_URL:-$ETHORA_API_URL/v1/chats/message-audit}"
-PUSH_COMMON_POST_URL="${PUSH_COMMON_POST_URL:-https://$API_DOMAIN/push/api/v2/push}"
+# ejabberd's offline pushes: the push service itself with the push module,
+# else the public URL the host installer uses (answers 404 without the module).
+if [ "$PUSH_MODULE" = true ]; then PUSH_COMMON_POST_URL="${PUSH_COMMON_POST_URL:-$ETHORA_PUSH_URL/api/v2/push}"
+else PUSH_COMMON_POST_URL="${PUSH_COMMON_POST_URL:-https://$API_DOMAIN/push/api/v2/push}"; fi
 PUSH_VOIP_POST_URL="${PUSH_VOIP_POST_URL:-http://host.docker.internal:7778/api/v1/voippush}"
 push_token="${B2B_PUSH_SECRET:-$INTERNAL_REQUESTS_SECRET}"
 admin_jid="admin@$XMPP_DOMAIN"
@@ -1130,6 +1363,18 @@ if [ -z "$PUBLIC_URL" ]; then
   if [ -n "$WIDGET_DOMAIN" ]; then
     ETHORA_SITES="$ETHORA_SITES$(printf '\n%s {\n\timport widget\n}' "$WIDGET_DOMAIN")"
   fi
+  if [ -n "$PLAYGROUND_DOMAIN" ]; then
+    ETHORA_SITES="$ETHORA_SITES$(printf '\n%s {\n\timport playground\n}' "$PLAYGROUND_DOMAIN")"
+  fi
+  if [ -n "$MCP_DOMAIN" ]; then
+    ETHORA_SITES="$ETHORA_SITES$(printf '\n%s {\n\timport mcp\n}' "$MCP_DOMAIN")"
+  fi
+  if [ -n "$UPTIME_DOMAIN" ]; then
+    # The bcrypt hash is computed by the caddy service at start from
+    # uptime/auth-password and arrives as its environment variable.
+    ETHORA_SITES="$ETHORA_SITES$(printf '\n%s {\n\timport security_headers\n\tbasic_auth {\n\t\t%s {$UPTIME_AUTH_HASH}\n\t}\n\treverse_proxy %s\n}' \
+      "$UPTIME_DOMAIN" "$UPTIME_AUTH_USER" "$(hostport_of "$ETHORA_UPTIME_URL")")"
+  fi
 elif [ -n "${ETHORA_SITE_ADDRESS:-}" ]; then
   ETHORA_SITES="$(printf '%s {\n\timport single_origin\n}' "$ETHORA_SITE_ADDRESS")"
 elif [ "$scheme" = https ]; then
@@ -1143,6 +1388,15 @@ export ETHORA_SITES
 export ETHORA_EXTRA_SITES="${ETHORA_EXTRA_SITES:-}"
 export UPSTREAM_API="$(hostport_of "$ETHORA_API_URL")"
 export UPSTREAM_WIDGET="$(hostport_of "$ETHORA_WIDGET_URL")"
+export UPSTREAM_PLAYGROUND="$(hostport_of "$ETHORA_PLAYGROUND_URL")"
+export UPSTREAM_MCP="$(hostport_of "$ETHORA_MCP_URL")"
+# Mobile apps reach the push service at api.<root>/push/ (the one-origin
+# install's /push/ too); nothing is routed without the module.
+ETHORA_PUSH_ROUTE=""
+if [ "$PUSH_MODULE" = true ]; then
+  ETHORA_PUSH_ROUTE="$(printf 'handle /push/* {\n\t\turi strip_prefix /push\n\t\treverse_proxy %s\n\t}' "$(hostport_of "$ETHORA_PUSH_URL")")"
+fi
+export ETHORA_PUSH_ROUTE
 # One origin with the ai module: the widget under /widget/ (the upstream is
 # written out, Caddy does not substitute inside a substituted value).
 ETHORA_WIDGET_ROUTE=""
@@ -1178,9 +1432,10 @@ cp "$SCRIPTS_SRC"/*.sh "$SCRIPTS_SRC"/*.js "$stage/scripts/"
 # ------------------------------------------------------------ install --
 # Hand each directory to the one container user that reads it; secrets stay
 # unreadable to the others. Then swap the whole tree in.
-chmod 700 "$stage/api" "$stage/frontend" "$stage/centrifugo" "$stage/xmpp" "$stage/mysql" "$stage/minio" "$stage/ai" "$stage/ai-postgres"
+chmod 700 "$stage/api" "$stage/frontend" "$stage/centrifugo" "$stage/xmpp" "$stage/mysql" "$stage/minio" "$stage/ai" "$stage/ai-postgres" \
+  "$stage/push" "$stage/playground" "$stage/mcp" "$stage/uptime" "$stage/uptime-db"
 chmod 600 "$stage"/api/* "$stage"/frontend/* "$stage"/centrifugo/* "$stage"/xmpp/* "$stage"/mysql/* "$stage"/minio/*
-for f in "$stage"/ai/* "$stage"/ai-postgres/*; do [ -f "$f" ] && chmod 600 "$f"; done
+for f in "$stage"/ai/* "$stage"/ai-postgres/* "$stage"/push/* "$stage"/playground/* "$stage"/mcp/* "$stage"/uptime/* "$stage"/uptime-db/*; do [ -f "$f" ] && chmod 600 "$f"; done
 # Neither secret nor per-service: readable by every container (the widget's
 # env names public URLs only).
 chmod 755 "$stage/caddy" "$stage/scripts" "$stage/widget"
@@ -1199,8 +1454,13 @@ own 0:0 "$stage/scripts"
 own "$AI_UID:$AI_UID" "$stage/ai"
 own "$AI_POSTGRES_UID:$AI_POSTGRES_UID" "$stage/ai-postgres"
 own 0:0 "$stage/widget"
+own "$MODULE_UID:$MODULE_UID" "$stage/push"
+own "$MODULE_UID:$MODULE_UID" "$stage/playground"
+own "$MODULE_UID:$MODULE_UID" "$stage/mcp"
+own 0:0 "$stage/uptime"                    # the uptime image and caddy run as root
+own "$UPTIME_POSTGRES_UID:$UPTIME_POSTGRES_UID" "$stage/uptime-db"
 mkdir -p "$OUT"
-for d in api frontend centrifugo xmpp mysql minio caddy scripts ai ai-postgres widget; do
+for d in api frontend centrifugo xmpp mysql minio caddy scripts ai ai-postgres widget push playground mcp uptime uptime-db; do
   rm -rf "$OUT/$d.new"
   cp -a "$stage/$d" "$OUT/$d.new"
   rm -rf "$OUT/$d"
@@ -1219,6 +1479,10 @@ else
   log "rendered for $ROOT_DOMAIN: api=$API_DOMAIN web=$WEB_DOMAIN xmpp=$XMPP_DOMAIN files=$FILES_DOMAIN secure-files=${SECURE_FILES_DOMAIN:-off}${WIDGET_DOMAIN:+ widget=$WIDGET_DOMAIN} (base app slug: $BASE_APP_DOMAIN_NAME)"
 fi
 [ "$AI_MODULE" != true ] || log "ai module on: ai-service, docs-parse, widget ($WIDGET_URL), postgres ${AI_PG_URL#*@}"
+[ "$PUSH_MODULE" != true ] || log "push module on: push + push-worker ($ETHORA_PUSH_URL; mobile apps: $api_url/push/)"
+[ "$PLAYGROUND_MODULE" != true ] || log "playground module on: $playground_url"
+[ "$MCP_MODULE" != true ] || log "mcp module on: $MCP_PUBLIC_URL (OAuth issuer $OAUTH_ISSUER)"
+[ "$UPTIME_MODULE" != true ] || log "uptime module on: $uptime_url (user $UPTIME_AUTH_USER), postgres ${UPTIME_DATABASE_URL#*@}"
 
 '''
 
@@ -1512,6 +1776,71 @@ async function main() {
 }
 
 main().catch((e) => { console.error(`[ai] ${e && e.message ? e.message : e}`); process.exit(1) })
+'''
+
+[[config.mounts]]
+filePath = "/scripts/module-start.sh"
+content = '''
+#!/bin/sh
+# module-start.sh - entrypoint of the push, playground, mcp and uptime module
+# containers in the compose bundle. Exports the env file the config service
+# rendered for the module (plain KEY=value lines), plus the base app's API
+# credentials that init.sh leaves in base-app/credentials.env for the modules
+# that drive the API as a B2B client, and hands over to the image's own start.
+#
+#   module-start.sh push server|worker   push/push.env         -> ethora-push
+#   module-start.sh playground           playground/playground.env + base app -> ethora-playground
+#   module-start.sh mcp                  mcp/mcp.env           -> node /app/dist/index.js
+#   module-start.sh uptime               uptime/uptime.env + base app -> node dist/server.js
+set -eu
+
+CONFIG="${ETHORA_CONFIG_DIR:-/ethora/config}"
+log() { echo "[module] $*"; }
+die() { echo "[module] ERROR: $*" >&2; exit 1; }
+
+load() { # load <env file>: export every KEY=value line (the environment wins)
+  [ -r "$1" ] || die "$1 is missing or unreadable; the config service did not run with this module on"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ''|'#'*) continue ;; esac
+    case "$line" in
+      [A-Za-z_]*=*)
+        key="${line%%=*}"
+        case "$key" in *[!A-Za-z0-9_]*) continue ;; esac
+        eval "[ -n \"\${$key+x}\" ]" && continue
+        export "$line"
+        ;;
+    esac
+  done < "$1"
+}
+
+# The base app's id and secret, written by init.sh after the first boot.
+base_app() {
+  f="$CONFIG/base-app/credentials.env"
+  for i in $(seq 1 60); do [ -s "$f" ] && break; [ "$i" = 60 ] && die "$f not written yet (did init finish? docker compose logs init)"; sleep 5; done
+  load "$f"
+}
+
+cmd="${1:-}"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  push)
+    load "$CONFIG/push/push.env"
+    exec /usr/local/bin/ethora-push "${1:-server}" ;;
+  playground)
+    load "$CONFIG/playground/playground.env"
+    base_app
+    exec /usr/local/bin/ethora-playground ;;
+  mcp)
+    load "$CONFIG/mcp/mcp.env"
+    exec node /app/dist/index.js ;;
+  uptime)
+    load "$CONFIG/uptime/uptime.env"
+    base_app
+    # The journeys and the push check sign in as the base app.
+    export ETHORA_B2B_APP_ID="${ETHORA_B2B_APP_ID:-$ETHORA_CHAT_APP_ID}" ETHORA_B2B_APP_SECRET="${ETHORA_B2B_APP_SECRET:-$ETHORA_CHAT_APP_SECRET}"
+    cd /app && exec node dist/server.js ;;
+  *)
+    die "usage: module-start.sh push server|worker | playground | mcp | uptime" ;;
+esac
 '''
 
 [[config.mounts]]
@@ -2111,4 +2440,641 @@ VITE_ERRORS_DSN={{ERRORS_WEB_DSN}}
 VITE_ERRORS_ENVIRONMENT={{ERRORS_ENVIRONMENT}}
 VITE_ERRORS_SEND_PII={{ERRORS_SEND_PII}}
 VITE_BUILD_VERSION={{BUILD_VERSION}}
+'''
+
+[[config.mounts]]
+filePath = "/templates/push.env.template"
+content = '''
+# Push service (ethora-backend/services/push)
+NODE_ENV={{NODE_ENV}}
+PUSH_PORT={{PUSH_PORT}}
+
+MONGO_URI=mongodb://localhost:{{MONGO_PORT}}/{{MONGO_DB}}?directConnection=true
+REDIS_HOST=localhost
+REDIS_PORT={{REDIS_PORT}}
+
+# Shared secret used by backend -> push service calls (X-B2B-Secret header)
+B2B_PUSH_SECRET={{B2B_PUSH_SECRET}}
+
+# Legacy offline push auth token (ejabberd mod_offline_post sends it as access_token).
+# Default: reuse B2B_PUSH_SECRET.
+PUSH_OFFLINE_AUTH_TOKEN={{B2B_PUSH_SECRET}}
+
+# Where uploaded Firebase service-account JSON files are stored.
+# Must be persistent across restarts.
+PUSH_UPLOADS_DIR={{PUSH_UPLOADS_DIR}}
+
+# Platform keys: the base app's uploaded FCM/APNs credentials serve every app
+# of this install (an app with keys of its own sends with those); the service
+# finds the base app in the database. PUSH_PLATFORM_PROJECT_ID only overrides
+# it with another appId. See services/push/README.md, "Platform keys".
+PUSH_PLATFORM_PROJECT_ID={{PUSH_PLATFORM_PROJECT_ID}}
+
+# Push gateway: installs without the platform keys forward platform-build
+# pushes to this URL (the central install's push service, /gateway/v1/push)
+# with the Bearer token issued for this instance. Empty = no forwarding.
+PUSH_GATEWAY_URL={{PUSH_GATEWAY_URL}}
+PUSH_GATEWAY_TOKEN={{PUSH_GATEWAY_TOKEN}}
+
+# Error tracker (Bugsink on the central monitoring server, Sentry protocol):
+# services.monitoring.errors.push in deploy.yml. Empty = the push service and
+# push-worker report nothing.
+SENTRY_DSN={{ERRORS_PUSH_DSN}}
+SENTRY_ENVIRONMENT={{ERRORS_ENVIRONMENT}}
+SENTRY_RELEASE={{BUILD_VERSION}}
+SENTRY_SEND_PII={{ERRORS_SEND_PII}}
+ETHORA_BUILD_COMMIT={{BUILD_COMMIT}}
+
+'''
+
+[[config.mounts]]
+filePath = "/templates/mcp.env.template"
+content = '''
+# Generated by deploy/scripts/setup-env.sh from deploy/templates/mcp.env.template
+# Hosted MCP server (ethora-mcp-server) - Streamable HTTP transport, PM2 process `mcp`.
+
+ETHORA_MCP_TRANSPORT=http
+# Bind all interfaces, like the backend PORT: the uptime container reaches the
+# host via host.docker.internal (the docker bridge address), which a loopback-only
+# bind would not answer. Do NOT open this port in the firewall; nginx fronts it.
+ETHORA_MCP_HTTP_HOST=0.0.0.0
+ETHORA_MCP_HTTP_PORT={{MCP_PORT}}
+ETHORA_MCP_PUBLIC_URL={{MCP_PUBLIC_URL}}
+ETHORA_MCP_TRUST_PROXY=true
+
+# Loopback to the API process, bypassing nginx so the per-user X-Forwarded-For
+# the MCP server sets survives to the API rate limiters.
+ETHORA_API_URL=http://127.0.0.1:{{BACKEND_PORT}}/v1
+
+# Base app slug; the server fetches the base app JWT itself via /v1/apps/get-config.
+ETHORA_APP_DOMAIN_NAME={{BASE_APP_DOMAIN_NAME}}
+
+ETHORA_MCP_ENABLE_DANGEROUS_TOOLS={{MCP_ENABLE_DANGEROUS_TOOLS}}
+
+# OAuth 2.1 authorization server (the backend, public API base URL). Enables the
+# /mcp/oauth entry point and /.well-known/oauth-protected-resource for Claude.ai
+# and ChatGPT connector listings. Blank = OAuth entry point off.
+ETHORA_MCP_AUTH_ISSUER={{OAUTH_ISSUER}}
+# 4 hours: hosted assistants reconnect per conversation and session state is small.
+ETHORA_MCP_SESSION_TTL_MS=14400000
+
+# Hosted AI chat widget base URL (script is <base>/assistant.js) and the public
+# API base browsers can reach; both feed the ethora-widget-embed-snippet tool.
+# Blank widget URL = no hosted widget on this install (the tool emits a placeholder).
+ETHORA_MCP_WIDGET_URL={{WIDGET_URL}}
+ETHORA_MCP_PUBLIC_API_URL={{OAUTH_ISSUER}}
+
+# OpenAI apps directory domain-verification token (services.mcp.openai_apps_challenge).
+ETHORA_MCP_OPENAI_APPS_CHALLENGE={{MCP_OPENAI_APPS_CHALLENGE}}
+'''
+
+[[config.mounts]]
+filePath = "/templates/uptime.env.template"
+content = '''
+# Ethora Uptime service env
+PORT={{UPTIME_PORT}}
+DATABASE_URL={{UPTIME_DATABASE_URL}}
+UPTIME_CONFIG=/config/uptime.yml
+
+# Optional: XMPP synthetic heartbeat (used by check type: xmpp_muc_echo)
+# Defaults are for localhost installs (uptime container reaches host-published ejabberd ports via host.docker.internal).
+ETHORA_XMPP_API_URL=http://xmpp:5280/api
+ETHORA_XMPP_SERVICE=ws://xmpp:5280/ws
+ETHORA_XMPP_HOST={{XMPP_DOMAIN}}
+ETHORA_XMPP_MUC_SERVICE=conference.{{XMPP_DOMAIN}}
+ETHORA_XMPP_ADMIN=admin@{{XMPP_DOMAIN}}
+ETHORA_XMPP_ADMIN_PASSWORD={{XMPP_ADMIN_PASSWORD}}
+# Optional overrides (normally not needed; defaults are derived from the base app id)
+# ETHORA_XMPP_HEALTH_USER1=
+# ETHORA_XMPP_HEALTH_USER2=
+# ETHORA_XMPP_HEALTH_ROOM=
+
+# Optional: Synthetic journey regression test (only used if you enable a 'journey' check in uptime.yml)
+ETHORA_API_BASE=UPTIME_API_BASE_PLACEHOLDER
+ETHORA_BASE_DOMAIN_NAME={{BASE_APP_DOMAIN_NAME}}
+ETHORA_ADMIN_EMAIL={{ADMIN_EMAIL}}
+ETHORA_ADMIN_PASSWORD={{ADMIN_PASSWORD}}
+# NOTE: This env is kept for backwards compatibility but is no longer used to mint
+# new app names. Synthetic journeys now reuse a single stable app per mode whose
+# displayName starts with `__uptime__` so the backend can suppress HubSpot/Slack
+# analytics for it (see backend createAppV1.service.js -> isSyntheticTestApp).
+ETHORA_APP_NAME_PREFIX=__uptime__journey
+ETHORA_USERS_COUNT=3
+
+# Optional: B2B / tenant-admin synthetic journey.
+# Defaults below reuse the same app credentials that monoserver already exposes to the SDK playground/setup flow.
+# Override them if you want the B2B journey to run against a different tenant/root app.
+# Even though the env names say APP_ID / APP_SECRET, they should reference the tenant/root app
+# that owns the child apps. The backend resolves tenant-scoped B2B signing from that root app record.
+ETHORA_B2B_APP_ID={{PLAYGROUND_APP_ID}}
+ETHORA_B2B_APP_SECRET={{PLAYGROUND_APP_SECRET}}
+
+
+'''
+
+[[config.mounts]]
+filePath = "/templates/uptime-config.yml.template"
+content = '''
+# Ethora.com platform, copyright: Dappros Ltd (c) 2026, all rights reserved
+instances:
+  - id: local
+    name: {{BASE_APP_DISPLAY_NAME}}
+    enabled: true
+    tags: [enterprise]
+    checks:
+      - id: api_ping
+        name: API_ping
+        type: http
+        url: "http://host.docker.internal:{{BACKEND_PORT}}/ping"
+        intervalSeconds: 30
+        timeoutMs: 4000
+        expect:
+          - type: status_code
+            expected: [200]
+          # Optional metadata capture (does NOT affect health status)
+          - type: json
+            path: version
+            captureAs: version
+          - type: json
+            path: build.commit
+            captureAs: commit
+          - type: json
+            path: build.time
+            captureAs: time
+          - type: json
+            path: build.version
+            captureAs: buildVersion
+      - id: swagger_json
+        name: Swagger_JSON
+        type: http
+        severity: optional
+        url: "http://host.docker.internal:{{BACKEND_PORT}}/api-docs/swagger.json"
+        intervalSeconds: 60
+        timeoutMs: 6000
+        expect:
+          - type: status_code
+            expected: [200]
+          - type: json
+            path: openapi
+            exists: true
+          # Optional metadata capture (does NOT affect health status)
+          - type: json
+            path: info.version
+            captureAs: version
+
+      # Optional: validate push notifications service account (no mobile app required).
+      # Requires: ETHORA_API_BASE / ETHORA_BASE_DOMAIN_NAME / ETHORA_ADMIN_EMAIL / ETHORA_ADMIN_PASSWORD (already set in uptime.env.template)
+      - id: push_validate
+        name: Push_validate
+        type: push_validate
+        severity: optional
+        enabled: false
+        intervalSeconds: 3600
+        timeoutMs: 60000
+      - id: minio_live
+        name: MinIO_live
+        type: http
+        url: "http://host.docker.internal:9000/minio/health/live"
+        intervalSeconds: 30
+        timeoutMs: 3000
+        expect:
+          - type: status_code
+            expected: [200]
+      - id: xmpp_ws
+        name: XMPP_websocket
+        type: wss
+        severity: optional
+        # Uptime runs in docker and joins the same network as ejabberd, so it can talk to `xmpp:5280` directly.
+        url: "ws://xmpp:5280/ws"
+        intervalSeconds: 60
+        timeoutMs: 6000
+
+      # End-to-end XMPP chat heartbeat (no Mongo involvement):
+      # - ensures 2 test XMPP users exist
+      # - ensures a test MUC room exists
+      # - user1 joins + sends a groupchat message
+      # - user2 must receive it within timeout
+      #
+      # Uses env from deploy/generated/uptime/uptime.env:
+      # - ETHORA_XMPP_API_URL, ETHORA_XMPP_SERVICE, ETHORA_XMPP_ADMIN_PASSWORD, ...
+      - id: xmpp_muc_echo
+        name: XMPP_chat_echo
+        type: xmpp_muc_echo
+        intervalSeconds: 90
+        timeoutMs: 15000
+
+      # Optional: synthetic journey regression test (disabled by default).
+      # To enable:
+      # - add a check with type: journey
+      # - set ETHORA_API_BASE, ETHORA_BASE_DOMAIN_NAME, ETHORA_ADMIN_EMAIL, ETHORA_ADMIN_PASSWORD
+      #
+      - id: journey
+        name: Synthetic_journey
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 3600
+        timeoutMs: 180000
+
+      # Comprehensive synthetic journey (enabled by default)
+      - id: journey_advanced
+        name: Synthetic_journey_advanced
+        type: journey
+        severity: optional
+        enabled: true
+        intervalSeconds: 7200
+        timeoutMs: 240000
+
+      # Optional: tenant-admin / B2B regression journey (disabled by default).
+      # To enable:
+      # - ensure ETHORA_B2B_APP_ID / ETHORA_B2B_APP_SECRET are present in uptime.env
+      # - those values should point to the tenant/root app credentials (the app that owns child apps)
+      - id: journey_b2b
+        name: Synthetic_journey_b2b
+        type: journey
+        severity: optional
+        enabled: true
+        intervalSeconds: 7200
+        timeoutMs: 240000
+
+      # Customer-workflow regression journey: mirrors a typical customer
+      # integration sequence (account enabled -> users-batch -> chat with members
+      # in `<appId>_<uuid>` format -> user deletion -> account deletion).
+      # On every step where xmppUsername is returned, asserts no `${appId}_${appId}_*`
+      # double-prefix to catch the regression that broke chat membership lookups.
+      # Same env as journey_b2b: ETHORA_B2B_APP_ID / ETHORA_B2B_APP_SECRET.
+      - id: journey_customer_workflow
+        name: Synthetic_journey_customer_workflow
+        type: journey
+        severity: optional
+        enabled: true
+        intervalSeconds: 7200
+        timeoutMs: 240000
+
+      # ----- Manual journeys (run on demand from the wallboard "Run" button) -----
+      # All of these are `enabled: false` so they never run on a schedule. They
+      # exist so an operator can fire them after install / update for QA, or
+      # ad-hoc to confirm a specific area still works.
+
+      # Login + /login/refresh roundtrip + /me with the refreshed token.
+      - id: journey_token_refresh
+        name: Synthetic_token_refresh
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 0
+        timeoutMs: 30000
+
+      # Read-only signup validation: check-domain-name + checkEmail.
+      - id: journey_signup_validation
+        name: Synthetic_signup_validation
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 0
+        timeoutMs: 30000
+
+      # /v1/users/forgot + /v1/users/reset (with deliberately invalid token).
+      # Verifies the password-reset endpoints respond and the validation path
+      # rejects bad tokens. Does NOT consume the real reset token (we can't
+      # read the email).
+      - id: journey_password_reset
+        name: Synthetic_password_reset
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 0
+        timeoutMs: 60000
+
+      # /v1/apps/graph-statistic/{appId} + /v1/apps/{id}.
+      - id: journey_app_stats
+        name: Synthetic_app_stats
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 0
+        timeoutMs: 60000
+
+      # tags-add / tags-set / tags-delete on N synthetic users.
+      - id: journey_user_tags
+        name: Synthetic_user_tags
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 0
+        timeoutMs: 90000
+
+      # Public chat + /v1/chats/reports/{chatName} (moderation flow).
+      - id: journey_chat_reports
+        name: Synthetic_chat_reports
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 0
+        timeoutMs: 90000
+
+      # /v1/files upload + list + get + delete lifecycle.
+      - id: journey_v1_files
+        name: Synthetic_v1_files
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 0
+        timeoutMs: 60000
+
+      # /v1/chats/private DM + /v1/chats/my (cleanup via teardown).
+      - id: journey_private_chat
+        name: Synthetic_private_chat
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 0
+        timeoutMs: 60000
+
+      # /v2/chats/users (GET) + /v2/chats/users (PATCH multipart) on a v2 group chat.
+      - id: journey_v2_user_chats
+        name: Synthetic_v2_user_chats
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 0
+        timeoutMs: 60000
+
+      # AI Agents forward path: create app-scoped agent + list + invite into a
+      # room + inspect bot-instances (POST/GET /v2/apps/{appId}/agents,
+      # invite-to-chat, /v2/apps/{appId}/bot-instances).
+      # ONLY enable on deployments where the AI module is turned on at deploy-
+      # config level - it is deliberately excluded from journey_b2b so AI-
+      # disabled servers don't false-RED. Uses the same tenant credentials as
+      # journey_b2b: ETHORA_B2B_APP_ID / ETHORA_B2B_APP_SECRET.
+      - id: journey_ai
+        name: Synthetic_journey_ai
+        type: journey
+        severity: optional
+        enabled: false
+        intervalSeconds: 0
+        timeoutMs: 90000
+
+      # ----- Cheap HTTP availability checks (no fixture overhead) -----
+      # These hit single endpoints with deterministic inputs and verify the
+      # route is mounted + responding. They're scheduled on long intervals
+      # because their failure mode is the same as api_ping.
+
+      # /v1/users/checkEmail/{email} - used by the signup form. Must respond
+      # 2xx (available) for an obviously-not-registered probe email; 422 also
+      # acceptable as a validation response.
+      - id: signup_check_email
+        name: Signup_check_email
+        type: http
+        severity: optional
+        url: "http://host.docker.internal:{{BACKEND_PORT}}/v1/users/checkEmail/uptime-probe%40example.com"
+        intervalSeconds: 300
+        timeoutMs: 4000
+        expect:
+          - type: status_code
+            expected: [200, 422]
+
+      # ----- Hosted MCP server (optional; services.mcp.enabled) -----
+      # Rendered enabled only when the MCP service is installed on this host.
+      # /healthz reports the PM2 process is up and the base-app JWT bootstrap
+      # succeeded (appJwtReady), which is what login/register tools depend on.
+      - id: mcp_health
+        name: MCP_health
+        type: http
+        severity: optional
+        enabled: {{UPTIME_MCP_ENABLED}}
+        url: "http://host.docker.internal:{{MCP_PORT}}/healthz"
+        intervalSeconds: 60
+        timeoutMs: 4000
+        expect:
+          - type: status_code
+            expected: [200]
+          - type: json
+            path: ok
+            exists: true
+          # Metadata capture (does NOT affect health status)
+          - type: json
+            path: version
+            captureAs: version
+          - type: json
+            path: sessions
+            captureAs: sessions
+          - type: json
+            path: appJwtReady
+            captureAs: appJwtReady
+
+  # Remote instances (optional): useful for teams validating multiple environments.
+  # Public (external) checks for THIS deployment (TLS + Nginx routing).
+  # Enabled automatically for non-localhost installs.
+  - id: public
+    name: {{BASE_APP_DISPLAY_NAME}}_Public
+    enabled: {{UPTIME_PUBLIC_ENABLED}}
+    tags: [public]
+    checks:
+      - id: api_ping
+        name: API_ping
+        type: http
+        url: "https://{{API_DOMAIN}}/ping"
+        intervalSeconds: 60
+        timeoutMs: 6000
+        expect:
+          - type: status_code
+            expected: [200]
+      - id: swagger_json
+        name: Swagger_JSON
+        type: http
+        severity: optional
+        url: "https://{{API_DOMAIN}}/api-docs/swagger.json"
+        intervalSeconds: 300
+        timeoutMs: 8000
+        expect:
+          - type: status_code
+            expected: [200]
+          - type: json
+            path: openapi
+            exists: true
+
+      - id: web_home
+        name: Web_home
+        type: http
+        severity: optional
+        url: "https://{{WEB_DOMAIN}}/"
+        intervalSeconds: 300
+        timeoutMs: 8000
+        expect:
+          - type: status_code
+            expected: [200]
+
+      - id: files_minio_live
+        name: Files_MinIO_live
+        type: http
+        severity: optional
+        url: "https://{{FILES_DOMAIN}}/minio/health/live"
+        intervalSeconds: 120
+        timeoutMs: 8000
+        expect:
+          - type: status_code
+            expected: [200]
+
+      - id: xmpp_ws
+        name: XMPP_websocket
+        type: wss
+        severity: optional
+        url: "wss://{{XMPP_DOMAIN}}/ws"
+        intervalSeconds: 120
+        timeoutMs: 8000
+
+      # Cheap public availability check for the signup-form validation endpoint.
+      # Confirms TLS + Nginx + route are wired through to the backend.
+      - id: signup_check_email
+        name: Signup_check_email
+        type: http
+        severity: optional
+        url: "https://{{API_DOMAIN}}/v1/users/checkEmail/uptime-probe%40example.com"
+        intervalSeconds: 300
+        timeoutMs: 6000
+        expect:
+          - type: status_code
+            expected: [200, 422]
+
+      # Hosted MCP server discovery document through TLS + nginx (optional;
+      # rendered enabled only when services.mcp.enabled and a domain is set).
+      - id: mcp_discovery
+        name: MCP_discovery
+        type: http
+        severity: optional
+        enabled: {{UPTIME_MCP_PUBLIC_ENABLED}}
+        url: "https://{{UPTIME_MCP_DOMAIN}}/.well-known/mcp"
+        intervalSeconds: 300
+        timeoutMs: 8000
+        expect:
+          - type: status_code
+            expected: [200]
+          - type: json
+            path: endpoint
+            exists: true
+          - type: json
+            path: version
+            captureAs: version
+
+      # OAuth 2.1 authorization-server metadata (backend) used by MCP connector
+      # listings; rendered enabled with the public MCP checks.
+      - id: oauth_metadata
+        name: OAuth_metadata
+        type: http
+        severity: optional
+        enabled: {{UPTIME_MCP_PUBLIC_ENABLED}}
+        url: "https://{{API_DOMAIN}}/.well-known/oauth-authorization-server"
+        intervalSeconds: 300
+        timeoutMs: 8000
+        expect:
+          - type: status_code
+            expected: [200]
+          - type: json
+            path: issuer
+            exists: true
+
+      # --- TLS certificate expiry (proactive) ---
+      # These read each public cert's notAfter and go amber when < warnDays
+      # remaining, red when < critDays or already expired. They are the safety
+      # net for a silently-broken auto-renewal: a healthy certbot renews at
+      # ~30 days left, so a cert reaching 21 days means renewal has stalled.
+      # Critical severity (the default) so a lapsing cert is prominent.
+      - id: cert_api
+        name: Cert_api
+        type: tls
+        url: "https://{{API_DOMAIN}}"
+        intervalSeconds: 3600
+        timeoutMs: 8000
+        warnDays: 21
+        critDays: 7
+      - id: cert_web
+        name: Cert_web
+        type: tls
+        url: "https://{{WEB_DOMAIN}}"
+        intervalSeconds: 3600
+        timeoutMs: 8000
+        warnDays: 21
+        critDays: 7
+      - id: cert_files
+        name: Cert_files
+        type: tls
+        url: "https://{{FILES_DOMAIN}}"
+        intervalSeconds: 3600
+        timeoutMs: 8000
+        warnDays: 21
+        critDays: 7
+      - id: cert_xmpp
+        name: Cert_xmpp
+        type: tls
+        url: "https://{{XMPP_DOMAIN}}"
+        intervalSeconds: 3600
+        timeoutMs: 8000
+        warnDays: 21
+        critDays: 7
+      - id: cert_mcp
+        name: Cert_mcp
+        type: tls
+        severity: optional
+        enabled: {{UPTIME_MCP_PUBLIC_ENABLED}}
+        url: "https://{{UPTIME_MCP_DOMAIN}}"
+        intervalSeconds: 3600
+        timeoutMs: 8000
+        warnDays: 21
+        critDays: 7
+      # Optional public subdomains - uncomment the ones this install serves
+      # (leaving an unset {{...}} domain in would produce an invalid https:// url):
+      # - id: cert_playground
+      #   name: Cert_playground
+      #   type: tls
+      #   url: "https://{{PLAYGROUND_DOMAIN}}"
+      #   intervalSeconds: 3600
+      #   timeoutMs: 8000
+      #   warnDays: 21
+      #   critDays: 7
+      # - id: cert_uptime
+      #   name: Cert_uptime
+      #   type: tls
+      #   url: "https://{{UPTIME_DOMAIN}}"
+      #   intervalSeconds: 3600
+      #   timeoutMs: 8000
+      #   warnDays: 21
+      #   critDays: 7
+      # - id: cert_widget
+      #   name: Cert_widget
+      #   type: tls
+      #   url: "https://{{WIDGET_DOMAIN}}"
+      #   intervalSeconds: 3600
+      #   timeoutMs: 8000
+      #   warnDays: 21
+      #   critDays: 7
+
+  - id: ethora
+    name: Ethora_API
+    enabled: {{UPTIME_ETHORA_ENABLED}}
+    tags: [public]
+    checks:
+      - id: api_ping
+        name: API_ping
+        type: http
+        url: "https://api.ethora.com/ping"
+        intervalSeconds: 60
+        timeoutMs: 6000
+        expect:
+          - type: status_code
+            expected: [200]
+      - id: swagger_json
+        name: Swagger_JSON
+        type: http
+        url: "https://api.ethora.com/api-docs/swagger.json"
+        intervalSeconds: 300
+        timeoutMs: 8000
+        expect:
+          - type: status_code
+            expected: [200]
+          - type: json
+            path: openapi
+            exists: true
+
+
 '''

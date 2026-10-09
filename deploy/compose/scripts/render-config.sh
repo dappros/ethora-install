@@ -20,6 +20,16 @@
 #   /out/config/widget/widget.env          <- templates/widget.env.template
 #   /out/config/widget/Caddyfile           the static server of the widget bundle
 #   /out/config/ai-postgres/password       the bundled Postgres' password
+# and likewise for the push, playground, mcp and uptime modules (profiles of the
+# same names, or PUSH_ENABLED / PLAYGROUND_ENABLED / MCP_ENABLED / UPTIME_ENABLED):
+#   /out/config/push/push.env              <- templates/push.env.template
+#   /out/config/playground/playground.env  the SDK playground's public URLs
+#   /out/config/mcp/mcp.env                <- templates/mcp.env.template
+#   /out/config/uptime/uptime.env, uptime.yml, auth-password
+#                                          <- templates/uptime.env.template, uptime-config.yml.template
+#   /out/config/uptime-db/password         the uptime Postgres' password
+# (init.sh adds /out/config/base-app/credentials.env, the base app's API
+# credentials the playground and uptime modules sign in with.)
 #
 # It runs in the ethora-xmpp image (development form, scripts bind-mounted)
 # or in the ethora-compose-init image, which is the xmpp image plus this
@@ -59,12 +69,16 @@
 #                                                http://widget:8080
 #   ETHORA_AI_POSTGRES_HOST, ETHORA_AI_POSTGRES_PORT   the bundled pgvector Postgres
 #                                                (ai-postgres, 5432) unless AI_PG_URL is set
+#   ETHORA_PUSH_URL, ETHORA_PLAYGROUND_URL, ETHORA_MCP_URL, ETHORA_UPTIME_URL
+#                                                http://push:8098, http://playground:3020,
+#                                                http://mcp:3030, http://uptime:8099
+#   ETHORA_UPTIME_POSTGRES_HOST, ETHORA_UPTIME_POSTGRES_PORT   uptime-db, 5432
 # and, for a host that is not compose (the Cloudron package):
 #   ETHORA_SITE_ADDRESS    the one-origin site's Caddy address, e.g. :3000
 #                          behind a proxy that terminates TLS itself
 #   ETHORA_EXTRA_SITES     more Caddy site blocks, appended as they are
 #   API_UID, XMPP_UID, CENTRIFUGO_UID, MYSQL_UID, MINIO_UID, FRONTEND_UID,
-#   AI_UID, AI_POSTGRES_UID
+#   AI_UID, AI_POSTGRES_UID, MODULE_UID, UPTIME_POSTGRES_UID
 #                          owners of the rendered files (the images' users)
 #
 # Differences from the host installer, all because the services talk over the
@@ -95,6 +109,8 @@ MINIO_UID="${MINIO_UID:-0}"         # minio: root
 FRONTEND_UID="${FRONTEND_UID:-0}"   # ethora-frontend: root
 AI_UID="${AI_UID:-1000}"            # ethora-ai: node
 AI_POSTGRES_UID="${AI_POSTGRES_UID:-999}"   # pgvector/pgvector: postgres
+MODULE_UID="${MODULE_UID:-1000}"            # ethora-push, ethora-playground, ethora-mcp: node
+UPTIME_POSTGRES_UID="${UPTIME_POSTGRES_UID:-70}"   # postgres:alpine: postgres
 
 log() { echo "[config] $*"; }
 die() { echo "[config] ERROR: $*" >&2; exit 1; }
@@ -151,6 +167,9 @@ secret AI_SERVICE_SECRET 32
 secret DOCS_PARSE_SECRET 32
 secret AI_POSTGRES_PASSWORD 32
 secret WIDGET_SCRIPT_VERSION yymm
+secret B2B_PUSH_SECRET 32
+secret UPTIME_POSTGRES_PASSWORD 32
+secret UPTIME_AUTH_PASSWORD 24
 [ -z "$missing" ] || die "missing:$missing (set them in .env, or mount the secrets volume at $SECRETS_DIR so they are generated)"
 [ -z "$generated" ] || log "generated and stored in the secrets volume:$generated"
 case " $generated " in
@@ -223,6 +242,10 @@ ETHORA_FRONTEND_URL="${ETHORA_FRONTEND_URL:-http://frontend:8080}"
 ETHORA_AI_SERVICE_URL="${ETHORA_AI_SERVICE_URL:-http://ai-service:8013}"
 ETHORA_DOCS_PARSE_URL="${ETHORA_DOCS_PARSE_URL:-http://docs-parse:8201}"
 ETHORA_WIDGET_URL="${ETHORA_WIDGET_URL:-http://widget:8080}"
+ETHORA_PUSH_URL="${ETHORA_PUSH_URL:-http://push:8098}"
+ETHORA_PLAYGROUND_URL="${ETHORA_PLAYGROUND_URL:-http://playground:3020}"
+ETHORA_MCP_URL="${ETHORA_MCP_URL:-http://mcp:3030}"
+ETHORA_UPTIME_URL="${ETHORA_UPTIME_URL:-http://uptime:8099}"
 export REDIS_PORT="${ETHORA_REDIS_PORT:-6379}"
 export MYSQL_PORT="${ETHORA_MYSQL_PORT:-3306}"
 MINIO_PORT="${ETHORA_MINIO_PORT:-9000}"
@@ -239,8 +262,26 @@ def() { # def NAME value: export NAME=value unless NAME is already set
 # explicit flag wins (hosts without profiles, e.g. the Helm chart, set the
 # flag). The crawler is not part of the ai module yet.
 profiles=",$(printf '%s' "${COMPOSE_PROFILES:-}" | tr -d ' '),"
-case "$profiles" in *,ai,*) def AI_SERVICE_ENABLED true ;; *) def AI_SERVICE_ENABLED false ;; esac
-AI_MODULE="$AI_SERVICE_ENABLED"
+has_profile() { case "$profiles" in *,"$1",*) return 0 ;; *) return 1 ;; esac; }
+flag_of() { if has_profile "$1"; then echo true; else echo false; fi; }
+def AI_SERVICE_ENABLED "$(flag_of ai)"
+def PUSH_ENABLED "$(flag_of push)"
+def PLAYGROUND_ENABLED "$(flag_of playground)"
+def MCP_ENABLED "$(flag_of mcp)"
+def UPTIME_ENABLED "$(flag_of uptime)"
+AI_MODULE="$AI_SERVICE_ENABLED"; PUSH_MODULE="$PUSH_ENABLED"; PLAYGROUND_MODULE="$PLAYGROUND_ENABLED"
+MCP_MODULE="$MCP_ENABLED"; UPTIME_MODULE="$UPTIME_ENABLED"
+if [ -n "$PUBLIC_URL" ] && { [ "$PLAYGROUND_MODULE" = true ] || [ "$MCP_MODULE" = true ] || [ "$UPTIME_MODULE" = true ]; }; then
+  die "the playground, mcp and uptime modules need hosts of their own (ROOT_DOMAIN), not a one-origin install (PUBLIC_URL)"
+fi
+def MCP_ENABLE_DANGEROUS_TOOLS true
+def MCP_OPENAI_APPS_CHALLENGE ""
+def UPTIME_AUTH_USER admin
+def PUSH_PLATFORM_PROJECT_ID ""
+def PUSH_GATEWAY_URL ""
+def PUSH_GATEWAY_TOKEN ""
+def ERRORS_PUSH_DSN ""
+export PUSH_PORT=8098 MCP_PORT=3030 UPTIME_PORT=8099 PLAYGROUND_PORT=3020
 def BLOCKCHAIN_ENABLED false
 def DOCS_PARSE_ENABLED "$AI_MODULE"
 def CRAWLER_ENABLED false
@@ -352,6 +393,31 @@ export WIDGET_XMPP_CONFERENCE="conference.$XMPP_DOMAIN" WIDGET_QR_URL="$web_url/
 export AI_SERVICE_XMPP_SERVICE_PLACEHOLDER="XMPP_SERVICE=ws://$(hostport_of "$ETHORA_XMPP_URL")/ws"
 export PLATFORM_API_URL="$ETHORA_API_URL"
 
+# Hosts of the playground, mcp and uptime modules (five-host layout only).
+module_host() { # module_host VAR default-prefix on|off
+  eval "v=\${$1:-}"
+  if [ "$3" != true ]; then v=""; else
+    case "$(printf '%s' "$v" | tr 'A-Z' 'a-z')" in ""|off|none|false|no) v="$2.$ROOT_DOMAIN" ;; esac
+  fi
+  export "$1=$v"
+}
+module_host PLAYGROUND_DOMAIN playground "$PLAYGROUND_MODULE"
+module_host MCP_DOMAIN mcp "$MCP_MODULE"
+module_host UPTIME_DOMAIN uptime "$UPTIME_MODULE"
+playground_url="${PLAYGROUND_DOMAIN:+https://$PLAYGROUND_DOMAIN}"
+uptime_url="${UPTIME_DOMAIN:+https://$UPTIME_DOMAIN}"
+# Hosted MCP server: its public URL for the web app's "AI assistants" page,
+# and the API's OAuth authorization server (issuer = the API's public URL),
+# with the login and sign-up rate limits the host installer raises for it.
+export MCP_PUBLIC_URL="${MCP_DOMAIN:+https://$MCP_DOMAIN/mcp}"
+if [ "$MCP_MODULE" = true ]; then
+  def OAUTH_ISSUER "$api_url"
+  def RATE_LIMIT_AUTH_LOGIN_MAX 120
+  def RATE_LIMIT_AUTH_SIGNUP_MAX 30
+else
+  def OAUTH_ISSUER ""
+fi
+
 # ------------------------------------------------------------- render --
 # render TEMPLATE OUT: literal substitution of {{NAME}} with $NAME (empty
 # when unset, like setup-env.sh's ${NAME:-}) and of whole-line NAME_PLACEHOLDER
@@ -406,8 +472,12 @@ set_env_line "$stage/api/backend.env" MINIO_PORT "$MINIO_PORT"
 set_env_line "$stage/api/backend.env" CENTRIFUGO_API_URL "$ETHORA_CENTRIFUGO_URL/api"
 set_env_line "$stage/api/backend.env" AI_SERVICE_URL "$ETHORA_AI_SERVICE_URL"
 set_env_line "$stage/api/backend.env" DOCS_PARSE_URL "$ETHORA_DOCS_PARSE_URL"
+set_env_line "$stage/api/backend.env" PUSH_SERVER_URL "$ETHORA_PUSH_URL"
 ai_internal_url=""; docs_parse_internal_url=""
 if [ "$AI_MODULE" = true ]; then ai_internal_url="$ETHORA_AI_SERVICE_URL"; docs_parse_internal_url="$ETHORA_DOCS_PARSE_URL"; fi
+push_internal_url=""; [ "$PUSH_MODULE" != true ] || push_internal_url="$ETHORA_PUSH_URL"
+mcp_internal_url=""; [ "$MCP_MODULE" != true ] || mcp_internal_url="$ETHORA_MCP_URL"
+uptime_internal_url=""; [ "$UPTIME_MODULE" != true ] || uptime_internal_url="$ETHORA_UPTIME_URL"
 {
   echo "# Rendered by the compose bundle's config service from backend.env.template"
   echo "# on every 'docker compose up'. Edit .env, not this file."
@@ -425,7 +495,66 @@ if [ "$AI_MODULE" = true ]; then ai_internal_url="$ETHORA_AI_SERVICE_URL"; docs_
   echo "# The ai module's services as verify.js reaches them (empty without the module)."
   echo "AI_SERVICE_INTERNAL_URL=$ai_internal_url"
   echo "DOCS_PARSE_INTERNAL_URL=$docs_parse_internal_url"
+  echo "# The other modules (verify.js): switches, public URLs and internal endpoints, empty when off."
+  echo "PUSH_ENABLED=$PUSH_MODULE"
+  echo "PLAYGROUND_ENABLED=$PLAYGROUND_MODULE"
+  echo "MCP_ENABLED=$MCP_MODULE"
+  echo "UPTIME_ENABLED=$UPTIME_MODULE"
+  echo "ETHORA_PUBLIC_PLAYGROUND_URL=$playground_url"
+  echo "ETHORA_PUBLIC_MCP_URL=$MCP_PUBLIC_URL"
+  echo "ETHORA_PUBLIC_UPTIME_URL=$uptime_url"
+  echo "PUSH_INTERNAL_URL=$push_internal_url"
+  echo "MCP_INTERNAL_URL=$mcp_internal_url"
+  echo "UPTIME_INTERNAL_URL=$uptime_internal_url"
+  echo "UPTIME_AUTH_USER=$UPTIME_AUTH_USER"
+  echo "UPTIME_AUTH_PASSWORD=$UPTIME_AUTH_PASSWORD"
 } > "$stage/api/backend.env.tmp" && mv "$stage/api/backend.env.tmp" "$stage/api/backend.env"
+
+# push, playground, mcp and uptime modules.
+mkdir -p "$stage/push" "$stage/playground" "$stage/mcp" "$stage/uptime" "$stage/uptime-db"
+if [ "$PUSH_MODULE" = true ]; then
+  [ -f "$TEMPLATES/push.env.template" ] || die "template not found: $TEMPLATES/push.env.template (push module)"
+  export PUSH_UPLOADS_DIR=/app/push/uploads
+  render "$TEMPLATES/push.env.template" "$stage/push/push.env"
+  set_env_line "$stage/push/push.env" MONGO_URI "${ETHORA_MONGO_URI:-mongodb://mongo:27017/$MONGO_DB?directConnection=true}"
+  set_env_line "$stage/push/push.env" REDIS_HOST "$ETHORA_REDIS_HOST"
+fi
+if [ "$PLAYGROUND_MODULE" = true ]; then
+  # What the host installer writes to the playground's .env.local; the base
+  # app's id and secret are added at start from base-app/credentials.env.
+  {
+    echo "ETHORA_CHAT_API_URL=$api_url"
+    echo "NEXT_PUBLIC_ETHORA_CHAT_API_URL=$api_url"
+    echo "NEXT_PUBLIC_BACKEND_URL=$playground_url"
+    echo "PORT=$PLAYGROUND_PORT"
+  } > "$stage/playground/playground.env"
+fi
+if [ "$MCP_MODULE" = true ]; then
+  [ -f "$TEMPLATES/mcp.env.template" ] || die "template not found: $TEMPLATES/mcp.env.template (mcp module)"
+  render "$TEMPLATES/mcp.env.template" "$stage/mcp/mcp.env"
+  set_env_line "$stage/mcp/mcp.env" ETHORA_API_URL "$ETHORA_API_URL/v1"
+fi
+if [ "$UPTIME_MODULE" = true ]; then
+  for t in uptime.env.template uptime-config.yml.template; do
+    [ -f "$TEMPLATES/$t" ] || die "template not found: $TEMPLATES/$t (uptime module)"
+  done
+  export UPTIME_DATABASE_URL="postgresql://uptime:$UPTIME_POSTGRES_PASSWORD@${ETHORA_UPTIME_POSTGRES_HOST:-uptime-db}:${ETHORA_UPTIME_POSTGRES_PORT:-5432}/uptime"
+  export UPTIME_PUBLIC_ENABLED="${UPTIME_PUBLIC_ENABLED:-true}" UPTIME_ETHORA_ENABLED="${UPTIME_ETHORA_ENABLED:-false}"
+  export UPTIME_MCP_ENABLED="$MCP_MODULE" UPTIME_MCP_PUBLIC_ENABLED="$MCP_MODULE" UPTIME_MCP_DOMAIN="${MCP_DOMAIN:-mcp.localhost}"
+  export PLAYGROUND_APP_ID="" PLAYGROUND_APP_SECRET=""
+  render "$TEMPLATES/uptime.env.template" "$stage/uptime/uptime.env"
+  set_env_line "$stage/uptime/uptime.env" ETHORA_API_BASE "$ETHORA_API_URL"
+  set_env_line "$stage/uptime/uptime.env" ETHORA_XMPP_API_URL "$ETHORA_XMPP_URL/api"
+  set_env_line "$stage/uptime/uptime.env" ETHORA_XMPP_SERVICE "ws://$(hostport_of "$ETHORA_XMPP_URL")/ws"
+  set_env_line "$stage/uptime/uptime.env" UPTIME_CONFIG /ethora/config/uptime/uptime.yml
+  # The checks reach the services by their compose names, not the docker host.
+  render "$TEMPLATES/uptime-config.yml.template" "$stage/uptime/uptime.yml"
+  sed -i -e "s|host.docker.internal:$BACKEND_PORT|$(hostport_of "$ETHORA_API_URL")|g" \
+         -e "s|host.docker.internal:$MINIO_PORT|$ETHORA_MINIO_HOST:$MINIO_PORT|g" \
+         -e "s|host.docker.internal:$MCP_PORT|$(hostport_of "$ETHORA_MCP_URL")|g" "$stage/uptime/uptime.yml"
+  printf '%s' "$UPTIME_AUTH_PASSWORD" > "$stage/uptime/auth-password"
+  printf '%s' "$UPTIME_POSTGRES_PASSWORD" > "$stage/uptime-db/password"
+fi
 
 # ai module: ai-service.env, docs-parse.env, widget.env, the bundled
 # Postgres' password and the widget bundle's static server.
@@ -463,7 +592,10 @@ export TRACK_LAST_MESSAGE_URL="${TRACK_LAST_MESSAGE_URL:-$ETHORA_API_URL/v1/chat
 export TRACK_MESSAGE_URL="${TRACK_MESSAGE_URL:-$ETHORA_API_URL/v1/chats/archive-message}"
 export HISTORY_ACCESS_URL="${HISTORY_ACCESS_URL:-$ETHORA_API_URL/v1/chats/history-access}"
 export MESSAGE_AUDIT_URL="${MESSAGE_AUDIT_URL:-$ETHORA_API_URL/v1/chats/message-audit}"
-PUSH_COMMON_POST_URL="${PUSH_COMMON_POST_URL:-https://$API_DOMAIN/push/api/v2/push}"
+# ejabberd's offline pushes: the push service itself with the push module,
+# else the public URL the host installer uses (answers 404 without the module).
+if [ "$PUSH_MODULE" = true ]; then PUSH_COMMON_POST_URL="${PUSH_COMMON_POST_URL:-$ETHORA_PUSH_URL/api/v2/push}"
+else PUSH_COMMON_POST_URL="${PUSH_COMMON_POST_URL:-https://$API_DOMAIN/push/api/v2/push}"; fi
 PUSH_VOIP_POST_URL="${PUSH_VOIP_POST_URL:-http://host.docker.internal:7778/api/v1/voippush}"
 push_token="${B2B_PUSH_SECRET:-$INTERNAL_REQUESTS_SECRET}"
 admin_jid="admin@$XMPP_DOMAIN"
@@ -583,6 +715,18 @@ if [ -z "$PUBLIC_URL" ]; then
   if [ -n "$WIDGET_DOMAIN" ]; then
     ETHORA_SITES="$ETHORA_SITES$(printf '\n%s {\n\timport widget\n}' "$WIDGET_DOMAIN")"
   fi
+  if [ -n "$PLAYGROUND_DOMAIN" ]; then
+    ETHORA_SITES="$ETHORA_SITES$(printf '\n%s {\n\timport playground\n}' "$PLAYGROUND_DOMAIN")"
+  fi
+  if [ -n "$MCP_DOMAIN" ]; then
+    ETHORA_SITES="$ETHORA_SITES$(printf '\n%s {\n\timport mcp\n}' "$MCP_DOMAIN")"
+  fi
+  if [ -n "$UPTIME_DOMAIN" ]; then
+    # The bcrypt hash is computed by the caddy service at start from
+    # uptime/auth-password and arrives as its environment variable.
+    ETHORA_SITES="$ETHORA_SITES$(printf '\n%s {\n\timport security_headers\n\tbasic_auth {\n\t\t%s {$UPTIME_AUTH_HASH}\n\t}\n\treverse_proxy %s\n}' \
+      "$UPTIME_DOMAIN" "$UPTIME_AUTH_USER" "$(hostport_of "$ETHORA_UPTIME_URL")")"
+  fi
 elif [ -n "${ETHORA_SITE_ADDRESS:-}" ]; then
   ETHORA_SITES="$(printf '%s {\n\timport single_origin\n}' "$ETHORA_SITE_ADDRESS")"
 elif [ "$scheme" = https ]; then
@@ -596,6 +740,15 @@ export ETHORA_SITES
 export ETHORA_EXTRA_SITES="${ETHORA_EXTRA_SITES:-}"
 export UPSTREAM_API="$(hostport_of "$ETHORA_API_URL")"
 export UPSTREAM_WIDGET="$(hostport_of "$ETHORA_WIDGET_URL")"
+export UPSTREAM_PLAYGROUND="$(hostport_of "$ETHORA_PLAYGROUND_URL")"
+export UPSTREAM_MCP="$(hostport_of "$ETHORA_MCP_URL")"
+# Mobile apps reach the push service at api.<root>/push/ (the one-origin
+# install's /push/ too); nothing is routed without the module.
+ETHORA_PUSH_ROUTE=""
+if [ "$PUSH_MODULE" = true ]; then
+  ETHORA_PUSH_ROUTE="$(printf 'handle /push/* {\n\t\turi strip_prefix /push\n\t\treverse_proxy %s\n\t}' "$(hostport_of "$ETHORA_PUSH_URL")")"
+fi
+export ETHORA_PUSH_ROUTE
 # One origin with the ai module: the widget under /widget/ (the upstream is
 # written out, Caddy does not substitute inside a substituted value).
 ETHORA_WIDGET_ROUTE=""
@@ -631,9 +784,10 @@ cp "$SCRIPTS_SRC"/*.sh "$SCRIPTS_SRC"/*.js "$stage/scripts/"
 # ------------------------------------------------------------ install --
 # Hand each directory to the one container user that reads it; secrets stay
 # unreadable to the others. Then swap the whole tree in.
-chmod 700 "$stage/api" "$stage/frontend" "$stage/centrifugo" "$stage/xmpp" "$stage/mysql" "$stage/minio" "$stage/ai" "$stage/ai-postgres"
+chmod 700 "$stage/api" "$stage/frontend" "$stage/centrifugo" "$stage/xmpp" "$stage/mysql" "$stage/minio" "$stage/ai" "$stage/ai-postgres" \
+  "$stage/push" "$stage/playground" "$stage/mcp" "$stage/uptime" "$stage/uptime-db"
 chmod 600 "$stage"/api/* "$stage"/frontend/* "$stage"/centrifugo/* "$stage"/xmpp/* "$stage"/mysql/* "$stage"/minio/*
-for f in "$stage"/ai/* "$stage"/ai-postgres/*; do [ -f "$f" ] && chmod 600 "$f"; done
+for f in "$stage"/ai/* "$stage"/ai-postgres/* "$stage"/push/* "$stage"/playground/* "$stage"/mcp/* "$stage"/uptime/* "$stage"/uptime-db/*; do [ -f "$f" ] && chmod 600 "$f"; done
 # Neither secret nor per-service: readable by every container (the widget's
 # env names public URLs only).
 chmod 755 "$stage/caddy" "$stage/scripts" "$stage/widget"
@@ -652,8 +806,13 @@ own 0:0 "$stage/scripts"
 own "$AI_UID:$AI_UID" "$stage/ai"
 own "$AI_POSTGRES_UID:$AI_POSTGRES_UID" "$stage/ai-postgres"
 own 0:0 "$stage/widget"
+own "$MODULE_UID:$MODULE_UID" "$stage/push"
+own "$MODULE_UID:$MODULE_UID" "$stage/playground"
+own "$MODULE_UID:$MODULE_UID" "$stage/mcp"
+own 0:0 "$stage/uptime"                    # the uptime image and caddy run as root
+own "$UPTIME_POSTGRES_UID:$UPTIME_POSTGRES_UID" "$stage/uptime-db"
 mkdir -p "$OUT"
-for d in api frontend centrifugo xmpp mysql minio caddy scripts ai ai-postgres widget; do
+for d in api frontend centrifugo xmpp mysql minio caddy scripts ai ai-postgres widget push playground mcp uptime uptime-db; do
   rm -rf "$OUT/$d.new"
   cp -a "$stage/$d" "$OUT/$d.new"
   rm -rf "$OUT/$d"
@@ -672,4 +831,8 @@ else
   log "rendered for $ROOT_DOMAIN: api=$API_DOMAIN web=$WEB_DOMAIN xmpp=$XMPP_DOMAIN files=$FILES_DOMAIN secure-files=${SECURE_FILES_DOMAIN:-off}${WIDGET_DOMAIN:+ widget=$WIDGET_DOMAIN} (base app slug: $BASE_APP_DOMAIN_NAME)"
 fi
 [ "$AI_MODULE" != true ] || log "ai module on: ai-service, docs-parse, widget ($WIDGET_URL), postgres ${AI_PG_URL#*@}"
+[ "$PUSH_MODULE" != true ] || log "push module on: push + push-worker ($ETHORA_PUSH_URL; mobile apps: $api_url/push/)"
+[ "$PLAYGROUND_MODULE" != true ] || log "playground module on: $playground_url"
+[ "$MCP_MODULE" != true ] || log "mcp module on: $MCP_PUBLIC_URL (OAuth issuer $OAUTH_ISSUER)"
+[ "$UPTIME_MODULE" != true ] || log "uptime module on: $uptime_url (user $UPTIME_AUTH_USER), postgres ${UPTIME_DATABASE_URL#*@}"
 

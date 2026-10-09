@@ -17,7 +17,8 @@ have_docker() { command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
 XMPP_IMAGE="$(sed -n 's/^ETHORA_XMPP_IMAGE=//p' "$BUNDLE/.env.example")"
 
 echo "# bundle is in sync with the installer"
-for t in backend.env.template frontend.env.template centrifugo-config.json.template ai-service.env.template docs-parse.env.template widget.env.template; do
+for t in backend.env.template frontend.env.template centrifugo-config.json.template ai-service.env.template docs-parse.env.template widget.env.template \
+         push.env.template mcp.env.template uptime.env.template uptime-config.yml.template; do
   cmp -s "$BUNDLE/templates/$t" "$DEPLOY/templates/$t" && ok "templates/$t identical to deploy/templates" \
     || fail "templates/$t differs from deploy/templates/$t" "cp deploy/templates/$t deploy/compose/templates/"
 done
@@ -55,9 +56,10 @@ echo "# platforms/dokploy"
 DT="$BUNDLE/platforms/dokploy"
 "$DT/build-template.sh" --check >/dev/null 2>"$T/dtpl.err" && ok "dokploy blueprint regenerates identically" || fail "dokploy blueprint out of date" "run deploy/compose/platforms/dokploy/build-template.sh"
 for f in scripts/api-entrypoint.sh scripts/init.sh scripts/verify.js scripts/render-config.sh scripts/mongo-init.sh scripts/xmpp-start.sh scripts/frontend-start.sh \
-         scripts/ai-start.sh scripts/ai-pg-schema.js \
+         scripts/ai-start.sh scripts/ai-pg-schema.js scripts/module-start.sh \
          templates/backend.env.template templates/frontend.env.template templates/centrifugo-config.json.template \
-         templates/ai-service.env.template templates/docs-parse.env.template templates/widget.env.template; do
+         templates/ai-service.env.template templates/docs-parse.env.template templates/widget.env.template \
+         templates/push.env.template templates/mcp.env.template templates/uptime.env.template templates/uptime-config.yml.template; do
   grep -q "^filePath = \"/$f\"$" "$DT/template.toml" || fail "dokploy blueprint carries $f"
 done; ok "dokploy blueprint carries every script and template as a mount"
 DC="$DT/docker-compose.yml"
@@ -80,14 +82,14 @@ assert d["variables"]["root_domain"] == "${domain}"
 for m in c["mounts"]:
     assert m["content"] == open(bundle + m["filePath"]).read(), m["filePath"]
 env = dict(l.split("=", 1) for l in c["env"])
-example = [l.split("=", 1)[0] for l in open(bundle + "/.env.example") if re.match(r"^[A-Z_]+=", l)]
-skipped = {"API_DOMAIN", "WEB_DOMAIN", "XMPP_DOMAIN", "FILES_DOMAIN", "SECURE_FILES_DOMAIN", "WIDGET_DOMAIN", "ACME_EMAIL", "CADDY_GLOBAL_OPTIONS", "HTTP_PORT", "HTTPS_PORT",
+example = [l.split("=", 1)[0] for l in open(bundle + "/.env.example") if re.match(r"^[A-Z0-9_]+=", l)]
+skipped = {"API_DOMAIN", "WEB_DOMAIN", "XMPP_DOMAIN", "FILES_DOMAIN", "SECURE_FILES_DOMAIN", "WIDGET_DOMAIN", "PLAYGROUND_DOMAIN", "MCP_DOMAIN", "UPTIME_DOMAIN", "ACME_EMAIL", "CADDY_GLOBAL_OPTIONS", "HTTP_PORT", "HTTPS_PORT",
            "PUBLIC_URL", "ETHORA_COMPOSE_INIT_IMAGE"}  # hosts routed by Traefik; the dev form renders with the xmpp image
 assert [k for k in example if k not in skipped] == list(env), list(env)
 assert env["COMPOSE_PROFILES"] == "" and env["ROOT_DOMAIN"] == "${root_domain}"
 secrets = [k for k in env if k.endswith(("_SECRET", "_PASSWORD", "_KEY")) and k not in ("ETHORA_LICENSE_KEY", "AI_API_KEY")] + ["MINIO_ROOT_USER"]
 for k in secrets:
-    v = re.fullmatch(r"(ethora)?\$\{([a-z_]+)\}", env[k]); assert v and "${password:" in d["variables"][v.group(2)], (k, env[k])
+    v = re.fullmatch(r"(ethora)?\$\{([a-z0-9_]+)\}", env[k]); assert v and "${password:" in d["variables"][v.group(2)], (k, env[k])
 print(f"{len(c['domains'])} domains, {len(c['mounts'])} mounts, {len(env)} env keys, {len(secrets)} generated secrets")
 PY
 else skip "dokploy template.toml parses (python3 3.11+ with tomllib not available)"; fi
@@ -112,7 +114,7 @@ done
 [ "$(envval JWT_SECRET "$E" | tr -d "\n" | wc -c)" -ge 64 ] && ok "signing keys are 64 chars" || fail "JWT_SECRET length"
 pw="$(envval ADMIN_PASSWORD "$E")"; grep -q "$pw" "$T/out" && ok "generated admin password printed" || fail "admin password printed"
 [ "$(envval COMPOSE_PROFILES "$E")" = "caddy" ] && ok "caddy profile on" || fail "caddy profile"
-keys_example="$(grep -oE '^[A-Z_]+=' "$BUNDLE/.env.example" | sort)"; keys_env="$(grep -oE '^[A-Z_]+=' "$E" | sort)"
+keys_example="$(grep -oE '^[A-Z0-9_]+=' "$BUNDLE/.env.example" | sort)"; keys_env="$(grep -oE '^[A-Z0-9_]+=' "$E" | sort)"
 [ "$keys_example" = "$keys_env" ] && ok "same keys as .env.example" || fail "keys differ from .env.example" "$(diff <(echo "$keys_example") <(echo "$keys_env") | head -5)"
 
 cp "$E" "$T/first.env"; echo "POSTMARK_ENABLED=true" >> "$E"
@@ -150,9 +152,16 @@ cfg --modules none --no-caddy --yes
 [ -z "$(envval COMPOSE_PROFILES "$E")" ] && ok "--modules none --no-caddy empties the profiles" || fail "--modules none" "$(envval COMPOSE_PROFILES "$E")"
 cfg --modules ai --yes
 [ "$(envval COMPOSE_PROFILES "$E")" = "ai" ] && ok "modules without caddy" || fail "modules without caddy" "$(envval COMPOSE_PROFILES "$E")"
-cfg --modules push --yes && fail "unknown module refused" || ok "unknown module refused"
+cfg --modules nope --yes && fail "unknown module refused" || ok "unknown module refused"
+cfg --modules ai,push,playground,mcp,uptime --caddy --yes
+[ "$(envval COMPOSE_PROFILES "$E")" = "caddy,ai,push,playground,mcp,uptime" ] && ok "every module as a profile, --caddy turns the proxy back on" || fail "all modules" "$(envval COMPOSE_PROFILES "$E")"
+for k in B2B_PUSH_SECRET UPTIME_POSTGRES_PASSWORD UPTIME_AUTH_PASSWORD; do v="$(envval "$k" "$E")"; [ ${#v} -ge 24 ] || fail "$k generated"; done; ok "push and uptime secrets generated"
+grep -q 'uptime: https://uptime.chat.example.com' "$T/out" && grep -q 'mcp: https://mcp.chat.example.com/mcp' "$T/out" && ok "report names the module hosts" || fail "module hosts in the report" "$(grep -E 'uptime|mcp' "$T/out")"
 cfg --widget chat-widget.example.com --modules ai --yes
 [ "$(envval WIDGET_DOMAIN "$E")" = "chat-widget.example.com" ] && ok "explicit widget host" || fail "widget host" "$(envval WIDGET_DOMAIN "$E")"
+rm -f "$E"
+cfg --public-url https://chat.example.com --admin-email a@b.co --modules mcp --yes && fail "mcp on one origin refused" || ok "playground/mcp/uptime refused on a one-origin install"
+cfg --public-url https://chat.example.com --admin-email a@b.co --modules ai,push --yes && ok "ai and push allowed on one origin" || fail "ai,push on one origin" "$(cat "$T/err")"
 rm -f "$E"
 
 echo "# render-config.sh"
@@ -175,6 +184,7 @@ else
         MINIO_ROOT_USER=mu MINIO_ROOT_PASSWORD=mp INTERNAL_REQUESTS_SECRET=irs CENTRIFUGO_API_KEY=cak
         CENTRIFUGO_HMAC_SECRET=chs CENTRIFUGO_ADMIN_PASSWORD=cap CENTRIFUGO_ADMIN_SECRET=cas 'BASE_APP_DISPLAY_NAME=Acme Chat'
   AI_SERVICE_SECRET=aisvc DOCS_PARSE_SECRET=dparse AI_POSTGRES_PASSWORD=aipg WIDGET_SCRIPT_VERSION=2610
+  B2B_PUSH_SECRET=b2b UPTIME_POSTGRES_PASSWORD=uppgs UPTIME_AUTH_PASSWORD=upauths
   CRYPTOPAIR_SECRET=testpassphrase SECRET_FOR_DB_ENCRYPTION=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb SECRET_FOR_FILES_ENCRYPTION=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc:dddddddddddddddddddddddddddddddd
 )
   R="$T/r"; mkdir -p "$R"
@@ -237,8 +247,8 @@ else
   # Secrets left out are generated once into the secrets volume and reused.
   R3="$T/r3"; mkdir -p "$R3"
   rcfg "$R3" ROOT_DOMAIN=chat.example.com ADMIN_EMAIL=ops@example.com >"$T/out3" 2>&1 && ok "renders with only ROOT_DOMAIN and ADMIN_EMAIL" || fail "minimal render" "$(cat "$T/out3")"
-  [ "$(grep -c '=' "$R3/secrets/secrets.env")" = "21" ] && [ "$(stat -c %a "$R3/secrets/secrets.env")" = "600" ] \
-    && ok "21 secrets generated into the secrets volume (600)" || fail "generated secrets" "$(cut -d= -f1 "$R3/secrets/secrets.env" | tr '\n' ' ')"
+  [ "$(grep -c '=' "$R3/secrets/secrets.env")" = "24" ] && [ "$(stat -c %a "$R3/secrets/secrets.env")" = "600" ] \
+    && ok "24 secrets generated into the secrets volume (600)" || fail "generated secrets" "$(cut -d= -f1 "$R3/secrets/secrets.env" | tr '\n' ' ')"
   grep -qE '^WIDGET_SCRIPT_VERSION=[0-9]{4}$' "$R3/secrets/secrets.env" && ok "widget script version fixed at the first start (YYMM)" || fail "WIDGET_SCRIPT_VERSION" "$(grep WIDGET "$R3/secrets/secrets.env")"
   pw="$(sed -n 's/^ADMIN_PASSWORD=//p' "$R3/secrets/secrets.env")"
   grep -q "admin password (generated, shown once): $pw" "$T/out3" && ok "generated admin password printed" || fail "admin password printed"
@@ -282,7 +292,8 @@ else
     ETHORA_REDIS_HOST=cache.internal ETHORA_REDIS_PORT=6380 ETHORA_MYSQL_HOST=sql.internal ETHORA_MYSQL_PORT=3307 ETHORA_MYSQL_USER=ejabberd \
     ETHORA_MINIO_HOST=s3.internal ETHORA_MINIO_PORT=9900 ETHORA_CENTRIFUGO_URL=http://rt.internal:8000 \
     ETHORA_XMPP_URL=http://x.internal:5280 ETHORA_API_URL=http://a.internal:8080 \
-    ETHORA_MYSQL_DATABASE=ejdb ETHORA_FRONTEND_URL=http://web.internal:8081 ETHORA_WIDGET_URL=http://wg.internal:8082 >/dev/null 2>&1
+    ETHORA_MYSQL_DATABASE=ejdb ETHORA_FRONTEND_URL=http://web.internal:8081 ETHORA_WIDGET_URL=http://wg.internal:8082 \
+    ETHORA_MCP_URL=http://m.internal:3031 ETHORA_PLAYGROUND_URL=http://pg.internal:3021 >/dev/null 2>&1
   be9="$R9/config/api/backend.env"; ej9="$R9/config/xmpp/ejabberd.yml"
   for kv in 'MONGO_URI=mongodb://u:p@db.internal:27017/ethora?tls=true' 'CHAT_DATABASE=mongodb://db.internal/chat_archive' REDIS_HOST=cache.internal REDIS_PORT=6380 \
             MAM_MYSQL_HOST=sql.internal MAM_MYSQL_PORT=3307 MAM_MYSQL_USER=ejabberd MINIO_HOST=s3.internal MINIO_PORT=9900 \
@@ -342,10 +353,55 @@ else
     && grep -q 'uri strip_prefix /widget' "$RA3/config/caddy/Caddyfile" && grep -q 'VITE_WIDGET_API_URL=https://chat.example.com/v1' "$RA3/config/widget/widget.env" \
     && ok "ai on one origin: widget under /widget/" || fail "ai one origin" "$(grep -n widget "$RA3/config/caddy/Caddyfile" "$RA3/config/frontend/frontend.env" | head -5)"
   ! grep -q 'handle /widget' "$R7/config/caddy/Caddyfile" && ok "one origin without the module: no /widget/ route" || fail "widget route without the module"
+
+  # push, playground, mcp, uptime: off by default, on with their profiles.
+  for kv in PUSH_ENABLED=false PLAYGROUND_ENABLED=false MCP_ENABLED=false UPTIME_ENABLED=false 'OAUTH_ISSUER=' 'PUSH_SERVER_URL=http://push:8098' 'ETHORA_PUBLIC_MCP_URL=' 'PUSH_INTERNAL_URL='; do
+    grep -qxF "$kv" "$be" && ok "modules off, backend.env: $kv" || fail "modules off, backend.env: $kv" "$(grep "^${kv%%=*}=" "$be")"
+  done
+  grep -qxF 'VITE_MCP_PUBLIC_URL=' "$fe" && ! grep -q 'handle /push' "$R/config/caddy/Caddyfile" && ! grep -qE '^(playground|mcp|uptime)\.' "$R/config/caddy/Caddyfile" \
+    && [ ! -f "$R/config/push/push.env" ] && [ ! -f "$R/config/uptime/uptime.yml" ] && ok "modules off: no MCP URL, no push route, no module hosts, no module env files" || fail "modules off leftovers"
+  grep -q 'common_post_url: "https://api.chat.example.com/push/api/v2/push"' "$R/config/xmpp/ejabberd.yml" && ok "modules off: ejabberd pushes to the public push URL (as the host installer)" || fail "offline push URL without the module" "$(grep common_post_url "$R/config/xmpp/ejabberd.yml")"
+  RM="$T/rm"; mkdir -p "$RM"
+  rcfg "$RM" "${renv[@]}" COMPOSE_PROFILES=caddy,push,playground,mcp,uptime B2B_PUSH_SECRET=b2bsec UPTIME_POSTGRES_PASSWORD=uppg UPTIME_AUTH_PASSWORD=upauth >"$T/outm" 2>&1 \
+    && ok "renders with the push, playground, mcp and uptime profiles" || fail "modules render" "$(cat "$T/outm")"
+  bem="$RM/config/api/backend.env"; fem="$RM/config/frontend/frontend.env"; cfm="$RM/config/caddy/Caddyfile"
+  for kv in PUSH_ENABLED=true PLAYGROUND_ENABLED=true MCP_ENABLED=true UPTIME_ENABLED=true B2B_PUSH_SECRET=b2bsec 'OAUTH_ISSUER=https://api.chat.example.com' \
+            RATE_LIMIT_AUTH_LOGIN_MAX=120 RATE_LIMIT_AUTH_SIGNUP_MAX=30 'ETHORA_PUBLIC_PLAYGROUND_URL=https://playground.chat.example.com' 'ETHORA_PUBLIC_MCP_URL=https://mcp.chat.example.com/mcp' \
+            'ETHORA_PUBLIC_UPTIME_URL=https://uptime.chat.example.com' 'PUSH_INTERNAL_URL=http://push:8098' 'MCP_INTERNAL_URL=http://mcp:3030' 'UPTIME_INTERNAL_URL=http://uptime:8099' UPTIME_AUTH_USER=admin UPTIME_AUTH_PASSWORD=upauth; do
+    grep -qxF "$kv" "$bem" && ok "modules, backend.env: $kv" || fail "modules, backend.env: $kv" "$(grep "^${kv%%=*}=" "$bem")"
+  done
+  grep -qxF 'VITE_MCP_PUBLIC_URL=https://mcp.chat.example.com/mcp' "$fem" && ok "modules, frontend.env: MCP public URL" || fail "VITE_MCP_PUBLIC_URL" "$(grep MCP "$fem")"
+  for kv in PUSH_PORT=8098 B2B_PUSH_SECRET=b2bsec PUSH_OFFLINE_AUTH_TOKEN=b2bsec 'MONGO_URI=mongodb://mongo:27017/ethora_prod?directConnection=true' REDIS_HOST=redis PUSH_UPLOADS_DIR=/app/push/uploads; do
+    grep -qxF "$kv" "$RM/config/push/push.env" && ok "modules, push.env: $kv" || fail "modules, push.env: $kv" "$(grep "^${kv%%=*}=" "$RM/config/push/push.env")"
+  done
+  for kv in 'ETHORA_CHAT_API_URL=https://api.chat.example.com' 'NEXT_PUBLIC_BACKEND_URL=https://playground.chat.example.com' PORT=3020; do
+    grep -qxF "$kv" "$RM/config/playground/playground.env" && ok "modules, playground.env: $kv" || fail "modules, playground.env: $kv"
+  done
+  for kv in ETHORA_MCP_HTTP_PORT=3030 'ETHORA_MCP_PUBLIC_URL=https://mcp.chat.example.com/mcp' 'ETHORA_API_URL=http://api:8080/v1' 'ETHORA_MCP_AUTH_ISSUER=https://api.chat.example.com' ETHORA_APP_DOMAIN_NAME=app ETHORA_MCP_ENABLE_DANGEROUS_TOOLS=true; do
+    grep -qxF "$kv" "$RM/config/mcp/mcp.env" && ok "modules, mcp.env: $kv" || fail "modules, mcp.env: $kv" "$(grep "^${kv%%=*}=" "$RM/config/mcp/mcp.env")"
+  done
+  for kv in PORT=8099 'DATABASE_URL=postgresql://uptime:uppg@uptime-db:5432/uptime' 'UPTIME_CONFIG=/ethora/config/uptime/uptime.yml' 'ETHORA_API_BASE=http://api:8080' 'ETHORA_XMPP_API_URL=http://xmpp:5280/api' ETHORA_XMPP_HOST=xmpp.chat.example.com ETHORA_ADMIN_EMAIL=ops@example.com; do
+    grep -qxF "$kv" "$RM/config/uptime/uptime.env" && ok "modules, uptime.env: $kv" || fail "modules, uptime.env: $kv" "$(grep "^${kv%%=*}=" "$RM/config/uptime/uptime.env")"
+  done
+  ! grep -q 'host.docker.internal' "$RM/config/uptime/uptime.yml" && grep -q 'url: "http://api:8080/ping"' "$RM/config/uptime/uptime.yml" && grep -q 'url: "http://mcp:3030/healthz"' "$RM/config/uptime/uptime.yml" \
+    && grep -q 'url: "https://mcp.chat.example.com/.well-known/mcp"' "$RM/config/uptime/uptime.yml" && ! grep -vE '^\s*#' "$RM/config/uptime/uptime.yml" | grep -qE '\{\{|_PLACEHOLDER' \
+    && ok "modules, uptime.yml: checks address the compose services, mcp checks on" || fail "uptime.yml" "$(grep -n 'host.docker\|api:8080/ping\|mcp' "$RM/config/uptime/uptime.yml" | head -4)"
+  [ "$(cat "$RM/config/uptime/auth-password")" = upauth ] && [ "$(cat "$RM/config/uptime-db/password")" = uppg ] && ok "modules, uptime password files" || fail "uptime password files"
+  grep -q 'common_post_url: "http://push:8098/api/v2/push"' "$RM/config/xmpp/ejabberd.yml" && grep -q 'auth_token: "b2bsec"' "$RM/config/xmpp/ejabberd.yml" && ok "modules, ejabberd.yml: offline pushes go to the push service with B2B_PUSH_SECRET" || fail "ejabberd push URL" "$(grep -E 'common_post_url|auth_token' "$RM/config/xmpp/ejabberd.yml")"
+  grep -q 'handle /push/\* {' "$cfm" && grep -q 'uri strip_prefix /push' "$cfm" && grep -q 'reverse_proxy push:8098' "$cfm" && ok "modules, Caddyfile: api.<root>/push/ to the push service" || fail "push route" "$(grep -n push "$cfm")"
+  grep -q '^playground.chat.example.com {$' "$cfm" && grep -q '^	import playground$' "$cfm" && grep -q '^mcp.chat.example.com {$' "$cfm" && grep -q '^	import mcp$' "$cfm" \
+    && grep -q 'reverse_proxy playground:3020' "$cfm" && grep -q 'reverse_proxy mcp:3030' "$cfm" && ok "modules, Caddyfile: playground and mcp hosts" || fail "playground/mcp sites" "$(grep -n -E 'playground|mcp' "$cfm" | head -6)"
+  grep -q '^uptime.chat.example.com {$' "$cfm" && grep -q 'basic_auth {' "$cfm" && grep -q 'admin {$UPTIME_AUTH_HASH}' "$cfm" && grep -q 'reverse_proxy uptime:8099' "$cfm" \
+    && ok "modules, Caddyfile: uptime host behind basic auth (hash from the caddy service)" || fail "uptime site" "$(grep -n -A5 '^uptime' "$cfm")"
+  [ "$(stat -c %a "$RM/config/uptime")" = 700 ] && [ "$(stat -c %a "$RM/config/push/push.env")" = 600 ] && ok "modules, rendered modes" || fail "module modes"
+  rcfg "$T/rm2" PUBLIC_URL=https://chat.example.com ADMIN_EMAIL=ops@example.com COMPOSE_PROFILES=uptime >"$T/outm2" 2>&1 && fail "uptime on one origin refused by the renderer" || { grep -q 'hosts of their own' "$T/outm2" && ok "uptime/mcp/playground on one origin refused by the renderer"; }
+  RM3="$T/rm3"; mkdir -p "$RM3"
+  rcfg "$RM3" PUBLIC_URL=https://chat.example.com ADMIN_EMAIL=ops@example.com COMPOSE_PROFILES=push >/dev/null 2>&1 && grep -q 'handle /push/\* {' "$RM3/config/caddy/Caddyfile" \
+    && grep -qxF 'PUSH_ENABLED=true' "$RM3/config/api/backend.env" && ok "push on one origin: /push/ routed" || fail "push on one origin"
   proxies() { grep -o 'reverse_proxy [^ ]*' "$1" | sort -u | tr '\n' ' '; }
-  [ "$(proxies "$R/config/caddy/Caddyfile")" = "reverse_proxy api:8080 reverse_proxy centrifugo:8000 reverse_proxy frontend:8080 reverse_proxy minio:9000 reverse_proxy widget:8080 reverse_proxy xmpp:5280 " ] \
+  [ "$(proxies "$R/config/caddy/Caddyfile")" = "reverse_proxy api:8080 reverse_proxy centrifugo:8000 reverse_proxy frontend:8080 reverse_proxy mcp:3030 reverse_proxy minio:9000 reverse_proxy playground:3020 reverse_proxy widget:8080 reverse_proxy xmpp:5280 " ] \
     && ok "Caddyfile upstreams default to the compose services" || fail "default Caddyfile upstreams" "$(proxies "$R/config/caddy/Caddyfile")"
-  [ "$(proxies "$R9/config/caddy/Caddyfile")" = "reverse_proxy a.internal:8080 reverse_proxy rt.internal:8000 reverse_proxy s3.internal:9900 reverse_proxy web.internal:8081 reverse_proxy wg.internal:8082 reverse_proxy x.internal:5280 " ] \
+  [ "$(proxies "$R9/config/caddy/Caddyfile")" = "reverse_proxy a.internal:8080 reverse_proxy m.internal:3031 reverse_proxy pg.internal:3021 reverse_proxy rt.internal:8000 reverse_proxy s3.internal:9900 reverse_proxy web.internal:8081 reverse_proxy wg.internal:8082 reverse_proxy x.internal:5280 " ] \
     && ok "endpoint override, Caddyfile upstreams follow the internal URLs" || fail "Caddyfile upstream overrides" "$(proxies "$R9/config/caddy/Caddyfile")"
   # A host that is not compose (the Cloudron package): its own site address
   # behind a TLS-terminating proxy, and an extra site of its own.
@@ -404,8 +460,8 @@ else
 fi
 
 echo "# compose files"
-keys_env_example="$(grep -oE '^[A-Z_]+=' "$BUNDLE/.env.example" | tr -d = | grep -vE '^(ETHORA_[A-Z_]*_IMAGE|HTTP_PORT|HTTPS_PORT)$' | sort)"
-keys_config="$(sed -n '/^  config:/,/^  [a-z]/p' "$BUNDLE/docker-compose.yml" | sed -n 's/^      \([A-Z_]*\): .*/\1/p' | sort)"
+keys_env_example="$(grep -oE '^[A-Z0-9_]+=' "$BUNDLE/.env.example" | tr -d = | grep -vE '^(ETHORA_[A-Z_]*_IMAGE|HTTP_PORT|HTTPS_PORT)$' | sort)"
+keys_config="$(sed -n '/^  config:/,/^  [a-z]/p' "$BUNDLE/docker-compose.yml" | sed -n 's/^      \([A-Z0-9_]*\): .*/\1/p' | sort)"
 [ "$keys_env_example" = "$keys_config" ] && ok "config lists every .env.example setting (platforms without a .env)" \
   || fail "config environment differs from .env.example" "$(diff <(echo "$keys_env_example") <(echo "$keys_config") | head -5)"
 n="$(grep -cE '^\s+- \./' "$BUNDLE/docker-compose.yml")"
@@ -431,6 +487,11 @@ if have_docker; then
   (cd "$B2" && COMPOSE_PROFILES=caddy,ai docker compose config --quiet) 2>"$T/err" && ok "docker compose config with the ai profile" || fail "docker compose config (ai)" "$(cat "$T/err")"
   svcs="$(cd "$B2" && COMPOSE_PROFILES=caddy,ai docker compose config --services 2>/dev/null | sort | tr '\n' ' ')"
   for sv in ai-postgres ai-init ai-service docs-parse widget-export widget; do case " $svcs " in *" $sv "*) ;; *) fail "ai profile starts $sv" ;; esac; done; ok "ai profile adds ai-postgres, ai-init, ai-service, docs-parse, widget-export, widget"
+  (cd "$B2" && COMPOSE_PROFILES=caddy,ai,push,playground,mcp,uptime docker compose config --quiet) 2>"$T/err" && ok "docker compose config with every module profile" || fail "docker compose config (all modules)" "$(cat "$T/err")"
+  svcs="$(cd "$B2" && COMPOSE_PROFILES=caddy,push,playground,mcp,uptime docker compose config --services 2>/dev/null | sort | tr '\n' ' ')"
+  for sv in push push-worker playground mcp uptime-db uptime; do case " $svcs " in *" $sv "*) ;; *) fail "module profiles start $sv" ;; esac; done; ok "push, playground, mcp and uptime profiles add their services"
+  (cd "$B2" && COMPOSE_PROFILES=caddy,ai,push,playground,mcp,uptime docker compose config 2>/dev/null) | grep -cE '^\s+published: ' | grep -qx 3 && ok "module profiles publish no port" || fail "module ports"
+  (cd "$B2" && docker compose config --images 2>/dev/null) | grep -qE 'ethora-(push|playground|mcp|uptime)' && fail "a module image is referenced without its profile" || ok "no module image without its profile"
   (cd "$B2" && COMPOSE_PROFILES=caddy,ai docker compose config 2>/dev/null) | grep -cE '^\s+published: ' | grep -qx 3 && ok "ai profile publishes no port" || fail "ai profile ports"
   S="$T/single"; mkdir -p "$S"; cp "$BUNDLE/single/docker-compose.yml" "$S/"
   printf 'ROOT_DOMAIN=chat.example.com\nADMIN_EMAIL=ops@example.com\n' > "$S/.env"
@@ -439,9 +500,10 @@ if have_docker; then
   (cd "$S" && rm .env && ROOT_DOMAIN=chat.example.com ADMIN_EMAIL=ops@example.com docker compose config 2>/dev/null) | grep -q 'ADMIN_EMAIL: ops@example.com' \
     && ok "single file takes the settings from the environment too (no .env)" || fail "single file without .env"
   if docker image inspect caddy:2.10-alpine >/dev/null 2>&1 || docker pull -q caddy:2.10-alpine >/dev/null 2>&1; then
-    for r in r r6 r7 r9 r10 ra ra2 ra3; do
+    for r in r r6 r7 r9 r10 ra ra2 ra3 rm rm3; do
       [ -f "$T/$r/config/caddy/Caddyfile" ] || { skip "Caddyfile $r (not rendered)"; continue; }
-      docker run --rm -v "$T/$r/config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.10-alpine \
+      # UPTIME_AUTH_HASH is what the caddy service computes at start.
+      docker run --rm -e UPTIME_AUTH_HASH='$2a$14$R7YCCVuwXR.7QaaaaaaaaOaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' -v "$T/$r/config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.10-alpine \
         caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >"$T/cv" 2>&1 \
         && ok "rendered Caddyfile validates ($r)" || fail "Caddyfile $r" "$(tail -n 3 "$T/cv")"
     done

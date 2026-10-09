@@ -213,14 +213,14 @@ services:
   init:
     image: docker.io/dappros/ethora-api:2610.16
     entrypoint: ["tini", "--", "bash", "/ethora/config/scripts/api-entrypoint.sh"]
-    volumes:
-      - /DATA/AppData/$AppID/config:/ethora/config:ro
     logging:
       driver: json-file
       options:
         max-size: "20m"
         max-file: "5"
     command: ["init"]
+    volumes:
+      - /DATA/AppData/$AppID/config:/ethora/config
     depends_on:
       api:
         condition: service_healthy
@@ -246,7 +246,12 @@ services:
         max-file: "5"
   caddy:
     image: docker.io/library/caddy:2.10.2-alpine
-    command: ["caddy", "run", "--config", "/ethora/config/caddy/Caddyfile", "--adapter", "caddyfile"]
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        f=/ethora/config/uptime/auth-password
+        if [ -s "$$f" ]; then UPTIME_AUTH_HASH="$$(caddy hash-password --plaintext "$$(cat "$$f")")"; export UPTIME_AUTH_HASH; fi
+        exec caddy run --config /ethora/config/caddy/Caddyfile --adapter caddyfile
     ports:
       - target: 80
         published: "8456"

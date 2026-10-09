@@ -47,7 +47,10 @@ test without DNS use `<server IP with dashes>.sslip.io` as the root. With
 the Enterprise `ai` module (`COMPOSE_PROFILES=ai` in the environment, a
 licence key and `docker login` for the private image; see the bundle's
 README, "Enterprise modules") add a sixth host, `widget.chat.example.com`,
-routed to `widget:8080`.
+routed to `widget:8080`; the other modules need `playground.` to
+`playground:3020`, `mcp.` to `mcp:3030`, `uptime.` to `uptime:8099` behind a
+basic-auth middleware, and `api.<root>/push/` to `push:8098` with the
+prefix stripped.
 
 ## Way 1: Compose service from git (supported)
 
