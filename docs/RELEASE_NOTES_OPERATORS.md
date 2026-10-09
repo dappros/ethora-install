@@ -33,6 +33,17 @@ runs them meanwhile. Store packages (Umbrel, CasaOS) and the Coolify
 template stay Core-only; the Dokploy blueprint carries the module behind
 its profile.
 
+**Server settings page.** Super admins get `/app/admin/server` (nav entry
+"Server"): email delivery, feedback retention, default-room trimming, the
+analytics report schedules, rate limits and the AI provider, without
+editing deploy.yml or `.env`. A value saved there is kept in Mongo
+(`installSettings`, keys `server.<ENV>`) and wins over the rendered env;
+"Reset" returns to it. Some settings take effect at once; the rest apply
+when the API, the jobs process or ai-service restarts, and the page says
+which one still has to (`docker compose restart api jobs ai-service`, or
+`pm2 restart backend backend-jobs ai-service`). Every change is an audit
+event (`server_settings_changed`).
+
 **The other modules in the compose bundle.** The profiles `push`,
 `playground`, `mcp` and `uptime` complete the set: `configure.sh --modules
 ai,push,playground,mcp,uptime` (any subset). The push service answers the
