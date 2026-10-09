@@ -723,7 +723,7 @@ replace_template() {
     # Platform-key delivery + gateway (services.push.* in deploy.yml). Rendered
     # into the push service .env so a redeploy never drops them again.
     replace_literal "{{PUSH_PLATFORM_PROJECT_ID}}" "${PUSH_PLATFORM_PROJECT_ID:-}"
-    replace_literal "{{PUSH_PLATFORM_DAILY_QUOTA}}" "${PUSH_PLATFORM_DAILY_QUOTA:-1000}"
+    replace_literal "{{PUSH_PLATFORM_DAILY_QUOTA}}" "${PUSH_PLATFORM_DAILY_QUOTA:-0}"
     replace_literal "{{PUSH_GATEWAY_URL}}" "${PUSH_GATEWAY_URL:-}"
     replace_literal "{{PUSH_GATEWAY_TOKEN}}" "${PUSH_GATEWAY_TOKEN:-}"
 

@@ -132,8 +132,11 @@ services:
     # whose uploaded Firebase/APNs credentials act as the platform keys (only on
     # the install that holds them); empty disables local platform delivery.
     platform_project_id: ""
-    # Per-app daily cap for platform-key pushes (owner opt-in via the dashboard).
-    platform_daily_quota: 1000
+    # Per-app daily cap for platform-key pushes (the app opts in through
+    # PUT /v1/push/platform/:appId or at creation with platformPushEnabled).
+    # 0 = no cap, the default; set a number on a multi-tenant install that
+    # hands its keys to apps it does not run itself.
+    platform_daily_quota: 0
     # Installs without the platform keys forward platform-build pushes to the
     # central install's push gateway instead. Leave empty when not used.
     gateway_url: ""

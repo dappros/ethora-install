@@ -335,7 +335,7 @@ push_port="$(read_config '.services.push.port // 8098')"
 push_common_post_url="$(read_config '.services.push.common_post_url // ""')"
 push_voip_post_url="$(read_config '.services.push.voip_post_url // ""')"
 push_platform_project_id="$(read_config '.services.push.platform_project_id // ""')"
-push_platform_daily_quota="$(read_config '.services.push.platform_daily_quota // 1000')"
+push_platform_daily_quota="$(read_config '.services.push.platform_daily_quota // 0')"
 push_gateway_url="$(read_config '.services.push.gateway_url // ""')"
 push_gateway_token="$(read_config '.services.push.gateway_token // ""')"
 # Centrifugo non-secret settings refresh from deploy.yml on every update.
