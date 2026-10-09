@@ -746,6 +746,9 @@ def ERRORS_API_DSN ""
 def ERRORS_WEB_DSN ""
 def ERRORS_ENVIRONMENT "$ROOT_DOMAIN"
 def ERRORS_SEND_PII true
+# Platform-push opt-in default for new apps (the push service is not part of
+# this bundle, so the flag only mirrors onto the App; same default as the installer).
+def PUSH_PLATFORM_DEFAULT_ENABLED false
 
 # Whole-line placeholders in the env templates. The values are the
 # production (non-localhost) branch of setup-env.sh replace_template(), with
@@ -1444,6 +1447,9 @@ FIREBASE_WEB_MEASUREMENT_ID={{FIREBASE_WEB_MEASUREMENT_ID}}
 # Backend routes under /v1/push/* proxy to this service.
 PUSH_SERVER_URL=http://127.0.0.1:{{PUSH_PORT}}
 B2B_PUSH_SECRET={{B2B_PUSH_SECRET}}
+# Install-wide platform-push opt-in (services.push.platform_push_default):
+# apps are created opted in when true. The push service reads the same value.
+PUSH_PLATFORM_DEFAULT_ENABLED={{PUSH_PLATFORM_DEFAULT_ENABLED}}
 
 # CENTRIFUGO (real-time stats counters in admin dashboard)
 # Non-critical: backend uses a short timeout and fire-and-forget publishing so a
