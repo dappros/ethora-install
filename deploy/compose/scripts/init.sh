@@ -34,8 +34,18 @@ export BASE_APP_OWNER_PASSWORD="${BASE_APP_OWNER_PASSWORD:-$PLATFORM_ACCOUNT_PAS
 export JWT_SECRET="${SECRET_KEY:-}"
 
 # ----------------------------------------------------------- 1. base app --
+# The API seeds the same base app on its own start (config/init.js), so the
+# two can race on a slow host: initEthoraApp.js finds no app, the API inserts
+# it, and the script's insert then fails on the unique domainName. A second
+# attempt takes the "already exists" path, so retry a few times.
 log "base app '${BASE_APP_DOMAIN_NAME:-}' and platform admin ${PLATFORM_ACCOUNT_EMAIL}"
-script scripts/initEthoraApp.js || die "initEthoraApp.js failed (exit $?)"
+attempt=1
+until script scripts/initEthoraApp.js; do
+  rc=$?
+  [ $attempt -lt 4 ] || die "initEthoraApp.js failed (exit $rc) after $attempt attempts"
+  log "initEthoraApp.js failed (exit $rc); retrying in 5 s (attempt $((attempt + 1)) of 4)"
+  attempt=$((attempt + 1)); sleep 5
+done
 
 # ------------------------------------------------------ 2. xmpp accounts --
 # ejabberd's HTTP API, authenticated as admin@<xmpp host> (the account the

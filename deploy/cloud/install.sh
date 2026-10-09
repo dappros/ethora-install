@@ -82,7 +82,8 @@ docker compose logs -f --no-log-prefix init 2>/dev/null &
 logpid=$!
 rc=""; t=0
 while [ $t -lt "$INIT_TIMEOUT" ]; do
-  cid="$(docker compose ps -q init 2>/dev/null | head -n 1)"
+  # -a: the init container has exited by then, and `ps -q` lists running ones only.
+  cid="$(docker compose ps -aq init 2>/dev/null | head -n 1)"
   if [ -n "$cid" ]; then
     st="$(docker inspect -f '{{.State.Status}} {{.State.ExitCode}}' "$cid" 2>/dev/null || true)"
     case "$st" in exited\ *) rc="${st#exited }"; break ;; esac
