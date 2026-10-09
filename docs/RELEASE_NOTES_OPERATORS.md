@@ -89,6 +89,20 @@ which the web client takes as "use the public bucket". The compose bundle
 images follow the same rule. Existing installs are not changed by an
 update; add `domains.secure_files` and the DNS record, then run the update.
 
+**Cloud images run the compose bundle.** The AWS AMI, the Azure and
+DigitalOcean images and the Vultr snapshot (and the Akamai StackScript) now
+install Ethora Core as the compose bundle (`deploy/compose`: Caddy, the three
+Ethora images, the databases, data in Docker volumes) instead of the host
+installer with nginx, certbot and `deploy.yml`. The first-boot setup page
+asks for the domain, the e-mail and an optional licence key, runs
+`deploy/cloud/install.sh` and ends with the bundle's end-to-end check.
+Afterwards settings are in `deploy/compose/.env` (then `docker compose up -d
+--force-recreate`), updates are `git pull && docker compose pull && docker
+compose up -d`, and backups follow `deploy/compose/README.md`. Instances
+created from the earlier images keep the host installer and `update.sh`;
+nothing changes for them. One provisioning script, `deploy/cloud/provision.sh`,
+bakes every cloud.
+
 **Image mode.** Every Node service can run from a prebuilt container
 instead of being built on the host: `services.<name>.mode: source | image`
 and `services.<name>.image` for `backend`, `frontend`, `ai_service`,

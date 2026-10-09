@@ -338,10 +338,12 @@ host first, and bytecode images are bound to the CPU architecture they were
 built for, so always pull the multi-arch tag rather than copying images
 between hosts. Full reference: [`docs/CONTAINER_IMAGES.md`](../docs/CONTAINER_IMAGES.md).
 
-For AWS: `deploy/aws/` holds the Packer template that bakes a Marketplace
-AMI (images pre-pulled, first-boot setup page from `deploy/setup-web/`
-enabled) and a CloudFormation template that launches one instance. See
-`deploy/aws/README.md`.
+Cloud images (AWS, Azure, DigitalOcean, Vultr) no longer use this host
+installer: they bake Docker, the compose bundle (`deploy/compose`) with its
+images pre-pulled and the first-boot setup page (`deploy/setup-web`) in
+compose mode, through the shared `deploy/cloud/provision.sh`; the page or
+the cloud's user data runs `deploy/cloud/install.sh`. See `deploy/cloud/`
+and `deploy/<cloud>/README.md`.
 
 ## Update behaviour in detail
 

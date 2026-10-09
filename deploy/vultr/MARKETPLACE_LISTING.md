@@ -39,11 +39,13 @@
     3. Open the setup page, enter the domain, your e-mail and optionally an
        Enterprise license key, submit once. About five minutes later open
        https://app.<your domain> and sign in with the password the page shows.
-    4. Later changes: /root/ethora-install-shared/deploy/config/deploy.yml,
-       then deploy/scripts/update.sh. Data: /root/ethora-data.
+    4. Later changes: /root/ethora-install-shared/deploy/compose/.env, then
+       docker compose up -d --force-recreate in that directory. Update:
+       git pull && docker compose pull && docker compose up -d. Data: the
+       Docker volumes ethora_* (backup steps in deploy/compose/README.md).
 
 **Minimum plan**: 2 vCPU, 4 GB RAM (vc2-2c-4gb). **Ports**: 22, 80, 443, 8888.
 **Support URL**: https://ethora.com/legal/support-policy/
 **Documentation**: https://github.com/dappros/ethora-install
 **Licence**: https://ethora.com/legal/ethora-core-license/
-**Software included**: Ethora Core 2610.5 (Ethora Core Software License), ejabberd (GPL-2.0), MongoDB 6.0.8 (SSPL-1.0), MySQL 8.1.0 (GPL-2.0), Redis (RSALv2/SSPLv1), MinIO (AGPL-3.0), Centrifugo (Apache-2.0), Docker Engine (Apache-2.0), nginx (BSD-2-Clause), Node.js 24 (MIT), certbot (Apache-2.0).
+**Software included**: Ethora Core 2610.5 (Ethora Core Software License), ejabberd (GPL-2.0), MongoDB 6.0.8 (SSPL-1.0), MySQL 8.1.0 (GPL-2.0), Redis (RSALv2/SSPLv1), MinIO (AGPL-3.0), Centrifugo (Apache-2.0), Docker Engine (Apache-2.0), Caddy (Apache-2.0), Node.js 24 (MIT).

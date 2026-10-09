@@ -12,6 +12,9 @@ Type=simple
 Environment=ETHORA_SOURCE_ROOT=__SOURCE_ROOT__
 Environment=SETUP_PORT=8888
 Environment=SETUP_DEFAULT_MODE=image
+# host: the host installer (setup.sh + install.sh); compose: the compose
+# bundle through deploy/cloud/install.sh (the cloud images).
+Environment=SETUP_MODE=__SETUP_MODE__
 Environment=HOME=/root
 # Optional per-instance values, for clouds without an instance id in metadata
 # (SETUP_PASSWORD=...); written by a first-boot script.

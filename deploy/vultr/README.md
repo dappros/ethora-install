@@ -1,8 +1,10 @@
 # Ethora on Vultr: Marketplace image
 
 `packer/ethora.pkr.hcl` builds the snapshot for a Vultr Marketplace app.
-Same content as the AWS AMI and the DigitalOcean snapshot; the Vultr
-conventions come from [vultr/vultr-marketplace](https://github.com/vultr/vultr-marketplace):
+Same content as the AWS AMI and the DigitalOcean snapshot (Docker, the
+compose bundle pre-pulled, the first-boot setup page in compose mode; shared
+steps in `deploy/cloud/provision.sh`, run from `packer/ethora.sh`); the
+Vultr conventions come from [vultr/vultr-marketplace](https://github.com/vultr/vultr-marketplace):
 their cloud-init build, a cloud-init per-instance script, their
 `clean_system` at the end (`packer/files/vultr-helper.sh`, MIT).
 
@@ -35,7 +37,10 @@ generated per instance by the cloud-init per-instance script and written to
 `/etc/ethora/setup-web.env`, which the `ethora-setup` unit reads. The
 message of the day shows the URL and the password at SSH login; the page
 accepts one install and then switches itself off. `ufw` is on with 22, 80,
-443 and 8888.
+443 and 8888. Afterwards: settings in
+`/root/ethora-install-shared/deploy/compose/.env`, update with `git pull &&
+docker compose pull && docker compose up -d` in that directory, data in the
+Docker volumes `ethora_*`.
 
 ## Submitting
 

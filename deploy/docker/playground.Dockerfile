@@ -6,7 +6,9 @@
 ARG NODE_VERSION=24
 FROM node:${NODE_VERSION}-bookworm-slim
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl tini && rm -rf /var/lib/apt/lists/*
+# `upgrade` picks up Debian security fixes published after the base image was
+# built (the release workflow blocks on fixable CRITICAL CVEs).
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends ca-certificates curl tini && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json package-lock.json ./
 # Full install: `next build` runs inside the container and needs devDependencies.

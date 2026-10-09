@@ -9,7 +9,7 @@
   "postInstallMessage": "file://POSTINSTALL.md",
   "icon": "https://raw.githubusercontent.com/dappros/ethora-install/main/img/store/icon-256.png",
   "version": "26.10.0",
-  "upstreamVersion": "2610.10",
+  "upstreamVersion": "2610.16",
   "website": "https://ethora.com",
   "contactEmail": "support@ethora.com",
   "documentationUrl": "https://github.com/dappros/ethora-install",

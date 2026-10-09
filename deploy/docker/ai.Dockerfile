@@ -69,7 +69,10 @@ ARG ETHORA_BUILD_COMMIT=""
 ENV NODE_ENV=production \
     ETHORA_BUILD_VERSION=${ETHORA_BUILD_VERSION} \
     ETHORA_BUILD_COMMIT=${ETHORA_BUILD_COMMIT}
+# `upgrade` picks up Debian security fixes published after the base image was
+# built (the release workflow blocks on fixable CRITICAL CVEs).
 RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
  && apt-get install -y --no-install-recommends ca-certificates curl tini \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app

@@ -1,9 +1,14 @@
 # Ethora on Azure: Marketplace image
 
 `packer/ethora.pkr.hcl` builds the image for an Azure Marketplace "Azure
-Virtual Machine" offer. Same content as the AWS AMI; Azure needs the image
-as a version of an Azure Compute Gallery image definition, generalized
-with the Azure Linux agent.
+Virtual Machine" offer. Same content as the AWS AMI (Docker, the compose
+bundle pre-pulled, the first-boot setup page in compose mode; shared steps
+in `deploy/cloud/provision.sh`); Azure needs the image as a version of an
+Azure Compute Gallery image definition, generalized with the Azure Linux
+agent. What runs on the VM is the compose bundle: settings in
+`/home/ubuntu/ethora-install-shared/deploy/compose/.env`, data in Docker
+volumes, update with `git pull && docker compose pull && docker compose up
+-d` in that directory.
 
 ## One-time setup (subscription owner)
 
@@ -57,11 +62,12 @@ build VM may be any size with quota; the captured image is the same. To
 allow NVMe sizes later, create a new image definition with
 `--features DiskControllerTypes=SCSI,NVMe` and bake into it.
 
-Baked 2026-10-09 as 2610.16.0 from ethora-install main (five hosts, secure-files
-served by the API). Verified 2026-10-01 on version 2610.5.4 with a Standard_D2s_v4 VM: setup
-page with the VM id as password, install in under four minutes with
-sslip.io and Let's Encrypt, second submit refused, health check green,
-a room created and messages delivered in the web app.
+Baked 2026-10-09 as 2610.16.0 from ethora-install main (five hosts,
+secure-files served by the API; still the host installer). The compose-bundle
+image replaces it from the next bake. Verified 2026-10-01 on version 2610.5.4
+with a Standard_D2s_v4 VM: setup page with the VM id as password, install in
+under four minutes with sslip.io and Let's Encrypt, second submit refused,
+health check green, a room created and messages delivered in the web app.
 
 ## Submitting
 

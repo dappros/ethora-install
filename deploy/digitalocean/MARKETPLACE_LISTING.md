@@ -44,12 +44,11 @@ Paste-ready values for the vendor portal form.
 | MinIO | RELEASE.2025-09-07 | AGPL-3.0 |
 | Centrifugo | 6 | Apache-2.0 |
 | Docker Engine | 28 | Apache-2.0 |
-| nginx | 1.24 | BSD-2-Clause |
+| Caddy | 2.10 | Apache-2.0 |
 | Node.js | 24 | MIT |
-| certbot | 2.9 | Apache-2.0 |
 
-Check the exact ejabberd, Docker, nginx and certbot versions against the
-snapshot before submitting (`docker image inspect`, `dpkg -l`).
+Check the exact ejabberd, Docker and Caddy versions against the snapshot
+before submitting (`docker image inspect`, `dpkg -l`).
 
 **Getting started** (shown on the listing and after creation)
 
@@ -64,9 +63,11 @@ snapshot before submitting (`docker image inspect`, `dpkg -l`).
        URL and the generated admin password.
     4. About five minutes later, open https://app.<your domain> and sign in.
        The setup page switches itself off; later changes are made in
-       /root/ethora-install-shared/deploy/config/deploy.yml followed by
-       deploy/scripts/update.sh over SSH. Your data lives in
-       /root/ethora-data.
+       /root/ethora-install-shared/deploy/compose/.env followed by
+       docker compose up -d --force-recreate over SSH, updates with
+       git pull && docker compose pull && docker compose up -d. Your data
+       lives in the Docker volumes ethora_* (backup steps in
+       deploy/compose/README.md).
 
 **Support URL**: https://ethora.com/legal/support-policy/
 **Documentation URL**: https://github.com/dappros/ethora-install

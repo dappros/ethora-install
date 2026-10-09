@@ -1,14 +1,20 @@
 #!/usr/bin/env node
 // Ethora first-boot setup, web skin.
 //
-// One page, six questions, no dependencies. Collects the same answers as
-// deploy/scripts/setup.sh, calls it in --yes mode, then runs install.sh --yes
-// and streams the log. After a successful install it writes a marker and
-// exits, and the systemd unit's ConditionPathExists keeps it from ever
-// starting again. It never exposes the generated deploy.yml or secrets.
+// One page, six questions, no dependencies. Two modes:
+//   host     (default) the answers of deploy/scripts/setup.sh; calls it in
+//            --yes mode, then runs install.sh --yes (the host installer:
+//            nginx, certbot, PM2 or images on the host)
+//   compose  the answers of deploy/compose/configure.sh; calls
+//            deploy/cloud/install.sh, which configures and starts the compose
+//            bundle and waits for it (what the cloud images run)
+// Either way the log is streamed, a marker is written after a successful
+// install and the process exits; the systemd unit's ConditionPathExists keeps
+// it from ever starting again. It never exposes the generated settings.
 //
 // Env:
 //   ETHORA_SOURCE_ROOT   monoserver checkout (default: two levels up from here)
+//   SETUP_MODE           host | compose (default host; the cloud images set compose)
 //   SETUP_PORT           default 8888
 //   SETUP_BIND           default 0.0.0.0
 //   SETUP_PASSWORD       basic-auth password; default: EC2 instance id via IMDSv2, else the DigitalOcean droplet id, else the Azure VM id,
@@ -31,6 +37,10 @@ const SOURCE_ROOT = process.env.ETHORA_SOURCE_ROOT || path.resolve(__dirname, '.
 const SETUP_SH = path.join(SOURCE_ROOT, 'deploy', 'scripts', 'setup.sh')
 const INSTALL_SH = path.join(SOURCE_ROOT, 'deploy', 'scripts', 'install.sh')
 const CONFIG_FILE = path.join(SOURCE_ROOT, 'deploy', 'config', 'deploy.yml')
+const MODE = process.env.SETUP_MODE === 'compose' ? 'compose' : 'host'
+const CLOUD_INSTALL_SH = path.join(SOURCE_ROOT, 'deploy', 'cloud', 'install.sh')
+const BUNDLE_ENV = path.join(SOURCE_ROOT, 'deploy', 'compose', '.env')
+const SETTINGS_FILE = MODE === 'compose' ? 'deploy/compose/.env' : 'deploy/config/deploy.yml'
 const PORT = parseInt(process.env.SETUP_PORT || '8888', 10)
 const BIND = process.env.SETUP_BIND || '0.0.0.0'
 const USER = process.env.SETUP_USER || 'admin'
@@ -105,7 +115,7 @@ function checkAuth(req) {
 }
 
 // ----------------------------------------------------------------- state ----
-const state = { phase: 'idle', startedAt: null, finishedAt: null, exitCode: null, error: null, appUrl: null, adminPassword: null }
+const state = { phase: 'idle', mode: MODE, settingsFile: SETTINGS_FILE, startedAt: null, finishedAt: null, exitCode: null, error: null, appUrl: null, adminPassword: null }
 let child = null
 const logListeners = new Set()
 
@@ -115,6 +125,7 @@ function appendLog(chunk) {
 }
 
 function existingAnswers() {
+  if (MODE === 'compose') return existingBundleAnswers()
   // Prefill from an existing deploy.yml via yq when present (best effort).
   if (!fs.existsSync(CONFIG_FILE)) return {}
   const get = (p) => {
@@ -137,13 +148,64 @@ function existingAnswers() {
   }
 }
 
+// Prefill from an existing deploy/compose/.env (a retry after a failed
+// install). Values are plain or single-quoted; secrets are never read.
+function existingBundleAnswers() {
+  if (!fs.existsSync(BUNDLE_ENV)) return {}
+  const env = {}
+  try {
+    for (const line of fs.readFileSync(BUNDLE_ENV, 'utf8').split('\n')) {
+      const m = /^([A-Z0-9_]+)=(.*)$/.exec(line)
+      if (!m) continue
+      let v = m[2].trim()
+      if (v.startsWith("'") && v.endsWith("'")) v = v.slice(1, -1)
+      env[m[1]] = v
+    }
+  } catch (_) { return {} }
+  return {
+    domain: env.ROOT_DOMAIN || '',
+    admin_email: env.ADMIN_EMAIL || '',
+    display_name: env.BASE_APP_DISPLAY_NAME || '',
+    license_key: env.ETHORA_LICENSE_KEY || '',
+    secure_files: env.SECURE_FILES_DOMAIN === 'off' ? 'off' : 'on',
+  }
+}
+
 // ---------------------------------------------------------------- run ----
+function startCompose(a) {
+  const s = (v) => (typeof v === 'string' ? v.trim() : '')
+  const args = []
+  if (s(a.domain)) args.push('--domain', s(a.domain))
+  if (s(a.admin_email)) args.push('--admin-email', s(a.admin_email))
+  if (s(a.admin_password)) args.push('--admin-password', s(a.admin_password))
+  if (s(a.display_name)) args.push('--display-name', s(a.display_name))
+  if (s(a.license_key)) args.push('--license-key', s(a.license_key))
+  if (a.secure_files === 'off') args.push('--secure-files', 'off')
+  if (DRY_RUN) args.push('--dry-run')
+
+  state.phase = 'running'; state.startedAt = new Date().toISOString(); state.finishedAt = null
+  state.exitCode = null; state.error = null; state.appUrl = null; state.adminPassword = null
+  try { fs.writeFileSync(LOG_FILE, '') } catch (_) {}
+  appendLog(`[setup-web] ${new Date().toISOString()} cloud/install.sh ${args.map((x, i) => (['--admin-password', '--license-key'].includes(args[i - 1]) ? '***' : x)).join(' ')}\n`)
+  let out = ''
+  child = spawn('bash', [CLOUD_INSTALL_SH, ...args], { cwd: path.dirname(CLOUD_INSTALL_SH), env: { ...process.env, ETHORA_DONE_FILE: DONE_FILE, HOME: process.env.HOME || '/root' } })
+  child.stdout.on('data', (d) => { out += d; appendLog(d.toString()) })
+  child.stderr.on('data', (d) => { out += d; appendLog(d.toString()) })
+  child.on('close', (code) => {
+    const m = out.match(/Admin password \(generated[^\n]*\n\s*([^\s]+)/)
+    if (m) state.adminPassword = m[1]
+    finish(code, code === 0 ? null : 'install failed; see log', { ...a, run_install: DRY_RUN ? 'off' : 'on' })
+  })
+  return { ok: true }
+}
+
 function startSetup(a) {
   if (state.phase === 'running') return { ok: false, error: 'an install is already running' }
   // Single use: once an install completed, this page must never run
   // another (a second submit would reconfigure a live server). Changes go
   // through deploy.yml and update.sh over SSH from here on.
-  if (fs.existsSync(DONE_FILE)) return { ok: false, error: 'setup already completed on this server; further changes: edit deploy/config/deploy.yml and run update.sh over SSH' }
+  if (fs.existsSync(DONE_FILE)) return { ok: false, error: `setup already completed on this server; further changes: edit ${SETTINGS_FILE} over SSH (see the README)` }
+  if (MODE === 'compose') return startCompose(a)
   // No --force: an existing deploy.yml (a retry after a failed install) is
   // reconfigured with its secrets kept by setup.sh itself.
   const args = ['--yes', '--out', CONFIG_FILE]
@@ -228,9 +290,35 @@ function finish(code, error, a) {
 }
 
 // ---------------------------------------------------------------- html ----
-function page(pre) {
+function formFields(pre) {
   const v = (k, d = '') => String(pre[k] ?? d).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
   const sel = (k, val, d) => ((pre[k] || d) === val ? 'selected' : '')
+  if (MODE === 'compose') return `
+<fieldset><legend>Required</legend>
+<label for="domain">Root domain</label>
+<input id="domain" name="domain" type="text" required placeholder="chat.example.com" value="${v('domain')}">
+<div class="hint">Gives api., app., xmpp., files. and secure-files. subdomains. Point them at this server (a wildcard record covers them) before submitting: Let's Encrypt issues the certificates during the install. No domain yet? Use &lt;this server's IP with dashes&gt;.sslip.io, e.g. 203-0-113-10.sslip.io.</div>
+<label for="admin_email">Admin email</label>
+<input id="admin_email" name="admin_email" type="email" required placeholder="ops@example.com" value="${v('admin_email')}">
+<div class="hint">Platform admin login, base app owner, and Let's Encrypt contact. The admin password is generated and shown once at the end.</div>
+</fieldset>
+
+<fieldset><legend>License</legend>
+<label for="license_key">License key (optional)</label>
+<textarea id="license_key" name="license_key" placeholder="ETHORA1.…  (leave empty for Ethora Core, free)">${v('license_key')}</textarea>
+<div class="hint">Ethora Core needs no key: 5 apps and 500 user accounts per server, nothing expires. Register for free on the License page of the admin panel afterwards to raise the limits, or paste an Enterprise key here or there later.</div>
+</fieldset>
+
+<details><summary>Advanced</summary><fieldset>
+<label for="display_name">Product display name</label><input id="display_name" name="display_name" type="text" value="${v('display_name', 'Ethora')}">
+<label for="admin_password">Admin password (optional; generated when empty)</label><input id="admin_password" name="admin_password" type="password">
+<label for="secure_files">Chat attachments host (secure-files.)</label>
+<select id="secure_files" name="secure_files"><option value="on" ${sel('secure_files', 'on', 'on')}>On: attachments are served to chat members only (fifth DNS record)</option><option value="off" ${sel('secure_files', 'off', 'on')}>Off: attachments in the public files bucket (four records)</option></select>
+</fieldset></details>`
+  return hostFormFields(pre)
+}
+
+function page(pre) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Ethora setup</title>
 <style>
@@ -250,8 +338,36 @@ pre{background:#0f1419;color:#d5dbe3;padding:14px;border-radius:12px;max-height:
 .ok{color:#137333}.bad{color:#b3261e}.chk{display:flex;gap:8px;align-items:center;font-weight:400;margin:8px 0}
 </style></head><body><main>
 <h1>Ethora setup</h1>
-<p class="sub">Six answers. Every host derives from the root domain; all secrets are generated. Advanced options keep their defaults unless you open them.</p>
-<form id="f">
+<p class="sub">${MODE === 'compose' ? 'Two answers. Every host derives from the root domain; all secrets are generated. The install takes about five minutes.' : 'Six answers. Every host derives from the root domain; all secrets are generated. Advanced options keep their defaults unless you open them.'}</p>
+<form id="f">${formFields(pre)}
+<p><button id="go" type="submit">Install Ethora</button></p>
+</form>
+<section id="progress" hidden>
+<h2 id="status">Installing…</h2>
+<pre id="log"></pre>
+<p id="result"></p>
+</section>
+<script>
+const SETTINGS=${JSON.stringify(SETTINGS_FILE)};
+const f=document.getElementById('f'),go=document.getElementById('go'),logEl=document.getElementById('log'),statusEl=document.getElementById('status'),resultEl=document.getElementById('result');
+f.addEventListener('submit',async(e)=>{e.preventDefault();go.disabled=true;
+const fd=new FormData(f);const a=Object.fromEntries(fd.entries());
+a.call_home=fd.get('call_home_off')?'off':'on';a.run_install=fd.get('run_install_off')?'off':'on';delete a.call_home_off;delete a.run_install_off;
+const r=await fetch('/api/setup',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(a)});const j=await r.json();
+if(!j.ok){alert(j.error||'failed');go.disabled=false;return}
+document.getElementById('progress').hidden=false;f.querySelectorAll('input,select,textarea').forEach(x=>x.disabled=true);
+const es=new EventSource('/api/log');es.onmessage=(m)=>{logEl.textContent+=JSON.parse(m.data);logEl.scrollTop=logEl.scrollHeight};
+const poll=setInterval(async()=>{const s=await (await fetch('/api/state')).json();if(s.phase==='done'||s.phase==='failed'){clearInterval(poll);es.close();
+statusEl.textContent=s.phase==='done'?'Done':'Failed';statusEl.className=s.phase==='done'?'ok':'bad';
+let h='';if(s.phase==='done'){if(s.appUrl)h+='<b>Open <a href="'+s.appUrl+'">'+s.appUrl+'</a></b> and sign in as the admin email.<br>';if(s.adminPassword)h+='Generated admin password (shown once, also in '+SETTINGS+'): <code>'+s.adminPassword+'</code><br>';h+='This setup page switches itself off in 15 minutes.'}else{h+=(s.error||'')+' Fix and submit again.';go.disabled=false;f.querySelectorAll('input,select,textarea').forEach(x=>x.disabled=false)}
+resultEl.innerHTML=h}},2000)});
+</script></main></body></html>`
+}
+
+function hostFormFields(pre) {
+  const v = (k, d = '') => String(pre[k] ?? d).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+  const sel = (k, val, d) => ((pre[k] || d) === val ? 'selected' : '')
+  return `
 <fieldset><legend>Required</legend>
 <label for="domain">Root domain</label>
 <input id="domain" name="domain" type="text" required placeholder="chat.example.com" value="${v('domain')}">
@@ -305,29 +421,7 @@ pre{background:#0f1419;color:#d5dbe3;padding:14px;border-radius:12px;max-height:
 <label for="import_yaml">Import an existing deploy.yml (optional)</label>
 <textarea id="import_yaml" name="import_yaml" placeholder="Paste a deploy.yml to start from; the answers above override it."></textarea>
 <label class="chk"><input type="checkbox" name="run_install_off" id="run_install_off"> Only write deploy.yml, do not run the installer</label>
-</fieldset></details>
-
-<p><button id="go" type="submit">Install Ethora</button></p>
-</form>
-<section id="progress" hidden>
-<h2 id="status">Installing…</h2>
-<pre id="log"></pre>
-<p id="result"></p>
-</section>
-<script>
-const f=document.getElementById('f'),go=document.getElementById('go'),logEl=document.getElementById('log'),statusEl=document.getElementById('status'),resultEl=document.getElementById('result');
-f.addEventListener('submit',async(e)=>{e.preventDefault();go.disabled=true;
-const fd=new FormData(f);const a=Object.fromEntries(fd.entries());
-a.call_home=fd.get('call_home_off')?'off':'on';a.run_install=fd.get('run_install_off')?'off':'on';delete a.call_home_off;delete a.run_install_off;
-const r=await fetch('/api/setup',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(a)});const j=await r.json();
-if(!j.ok){alert(j.error||'failed');go.disabled=false;return}
-document.getElementById('progress').hidden=false;f.querySelectorAll('input,select,textarea').forEach(x=>x.disabled=true);
-const es=new EventSource('/api/log');es.onmessage=(m)=>{logEl.textContent+=JSON.parse(m.data);logEl.scrollTop=logEl.scrollHeight};
-const poll=setInterval(async()=>{const s=await (await fetch('/api/state')).json();if(s.phase==='done'||s.phase==='failed'){clearInterval(poll);es.close();
-statusEl.textContent=s.phase==='done'?'Done':'Failed';statusEl.className=s.phase==='done'?'ok':'bad';
-let h='';if(s.phase==='done'){if(s.appUrl)h+='<b>Open <a href="'+s.appUrl+'">'+s.appUrl+'</a></b> and sign in as the admin email.<br>';if(s.adminPassword)h+='Generated admin password (shown once, also in deploy.yml): <code>'+s.adminPassword+'</code><br>';h+='This setup page switches itself off in 15 minutes.'}else{h+=(s.error||'')+' Fix and submit again.';go.disabled=false;f.querySelectorAll('input,select,textarea').forEach(x=>x.disabled=false)}
-resultEl.innerHTML=h}},2000)});
-</script></main></body></html>`
+</fieldset></details>`
 }
 
 // -------------------------------------------------------------- server ----
@@ -367,7 +461,8 @@ function handler(req, res) {
 }
 
 async function main() {
-  if (!fs.existsSync(SETUP_SH)) { console.error(`[setup-web] not found: ${SETUP_SH}`); process.exit(2) }
+  const engine = MODE === 'compose' ? CLOUD_INSTALL_SH : SETUP_SH
+  if (!fs.existsSync(engine)) { console.error(`[setup-web] not found: ${engine}`); process.exit(2) }
   if (!PASSWORD) {
     const id = await imdsInstanceId()
     const did = id ? null : await dropletId()
@@ -383,7 +478,7 @@ async function main() {
     ? https.createServer({ cert: fs.readFileSync(process.env.SETUP_TLS_CERT), key: fs.readFileSync(process.env.SETUP_TLS_KEY) }, handler)
     : http.createServer(handler)
   srv.listen(PORT, BIND, () => {
-    console.log(`[setup-web] listening on ${tls ? 'https' : 'http'}://${BIND}:${PORT}  user=${USER}  password=${passwordSource === 'generated' ? PASSWORD : '(' + passwordSource + ')'}  source=${SOURCE_ROOT}${DRY_RUN ? '  DRY RUN' : ''}`)
+    console.log(`[setup-web] listening on ${tls ? 'https' : 'http'}://${BIND}:${PORT}  mode=${MODE}  user=${USER}  password=${passwordSource === 'generated' ? PASSWORD : '(' + passwordSource + ')'}  source=${SOURCE_ROOT}${DRY_RUN ? '  DRY RUN' : ''}`)
   })
 }
 main()

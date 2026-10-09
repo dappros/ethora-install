@@ -4,14 +4,15 @@
 #   packer build -var install_ref=main deploy/aws/packer
 #
 # What the image contains: Ubuntu 24.04 with security updates applied,
-# Docker, Node 24 (for the first-boot page), yq, the public installer
-# (github.com/dappros/ethora-install at install_ref) under
-# /home/ubuntu/ethora-install-shared, every image an install needs
-# pre-pulled from Docker Hub (the three Ethora Core images, our MinIO copy,
-# MongoDB, MySQL, Redis, Centrifugo), and the first-boot setup page enabled
-# (deploy/setup-web). Nothing is configured and nothing private is on the
-# image: the buyer answers the setup page, or CloudFormation passes the
-# answers through user-data, and no registry is contacted at first boot.
+# Docker (with the compose plugin), Node 24 (for the first-boot page), the
+# public installer (github.com/dappros/ethora-install at install_ref) under
+# /home/ubuntu/ethora-install-shared, every image the compose bundle
+# (deploy/compose) runs pre-pulled from Docker Hub, and the first-boot setup
+# page enabled in compose mode (deploy/setup-web). Nothing is configured and
+# nothing private is on the image: the buyer answers the setup page, or
+# CloudFormation passes the answers through user-data to
+# deploy/cloud/install.sh, and no registry is contacted at first boot. The
+# steps shared with the other clouds are deploy/cloud/provision.sh.
 #
 # Marketplace rules applied at the end of the build: no SSH keys or host
 # keys left behind (AWS injects the buyer's key pair; host keys regenerate
@@ -44,22 +45,6 @@ variable "install_ref" {
 variable "install_repo" {
   type    = string
   default = "https://github.com/dappros/ethora-install.git"
-}
-# Everything an Ethora Core install pulls; pre-pulled so first boot works
-# with no registry access. The Ethora tags must match the installer's
-# deploy.yml defaults for install_ref.
-variable "images" {
-  type = list(string)
-  default = [
-    "docker.io/dappros/ethora-api:2610",
-    "docker.io/dappros/ethora-frontend:2610",
-    "docker.io/dappros/ethora-xmpp:2610",
-    "docker.io/dappros/minio:RELEASE.2025-09-07T16-13-09Z",
-    "mongo:6.0.8",
-    "mysql:8.1.0",
-    "redis:latest",
-    "centrifugo/centrifugo:v6",
-  ]
 }
 # Where the builder instance runs. Empty = the account's default VPC; set
 # both to build in a VPC without one (the builder needs a public IP).
@@ -118,7 +103,6 @@ source "amazon-ebs" "ethora" {
   tags = {
     Name          = local.ami_name
     ethora_ref    = var.install_ref
-    ethora_images = join(",", var.images)
     base_ami_name = "{{ .SourceAMIName }}"
   }
 }
@@ -126,79 +110,37 @@ source "amazon-ebs" "ethora" {
 build {
   sources = ["source.amazon-ebs.ethora"]
 
+  # The shared steps (deploy/cloud/provision.sh), one upload per step.
   provisioner "shell" {
-    inline_shebang = "/bin/bash -e"
-    environment_vars = [
-      "INSTALL_REF=${var.install_ref}",
-      "INSTALL_REPO=${var.install_repo}",
-      "IMAGES=${join(" ", var.images)}",
-      "DEBIAN_FRONTEND=noninteractive",
-      "NEEDRESTART_MODE=a",
-      "NEEDRESTART_SUSPEND=1",
-    ]
-    inline = [
-      "set -euxo pipefail",
-      # --- a fresh Ubuntu image runs cloud-init and unattended-upgrades at boot;
-      #     both can restart sshd under us and drop the build. Wait, then stop them. ---
-      "cloud-init status --wait >/dev/null || true",
-      "sudo systemctl disable --now apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service >/dev/null 2>&1 || true",
-      "sudo systemctl kill --kill-who=all apt-daily.service apt-daily-upgrade.service >/dev/null 2>&1 || true",
-      "while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 3; done",
-      # --- base packages and every pending security update (Marketplace scans the AMI) ---
-      "sudo apt-get update -y",
-      "sudo apt-get upgrade -y",
-      "sudo apt-get install -y ca-certificates curl gnupg git jq unzip rsync acl nginx certbot python3-certbot-nginx",
-      # --- docker (official repo) ---
-      "sudo install -m 0755 -d /etc/apt/keyrings",
-      "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg",
-      "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable\" | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null",
-      "sudo apt-get update -y && sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin",
-      "sudo usermod -aG docker ubuntu",
-      # --- node 24 (the first-boot page is a Node script) + yq v4 ---
-      "curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -",
-      "sudo apt-get install -y nodejs",
-      "sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_$(dpkg --print-architecture) && sudo chmod +x /usr/local/bin/yq",
-      # --- the public installer at the release ref ---
-      "git clone --branch \"$INSTALL_REF\" --depth 1 \"$INSTALL_REPO\" /home/ubuntu/ethora-install-shared",
-      "sudo chown -R ubuntu:ubuntu /home/ubuntu/ethora-install-shared",
-      "git -C /home/ubuntu/ethora-install-shared log -1 --format='%h %s' | tee /home/ubuntu/ethora-install-shared/.ami-source",
-    ]
+    script           = "${path.root}/../../cloud/provision.sh"
+    execute_command  = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E {{ .Path }}"
+    environment_vars = ["ETHORA_STEP=base", "INSTALL_REF=${var.install_ref}", "INSTALL_REPO=${var.install_repo}", "ETHORA_USER=ubuntu", "ETHORA_HOME=/home/ubuntu"]
   }
-
-  # Image pulls run detached and are waited for from separate, disconnect-
-  # tolerant steps: several gigabytes of layers took the builder's SSH session
-  # down twice when pulled inside the provisioner itself.
+  # Image pulls run detached and are waited for from a disconnect-tolerant
+  # step: several gigabytes of layers took the builder's SSH session down
+  # when pulled inside the provisioner itself.
   provisioner "shell" {
-    inline_shebang = "/bin/bash -e"
-    environment_vars = ["IMAGES=${join(" ", var.images)}"]
-    inline = [
-      "rm -f /tmp/ethora-pulls.done /tmp/ethora-pulls.log",
-      "nohup bash -c 'for i in $IMAGES; do echo \"== $i\"; sudo docker pull \"$i\" || echo \"PULL FAILED: $i\"; done; echo done > /tmp/ethora-pulls.done' > /tmp/ethora-pulls.log 2>&1 &",
-      "echo 'pulls started in the background'",
-    ]
+    script           = "${path.root}/../../cloud/provision.sh"
+    execute_command  = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E {{ .Path }}"
+    environment_vars = ["ETHORA_STEP=pull-start", "ETHORA_USER=ubuntu", "ETHORA_HOME=/home/ubuntu", "PULL_RUNNER=nohup"]
   }
   provisioner "shell" {
-    inline_shebang    = "/bin/bash -e"
+    script            = "${path.root}/../../cloud/provision.sh"
+    execute_command   = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E {{ .Path }}"
+    environment_vars  = ["ETHORA_STEP=pull-wait"]
     expect_disconnect = true
     valid_exit_codes  = [0, 2300218]
-    inline            = ["while [ ! -f /tmp/ethora-pulls.done ]; do sleep 15; tail -1 /tmp/ethora-pulls.log 2>/dev/null | cut -c1-100; done"]
   }
   provisioner "shell" {
-    inline_shebang = "/bin/bash -e"
-    pause_before   = "10s"
-    environment_vars = ["IMAGES=${join(" ", var.images)}"]
-    inline = [
-      "while [ ! -f /tmp/ethora-pulls.done ]; do sleep 15; done",
-      "grep 'PULL FAILED' /tmp/ethora-pulls.log && exit 1 || true",
-      "for i in $IMAGES; do sudo docker image inspect \"$i\" >/dev/null || { echo \"missing image: $i\"; exit 1; }; done",
-      "sudo docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}'",
-      "rm -f /tmp/ethora-pulls.done /tmp/ethora-pulls.log",
-      # --- first-boot setup page (single use, password = instance id) ---
-      "sudo /home/ubuntu/ethora-install-shared/deploy/setup-web/install-setup-web.sh --no-enable",
-      "sudo systemctl enable ethora-setup.service",
-      # --- swap helps t3.medium installs ---
-      "sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab",
-    ]
+    script           = "${path.root}/../../cloud/provision.sh"
+    execute_command  = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E {{ .Path }}"
+    pause_before     = "10s"
+    environment_vars = ["ETHORA_STEP=finish", "ETHORA_USER=ubuntu", "ETHORA_HOME=/home/ubuntu", "ETHORA_SWAP=2G"]
+  }
+  provisioner "shell" {
+    script           = "${path.root}/../../cloud/provision.sh"
+    execute_command  = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E {{ .Path }}"
+    environment_vars = ["ETHORA_STEP=clean", "ETHORA_USER=ubuntu", "ETHORA_HOME=/home/ubuntu"]
   }
 
   # Marketplace hardening. Runs last; nothing after this may log in.
@@ -212,15 +154,11 @@ build {
       "sudo rm -f /etc/ssh/ssh_host_*",
       "sudo passwd -l root",
       # no stored credentials of any kind
-      "sudo rm -rf /root/.docker /home/ubuntu/.docker /root/.ssh /home/ubuntu/.ssh/authorized_keys /home/ubuntu/.ssh/known_hosts",
-      "sudo rm -rf /root/.gitconfig /home/ubuntu/.gitconfig /root/.npm /home/ubuntu/.npm",
-      # caches, logs, identity
-      "sudo apt-get clean",
-      "sudo rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*",
+      "sudo rm -rf /root/.ssh /home/ubuntu/.ssh/authorized_keys /home/ubuntu/.ssh/known_hosts",
+      # identity
       "sudo cloud-init clean --logs --seed",
       "sudo truncate -s 0 /etc/machine-id && sudo rm -f /var/lib/dbus/machine-id && sudo ln -s /etc/machine-id /var/lib/dbus/machine-id",
-      "sudo find /var/log -type f -exec truncate -s 0 {} +",
-      "sudo rm -f /root/.bash_history /home/ubuntu/.bash_history; history -c || true",
+      "history -c || true",
     ]
   }
 

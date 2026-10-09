@@ -3,15 +3,25 @@
 Two pieces:
 
 - `packer/ethora.pkr.hcl` bakes the Marketplace AMI: Ubuntu 24.04 with
-  security updates, Docker, Node 24, yq, the public installer
+  security updates, Docker, Node 24, the public installer
   (`github.com/dappros/ethora-install` at a ref, `main` = current stable
-  line), every image an Ethora Core install needs pre-pulled from Docker Hub,
-  and the first-boot setup page (`deploy/setup-web`) enabled. Nothing is
-  configured in the image and nothing private is on it.
+  line), every image of the compose bundle (`deploy/compose`) pre-pulled
+  from Docker Hub, and the first-boot setup page (`deploy/setup-web`, compose
+  mode) enabled. The steps shared with Azure, DigitalOcean and Vultr are in
+  `deploy/cloud/provision.sh`. Nothing is configured in the image and
+  nothing private is on it.
 - `cloudformation/ethora-instance.yaml` launches one instance from that AMI.
-  With `RootDomain` set it installs unattended from user-data (the answers
-  become `setup.sh --yes` flags); with it empty the buyer finishes on the
-  setup page at `http://<ip>:8888` (user `admin`, password = instance id).
+  With `RootDomain` set it installs unattended from user-data
+  (`deploy/cloud/install.sh`: `configure.sh`, `docker compose up -d`, the
+  bundle's verify); with it empty the buyer finishes on the setup page at
+  `http://<ip>:8888` (user `admin`, password = instance id).
+
+What runs on the instance is exactly the compose bundle: Caddy for TLS and
+routing, the three Ethora images, MongoDB, MySQL, Redis, MinIO, Centrifugo,
+data in Docker volumes. Settings live in
+`/home/ubuntu/ethora-install-shared/deploy/compose/.env`; update with
+`git pull && docker compose pull && docker compose up -d` in that directory;
+backup and restore as in `deploy/compose/README.md`.
 
 ## Build the AMI
 
@@ -21,9 +31,10 @@ packer build -var region=us-east-2 -var install_ref=main deploy/aws/packer
 ```
 
 No credentials of ours are involved: the installer repository and the
-images are public. `-var install_ref=2610` bakes a specific line; the
-`images` variable lists the tags pre-pulled and must match that line's
-`deploy.yml` defaults. `packer-manifest.json` records the AMI id.
+images are public. `-var install_ref=2610` bakes a specific line; the images
+pre-pulled are whatever that line's compose file names (`docker compose
+config --images`), so the list never drifts. `packer-manifest.json` records
+the AMI id.
 
 Run Packer from an EC2 host in the target region (a small Ubuntu instance
 with Packer installed and the same IAM credentials, deleted or wiped after
@@ -67,9 +78,9 @@ aws cloudformation create-stack --stack-name ethora \
                ParameterKey=AdminEmail,ParameterValue=ops@example.com
 ```
 
-Point `api.`, `app.`, `xmpp.` and `files.<RootDomain>` at the instance's
-public IP before Let's Encrypt runs; with `TlsMode=none` the stack comes up
-over HTTP for testing.
+Point `api.`, `app.`, `xmpp.`, `files.` and `secure-files.<RootDomain>` at
+the instance's public IP before Let's Encrypt runs (one wildcard record
+covers them), or use `<ip-with-dashes>.sslip.io` as the root for a test.
 
 Because the address of a plain instance is only known after launch, the
 unattended path works best with an Elastic IP you allocate first: pass its
@@ -81,12 +92,14 @@ leave `RootDomain` empty, read `PublicIp` from the stack outputs, create the
 records, then finish on the setup page.
 
 The install itself takes about five minutes on the AMI (every image is
-pre-pulled). The setup page accepts one install: a second submit while it
-runs, or after it has finished, is refused with HTTP 409, and the page
-switches itself off fifteen minutes after a successful install and does not
-start again on later boots. Further changes go through `deploy.yml` and
-`update.sh` over SSH. Both paths were exercised end to end on 2026-09-28
-(bake on an EC2 helper, then the setup-page and the unattended launch).
+pre-pulled; Let's Encrypt is the slow part). The setup page accepts one
+install: a second submit while it runs, or after it has finished, is
+refused with HTTP 409, and the page switches itself off fifteen minutes
+after a successful install and does not start again on later boots.
+Further changes go through `deploy/compose/.env` and `docker compose up -d
+--force-recreate` over SSH. The host-installer image (nginx, certbot,
+`deploy.yml`) was exercised end to end on 2026-09-28; the compose-bundle
+image replaced it on 2026-10-09.
 
 ## AWS Marketplace AMI checklist (what the Packer build already does)
 
@@ -105,7 +118,7 @@ pricing model (BYOL first, then contract dimensions). See
 `docs/CONTAINER_IMAGES.md` and `docs/LICENSING.md` for what the image runs and
 how the license key is enforced.
 
-When rebaking for a new listing version: the setup page and the installer
-in the image are whatever the public installer's `main` held at bake time;
-`update.sh` on the instance brings them forward, but the first-boot page
-only ever runs the baked copy.
+When rebaking for a new listing version: the setup page and the bundle in
+the image are whatever the public installer's `main` held at bake time;
+`git pull` in the checkout brings them forward on a running instance, but
+the first-boot page only ever runs the baked copy.

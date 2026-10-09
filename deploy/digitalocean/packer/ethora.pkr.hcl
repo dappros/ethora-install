@@ -5,11 +5,12 @@
 #   packer build -var install_ref=main deploy/digitalocean/packer
 #
 # Same content as the AWS AMI (deploy/aws/packer): Ubuntu 24.04 with every
-# update, Docker, Node 24, yq, the public installer at a release ref under
-# /root/ethora-install-shared, every image an install needs pre-pulled, the
-# first-boot setup page on port 8888. DigitalOcean specifics: root is the
-# login user (their convention), ufw is enabled, a message of the day points
-# at the setup page, and the build ends with DigitalOcean's own cleanup and
+# update, Docker, Node 24, the public installer at a release ref under
+# /root/ethora-install-shared, every image of the compose bundle pre-pulled,
+# the first-boot setup page on port 8888 in compose mode. The shared steps
+# are deploy/cloud/provision.sh. DigitalOcean specifics: root is the login
+# user (their convention), ufw is enabled, a message of the day points at
+# the setup page, and the build ends with DigitalOcean's own cleanup and
 # image-check scripts (scripts/, Apache 2.0, from
 # github.com/digitalocean/marketplace-partners). The result is a snapshot in
 # the account that ran the build; submit its name in the vendor portal.
@@ -49,20 +50,6 @@ variable "install_repo" {
   type    = string
   default = "https://github.com/dappros/ethora-install.git"
 }
-variable "images" {
-  type = list(string)
-  default = [
-    "docker.io/dappros/ethora-api:2610",
-    "docker.io/dappros/ethora-frontend:2610",
-    "docker.io/dappros/ethora-xmpp:2610",
-    "docker.io/dappros/minio:RELEASE.2025-09-07T16-13-09Z",
-    "mongo:6.0.8",
-    "mysql:8.1.0",
-    "redis:latest",
-    "centrifugo/centrifugo:v6",
-  ]
-  description = "Pre-pulled at bake time; must match the deploy.yml defaults of install_ref."
-}
 
 locals {
   stamp = formatdate("YYYYMMDD-hhmm", timestamp())
@@ -82,79 +69,28 @@ source "digitalocean" "ethora" {
 build {
   sources = ["source.digitalocean.ethora"]
 
+  # The shared steps (deploy/cloud/provision.sh); root is the login user here.
   provisioner "shell" {
-    inline_shebang = "/bin/bash -e"
-    environment_vars = [
-      "INSTALL_REF=${var.install_ref}",
-      "INSTALL_REPO=${var.install_repo}",
-      "DEBIAN_FRONTEND=noninteractive",
-      "NEEDRESTART_MODE=a",
-      "NEEDRESTART_SUSPEND=1",
-    ]
-    inline = [
-      "set -euxo pipefail",
-      "cloud-init status --wait >/dev/null || true",
-      "systemctl disable --now apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service >/dev/null 2>&1 || true",
-      "systemctl kill --kill-who=all apt-daily.service apt-daily-upgrade.service >/dev/null 2>&1 || true",
-      "while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 3; done",
-      # --- base packages and every pending update (the image check refuses pending security updates) ---
-      "apt-get update -y",
-      "apt-get -o Dpkg::Options::='--force-confdef' -o Dpkg::Options::='--force-confold' upgrade -y",
-      "apt-get install -y ca-certificates curl gnupg git jq unzip rsync acl nginx certbot python3-certbot-nginx ufw",
-      # --- docker (official repo) ---
-      "install -m 0755 -d /etc/apt/keyrings",
-      "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg",
-      "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable\" > /etc/apt/sources.list.d/docker.list",
-      "apt-get update -y && apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin",
-      # --- node 24 (the first-boot page is a Node script) + yq v4 ---
-      "curl -fsSL https://deb.nodesource.com/setup_24.x | bash -",
-      "apt-get install -y nodejs",
-      "wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_$(dpkg --print-architecture) && chmod +x /usr/local/bin/yq",
-      # --- the public installer at the release ref, in root's home (DigitalOcean users log in as root) ---
-      "git clone --branch \"$INSTALL_REF\" --depth 1 \"$INSTALL_REPO\" /root/ethora-install-shared",
-      "git -C /root/ethora-install-shared log -1 --format='%h %s' | tee /root/ethora-install-shared/.image-source",
-    ]
+    script           = "${path.root}/../../cloud/provision.sh"
+    environment_vars = ["ETHORA_STEP=base", "INSTALL_REF=${var.install_ref}", "INSTALL_REPO=${var.install_repo}", "ETHORA_USER=root", "ETHORA_HOME=/root", "ETHORA_UFW=yes"]
   }
-
-  # Image pulls run detached and are waited for from disconnect-tolerant
-  # steps (several gigabytes of layers; the SSH session may drop meanwhile).
+  # Image pulls run detached and are waited for from a disconnect-tolerant
+  # step (several gigabytes of layers; the SSH session may drop meanwhile).
   provisioner "shell" {
-    inline_shebang   = "/bin/bash -e"
-    environment_vars = ["IMAGES=${join(" ", var.images)}"]
-    inline = [
-      "rm -f /tmp/ethora-pulls.done /tmp/ethora-pulls.log",
-      "nohup bash -c 'for i in $IMAGES; do echo \"== $i\"; docker pull \"$i\" || echo \"PULL FAILED: $i\"; done; echo done > /tmp/ethora-pulls.done' > /tmp/ethora-pulls.log 2>&1 &",
-      "echo 'pulls started in the background'",
-    ]
+    script           = "${path.root}/../../cloud/provision.sh"
+    environment_vars = ["ETHORA_STEP=pull-start", "ETHORA_USER=root", "ETHORA_HOME=/root", "PULL_RUNNER=nohup"]
   }
   provisioner "shell" {
-    inline_shebang    = "/bin/bash -e"
+    script            = "${path.root}/../../cloud/provision.sh"
+    environment_vars  = ["ETHORA_STEP=pull-wait"]
     expect_disconnect = true
     valid_exit_codes  = [0, 2300218]
-    inline            = ["while [ ! -f /tmp/ethora-pulls.done ]; do sleep 15; tail -1 /tmp/ethora-pulls.log 2>/dev/null | cut -c1-100; done"]
   }
+  # Swap for the 4 GB plan; the firewall is required by the image check.
   provisioner "shell" {
-    inline_shebang   = "/bin/bash -e"
+    script           = "${path.root}/../../cloud/provision.sh"
     pause_before     = "10s"
-    environment_vars = ["IMAGES=${join(" ", var.images)}"]
-    inline = [
-      "while [ ! -f /tmp/ethora-pulls.done ]; do sleep 15; done",
-      "grep 'PULL FAILED' /tmp/ethora-pulls.log && exit 1 || true",
-      "for i in $IMAGES; do docker image inspect \"$i\" >/dev/null || { echo \"missing image: $i\"; exit 1; }; done",
-      "docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}'",
-      "rm -f /tmp/ethora-pulls.done /tmp/ethora-pulls.log",
-      # --- first-boot setup page (single use, password = droplet id) ---
-      "/root/ethora-install-shared/deploy/setup-web/install-setup-web.sh --no-enable",
-      "systemctl enable ethora-setup.service",
-      # --- swap for the 4 GB plan ---
-      "fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && echo '/swapfile none swap sw 0 0' >> /etc/fstab",
-      # --- firewall (required by the Marketplace image check) ---
-      "ufw limit ssh",
-      "ufw allow 80/tcp",
-      "ufw allow 443/tcp",
-      "ufw allow 8888/tcp",
-      "ufw --force enable",
-    ]
+    environment_vars = ["ETHORA_STEP=finish", "ETHORA_USER=root", "ETHORA_HOME=/root", "ETHORA_SWAP=2G", "ETHORA_UFW=yes"]
   }
 
   # Message of the day pointing at the setup page.
@@ -168,7 +104,7 @@ build {
       # the base image ships DigitalOcean's droplet agent; their image check refuses it
       "apt-get purge -y droplet-agent >/dev/null 2>&1 || true",
       "rm -rf /opt/digitalocean",
-      "rm -rf /root/.docker /root/.gitconfig /root/.npm /root/.cache",
+      "ETHORA_STEP=clean ETHORA_USER=root ETHORA_HOME=/root bash /root/ethora-install-shared/deploy/cloud/provision.sh",
       "cloud-init clean --logs --seed",
       "truncate -s 0 /etc/machine-id && rm -f /var/lib/dbus/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id",
     ]

@@ -8,10 +8,11 @@ cat <<MSG
 ********************************************************************************
 Ethora Core is installed on this droplet (setup completed $(cat /etc/ethora/setup-done)).
 
-  * Configuration:  /root/ethora-install-shared/deploy/config/deploy.yml
-  * Apply changes:  cd /root/ethora-install-shared && sudo deploy/scripts/update.sh
-  * Health check:   deploy/scripts/health-check.sh
-  * Your data:      /root/ethora-data (back this up)
+  * Settings:       /root/ethora-install-shared/deploy/compose/.env
+  * Apply changes:  cd /root/ethora-install-shared/deploy/compose && docker compose up -d --force-recreate
+  * Update:         git -C /root/ethora-install-shared pull && docker compose pull && docker compose up -d
+  * Check:          docker compose ps; docker compose --profile verify run --rm verify
+  * Your data:      Docker volumes ethora_* (backup steps: deploy/compose/README.md)
   * Documentation:  https://github.com/dappros/ethora-install
 
 To delete this message: rm -f /etc/update-motd.d/99-one-click
@@ -30,8 +31,8 @@ Enter your domain (or $(echo "$myip" | tr . -).sslip.io for a test install with
 no DNS) and your e-mail; the page installs everything, obtains TLS
 certificates from Let's Encrypt and shows the admin password once.
 
-For a real domain, first create A records for api., app., xmpp. and
-files.<your domain> pointing at $myip.
+For a real domain, first create A records for api., app., xmpp., files. and
+secure-files.<your domain> pointing at $myip (one wildcard record covers them).
 
 The UFW firewall is enabled: ports 22 (SSH), 80, 443 and 8888 are open.
 Close 8888 after the install if you like: ufw delete allow 8888/tcp

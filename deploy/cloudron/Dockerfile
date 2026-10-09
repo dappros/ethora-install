@@ -22,9 +22,9 @@
 #   docker build -t ethora-cloudron deploy/cloudron
 # The image ARGs are the release build pinned by pin.sh (tag@digest); override
 # them with --build-arg, e.g. to test a compose-init built from a branch.
-ARG API_IMAGE=docker.io/dappros/ethora-api:2610.10@sha256:16d056daac2e8f3959eeecb0342a67e944838e4878f34b2ca6dfaa1c1a015679
-ARG FRONTEND_IMAGE=docker.io/dappros/ethora-frontend:2610.10@sha256:3277e92a6604bfe28b2bafcd74788a62b3bc3167df1f7f8e34478926c4fad96c
-ARG INIT_IMAGE=docker.io/dappros/ethora-compose-init:2610.10@sha256:a9400ac6cd14779c0f90977cb57ddb98ac2babcafdb7c7ed126ffe490a6c993d
+ARG API_IMAGE=docker.io/dappros/ethora-api:2610.16@sha256:121e3aee218d939236472d103294a4a486c8168391f0edc13546a6b1bd8f5e4d
+ARG FRONTEND_IMAGE=docker.io/dappros/ethora-frontend:2610.16@sha256:a1cef1753254ff5cb72519b1e86fa69d2cc487fe7ca7592bf49452054712091a
+ARG INIT_IMAGE=docker.io/dappros/ethora-compose-init:2610.16@sha256:7cea55c8b3d08c17ff95fdc2ef0d85cd2a7152010b361fea0ad1f8a0b6c14472
 ARG MINIO_IMAGE=docker.io/dappros/minio:RELEASE.2025-09-07T16-13-09Z@sha256:624bad2fe79a8613aa3c5c9b765ebcab365080b8445cf1b05c357cc7753725f0
 ARG CENTRIFUGO_IMAGE=docker.io/centrifugo/centrifugo:v6.9.7@sha256:d014d3e99e0e9e58c45e656a7ea4ab97c3f79f96c82a3614ea0f810b4dd0e461
 ARG CADDY_IMAGE=docker.io/library/caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d

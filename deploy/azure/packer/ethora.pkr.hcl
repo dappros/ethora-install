@@ -5,12 +5,13 @@
 #   packer build -var install_ref=main deploy/azure/packer
 #
 # Same content as the AWS AMI: Ubuntu 24.04 (Canonical's Gen2 Marketplace
-# image) with every update, Docker, Node 24, yq, the public installer at a
-# release ref under /home/ubuntu/ethora-install-shared, every image an
-# install needs pre-pulled, the first-boot setup page on port 8888
-# (password = the VM id from the instance metadata service, shown in the
-# portal under the VM's properties). Azure specifics: no swap file on the OS
-# disk (the certification tool flags it; swap comes from the resource disk
+# image) with every update, Docker, Node 24, the public installer at a
+# release ref under /home/ubuntu/ethora-install-shared, every image of the
+# compose bundle pre-pulled, the first-boot setup page on port 8888 in
+# compose mode (password = the VM id from the instance metadata service,
+# shown in the portal under the VM's properties). The shared steps are
+# deploy/cloud/provision.sh. Azure specifics: no swap file on the OS disk
+# (the certification tool flags it; swap comes from the resource disk
 # through waagent.conf), the Azure Linux agent stays, and the build ends
 # with waagent deprovisioning so the image is generalized. The result is a
 # version of the gallery image definition ethora-images/ethora/ethora-core,
@@ -76,19 +77,6 @@ variable "install_repo" {
   type    = string
   default = "https://github.com/dappros/ethora-install.git"
 }
-variable "images" {
-  type = list(string)
-  default = [
-    "docker.io/dappros/ethora-api:2610",
-    "docker.io/dappros/ethora-frontend:2610",
-    "docker.io/dappros/ethora-xmpp:2610",
-    "docker.io/dappros/minio:RELEASE.2025-09-07T16-13-09Z",
-    "mongo:6.0.8",
-    "mysql:8.1.0",
-    "redis:latest",
-    "centrifugo/centrifugo:v6",
-  ]
-}
 
 locals {
   version = var.image_version != "" ? var.image_version : formatdate("YYYY.MMDD.hhmm", timestamp())
@@ -132,85 +120,48 @@ source "azure-arm" "ethora" {
 build {
   sources = ["source.azure-arm.ethora"]
 
-  # execute_command: the environment goes in front of sudo, never inside a quoted
-  # bash -c string (IMAGES contains spaces; the quotes broke the command and the
-  # build hung without output).
+  # The shared steps (deploy/cloud/provision.sh). execute_command: the
+  # environment goes in front of sudo, never inside a quoted bash -c string.
+  provisioner "shell" {
+    script           = "${path.root}/../../cloud/provision.sh"
+    execute_command  = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E {{ .Path }}"
+    environment_vars = ["ETHORA_STEP=base", "INSTALL_REF=${var.install_ref}", "INSTALL_REPO=${var.install_repo}", "ETHORA_USER=ubuntu", "ETHORA_HOME=/home/ubuntu"]
+  }
+  # A nohup'd child of a sudo session dies with the session on this image:
+  # the pulls run as a transient systemd unit and are waited for from a
+  # disconnect-tolerant step.
+  provisioner "shell" {
+    script           = "${path.root}/../../cloud/provision.sh"
+    execute_command  = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E {{ .Path }}"
+    environment_vars = ["ETHORA_STEP=pull-start", "ETHORA_USER=ubuntu", "ETHORA_HOME=/home/ubuntu", "PULL_RUNNER=systemd-run"]
+  }
+  provisioner "shell" {
+    script            = "${path.root}/../../cloud/provision.sh"
+    execute_command   = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E {{ .Path }}"
+    environment_vars  = ["ETHORA_STEP=pull-wait"]
+    expect_disconnect = true
+    valid_exit_codes  = [0, 2300218]
+  }
+  provisioner "shell" {
+    script           = "${path.root}/../../cloud/provision.sh"
+    execute_command  = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E {{ .Path }}"
+    pause_before     = "10s"
+    environment_vars = ["ETHORA_STEP=finish", "ETHORA_USER=ubuntu", "ETHORA_HOME=/home/ubuntu"]
+  }
+  # Swap from the resource disk, not the OS disk (Azure guidance).
   provisioner "shell" {
     inline_shebang  = "/bin/bash -e"
     execute_command = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E {{ .Path }}"
-    environment_vars = [
-      "INSTALL_REF=${var.install_ref}",
-      "INSTALL_REPO=${var.install_repo}",
-      "DEBIAN_FRONTEND=noninteractive",
-      "NEEDRESTART_MODE=a",
-      "NEEDRESTART_SUSPEND=1",
-    ]
     inline = [
-      "set -euxo pipefail",
-      "cloud-init status --wait >/dev/null || true",
-      "systemctl disable --now apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service >/dev/null 2>&1 || true",
-      "systemctl kill --kill-who=all apt-daily.service apt-daily-upgrade.service >/dev/null 2>&1 || true",
-      "while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 3; done",
-      # --- the buyer's login user (Azure creates the one from the portal; ubuntu keeps the docs' paths) ---
-      "id ubuntu >/dev/null 2>&1 || useradd -m -s /bin/bash -G sudo ubuntu",
       "passwd -l ubuntu",
-      # --- base packages and every pending update ---
-      "apt-get update -y",
-      "apt-get -o Dpkg::Options::='--force-confdef' -o Dpkg::Options::='--force-confold' upgrade -y",
-      "apt-get install -y ca-certificates curl gnupg git jq unzip rsync acl nginx certbot python3-certbot-nginx",
-      # --- docker (official repo) ---
-      "install -m 0755 -d /etc/apt/keyrings",
-      "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg",
-      "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable\" > /etc/apt/sources.list.d/docker.list",
-      "apt-get update -y && apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin",
-      "usermod -aG docker ubuntu",
-      # --- node 24 + yq v4 ---
-      "curl -fsSL https://deb.nodesource.com/setup_24.x | bash -",
-      "apt-get install -y nodejs",
-      "wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_$(dpkg --print-architecture) && chmod +x /usr/local/bin/yq",
-      # --- the public installer at the release ref ---
-      "git clone --branch \"$INSTALL_REF\" --depth 1 \"$INSTALL_REPO\" /home/ubuntu/ethora-install-shared",
-      # record the source before handing the tree to ubuntu (git refuses a root user in another user's repository)
-      "git -C /home/ubuntu/ethora-install-shared log -1 --format='%h %s' | tee /home/ubuntu/ethora-install-shared/.image-source",
-      "chown -R ubuntu:ubuntu /home/ubuntu/ethora-install-shared",
-    ]
-  }
-
-  provisioner "shell" {
-    inline_shebang   = "/bin/bash -e"
-    execute_command  = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E {{ .Path }}"
-    environment_vars = ["IMAGES=${join(" ", var.images)}"]
-    inline = [
-      "rm -f /tmp/ethora-pulls.done /tmp/ethora-pulls.log",
-      # A transient systemd unit: a nohup'd child of a sudo session dies with the session on this image.
-      "systemd-run --unit=ethora-pulls --collect --property=StandardOutput=file:/tmp/ethora-pulls.log --property=StandardError=file:/tmp/ethora-pulls.log --setenv=IMAGES=\"$IMAGES\" bash -c 'for i in $IMAGES; do echo \"== $i\"; docker pull \"$i\" || echo \"PULL FAILED: $i\"; done; echo done > /tmp/ethora-pulls.done'",
-      "echo 'pulls started as unit ethora-pulls'",
-    ]
-  }
-  provisioner "shell" {
-    inline_shebang    = "/bin/bash -e"
-    expect_disconnect = true
-    valid_exit_codes  = [0, 2300218]
-    inline            = ["for _ in $(seq 1 240); do [ -f /tmp/ethora-pulls.done ] && break; sleep 15; tail -1 /tmp/ethora-pulls.log 2>/dev/null | cut -c1-100; done; [ -f /tmp/ethora-pulls.done ] || { echo 'pulls did not finish in an hour'; systemctl status ethora-pulls --no-pager | tail -5; exit 1; }"]
-  }
-  provisioner "shell" {
-    inline_shebang   = "/bin/bash -e"
-    pause_before     = "10s"
-    execute_command  = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E {{ .Path }}"
-    environment_vars = ["IMAGES=${join(" ", var.images)}"]
-    inline = [
-      "while [ ! -f /tmp/ethora-pulls.done ]; do sleep 15; done",
-      "grep 'PULL FAILED' /tmp/ethora-pulls.log && exit 1 || true",
-      "for i in $IMAGES; do docker image inspect \"$i\" >/dev/null || { echo \"missing image: $i\"; exit 1; }; done",
-      "docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}'",
-      "rm -f /tmp/ethora-pulls.done /tmp/ethora-pulls.log",
-      # --- first-boot setup page (single use, password = Azure VM id) ---
-      "/home/ubuntu/ethora-install-shared/deploy/setup-web/install-setup-web.sh --no-enable",
-      "systemctl enable ethora-setup.service",
-      # --- swap from the resource disk, not the OS disk (Azure guidance) ---
       "sed -i 's/^ResourceDisk.EnableSwap=.*/ResourceDisk.EnableSwap=y/; s/^ResourceDisk.SwapSizeMB=.*/ResourceDisk.SwapSizeMB=2048/' /etc/waagent.conf",
       "grep -E '^ResourceDisk.(EnableSwap|SwapSizeMB)=' /etc/waagent.conf",
     ]
+  }
+  provisioner "shell" {
+    script           = "${path.root}/../../cloud/provision.sh"
+    execute_command  = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E {{ .Path }}"
+    environment_vars = ["ETHORA_STEP=clean", "ETHORA_USER=ubuntu", "ETHORA_HOME=/home/ubuntu"]
   }
 
   # Marketplace hardening, then Azure generalisation. Nothing after this may log in.
@@ -222,11 +173,7 @@ build {
       "sed -i 's/^#\\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config",
       "sed -i 's/^#\\?PermitRootLogin .*/PermitRootLogin no/' /etc/ssh/sshd_config",
       "passwd -l root",
-      "rm -rf /root/.docker /home/ubuntu/.docker /root/.ssh /home/ubuntu/.ssh /root/.gitconfig /home/ubuntu/.gitconfig /root/.npm /home/ubuntu/.npm",
-      "apt-get clean",
-      "rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*",
-      "find /var/log -type f -exec truncate -s 0 {} +",
-      "rm -f /root/.bash_history /home/ubuntu/.bash_history",
+      "rm -rf /root/.ssh /home/ubuntu/.ssh",
       # Azure: remove the provisioning user and the agent's instance state; cloud-init resets on next boot.
       "cloud-init clean --logs --seed",
       "waagent -force -deprovision+user",

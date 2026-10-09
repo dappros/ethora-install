@@ -21,7 +21,9 @@ FROM node:${NODE_VERSION}-bookworm-slim AS runtime
 ARG ETHORA_BUILD_VERSION="" 
 ARG ETHORA_BUILD_COMMIT=""
 ENV NODE_ENV=production ETHORA_BUILD_VERSION=${ETHORA_BUILD_VERSION} ETHORA_BUILD_COMMIT=${ETHORA_BUILD_COMMIT}
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl tini && rm -rf /var/lib/apt/lists/*
+# `upgrade` picks up Debian security fixes published after the base image was
+# built (the release workflow blocks on fixable CRITICAL CVEs).
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends ca-certificates curl tini && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build --chown=node:node /build/push ./push
 COPY --from=build --chown=node:node /build/bytenode ./node_modules/bytenode

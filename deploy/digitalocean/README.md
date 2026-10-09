@@ -2,7 +2,9 @@
 
 `packer/ethora.pkr.hcl` builds the Droplet 1-Click snapshot for the
 DigitalOcean Marketplace. Same content as the AWS AMI
-(`deploy/aws/packer`), arranged the way DigitalOcean's
+(`deploy/aws/packer`: Docker, the compose bundle pre-pulled, the first-boot
+setup page in compose mode; shared steps in `deploy/cloud/provision.sh`),
+arranged the way DigitalOcean's
 [marketplace-partners](https://github.com/digitalocean/marketplace-partners)
 repository asks for: root is the login user, `ufw` is enabled, a message of
 the day shows the setup URL and password, and the build ends with their
@@ -41,13 +43,14 @@ accepted by the Marketplace team.
 3. Enters domain and e-mail on the page. About five minutes later the
    install is done; the page shows the admin URL and password and switches
    itself off. Second submits are refused.
-4. Later changes: `/root/ethora-install-shared/deploy/config/deploy.yml`
-   then `deploy/scripts/update.sh`. Data in `/root/ethora-data`.
+4. Later changes: `/root/ethora-install-shared/deploy/compose/.env`, then
+   `docker compose up -d --force-recreate` in that directory. Update: `git
+   pull && docker compose pull && docker compose up -d`. Data in the Docker
+   volumes `ethora_*` (backup steps in `deploy/compose/README.md`).
 
 Paths differ from the AWS image (`/root/...` instead of `/home/ubuntu/...`)
-because DigitalOcean 1-Clicks run as root by convention; the installer
-derives the live and data directories from the checkout's location, so
-nothing else changes.
+because DigitalOcean 1-Clicks run as root by convention; nothing else
+changes.
 
 ## Submitting
 

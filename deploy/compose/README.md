@@ -97,6 +97,12 @@ itself; only its API calls follow the address the page was opened by. So
 open it by the `PUBLIC_URL` address, and make sure that name resolves for
 every client.
 
+This directory is also what the cloud images run (the AWS AMI, the Azure,
+DigitalOcean and Vultr images, the Akamai StackScript): their first-boot
+setup page calls `deploy/cloud/install.sh`, which is `./configure.sh` plus
+`docker compose up -d` plus the check below, so everything on this page
+applies to them.
+
 ## Check it
 
 ```bash

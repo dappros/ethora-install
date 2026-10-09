@@ -59,7 +59,7 @@ Support channels
 - Community support through the installer repository's issues: https://github.com/dappros/ethora-install
 - E-mail support at support@ethora.com after the free registration from the admin panel.
 
-Before writing, run deploy/scripts/health-check.sh on the instance; it names the failing component, and its output plus the install or update log is what we need. Never send deploy.yml or .deploy.env: they contain your deployment secrets.
+Before writing, run docker compose ps and docker compose --profile verify run --rm verify in /home/ubuntu/ethora-install-shared/deploy/compose on the instance; they name the failing component, and their output plus the setup log (/var/log/ethora-setup.log) is what we need. Never send deploy/compose/.env: it contains your deployment secrets.
 
 Enterprise customers with a Dappros license key are supported under their agreement, which includes an SLA. Support policy: https://ethora.com/legal/support-policy/
 

@@ -1,8 +1,9 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
-  Ethora single-instance deployment from the Ethora AMI. Give the six setup
-  answers here to install unattended, or leave RootDomain empty and finish
-  on the first-boot setup page (http://<PublicIp>:8888, user admin, password =
+  Ethora single-instance deployment from the Ethora AMI. Give the setup
+  answers here to install unattended (the compose bundle, through
+  deploy/cloud/install.sh), or leave RootDomain empty and finish on the
+  first-boot setup page (http://<PublicIp>:8888, user admin, password =
   instance id). DNS A records for api./app./xmpp./files./secure-files.<RootDomain>
   must point at the instance before Let's Encrypt can issue certificates.
 
@@ -10,7 +11,7 @@ Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
       - Label: { default: "Ethora setup (leave RootDomain empty to use the web page)" }
-        Parameters: [RootDomain, AdminEmail, LicenseKey, TlsMode, AiEnabled, AiApiKey, DisplayName]
+        Parameters: [RootDomain, AdminEmail, LicenseKey, DisplayName]
       - Label: { default: "Instance" }
         Parameters: [AmiId, InstanceType, KeyName, VpcId, SubnetId, VolumeSizeGb, AdminCidr, ElasticIpAllocationId]
 
@@ -22,7 +23,7 @@ Parameters:
     Type: String
     Default: t3.medium
     AllowedValues: [t3.medium, t3.large, t3.xlarge, m6i.large, m6i.xlarge, c6i.large, c6i.xlarge]
-    Description: t3.medium (2 vCPU / 4 GB) is the minimum; t3.large for AI-heavy use
+    Description: t3.medium (2 vCPU / 4 GB) is the minimum
   KeyName:
     Type: AWS::EC2::KeyPair::KeyName
     Description: SSH key pair for the ubuntu user
@@ -53,20 +54,6 @@ Parameters:
     Default: ""
     NoEcho: true
     Description: ETHORA1.… key. Empty = 14-day trial with every feature.
-  TlsMode:
-    Type: String
-    Default: certbot
-    AllowedValues: [certbot, none]
-    Description: certbot needs the DNS records in place at launch; none = HTTP only (testing)
-  AiEnabled:
-    Type: String
-    Default: "on"
-    AllowedValues: ["on", "off"]
-  AiApiKey:
-    Type: String
-    Default: ""
-    NoEcho: true
-    Description: OpenAI-compatible API key (only with AiEnabled = on)
   DisplayName:
     Type: String
     Default: Ethora
@@ -140,17 +127,10 @@ Resources:
             fi
             systemctl disable --now ethora-setup.service || true
             export ETHORA_SETUP_LICENSE_KEY='${LicenseKey}'
-            export ETHORA_SETUP_AI_KEY='${AiApiKey}'
-            bash "$SRC/deploy/scripts/setup.sh" --yes \
-              --domain '${RootDomain}' --admin-email '${AdminEmail}' \
-              --display-name '${DisplayName}' --ssl '${TlsMode}' --ai '${AiEnabled}' \
-              --edition core --all-modes image \
-              --target /home/ubuntu/ethora
+            bash "$SRC/deploy/cloud/install.sh" \
+              --domain '${RootDomain}' --admin-email '${AdminEmail}' --display-name '${DisplayName}'
             rc=$?
-            if [ $rc -ne 0 ]; then echo "setup.sh failed ($rc); re-enabling the setup page"; systemctl enable --now ethora-setup.service; exit $rc; fi
-            cd "$SRC/deploy" && NON_INTERACTIVE=true bash scripts/install.sh --yes
-            rc=$?
-            if [ $rc -eq 0 ]; then mkdir -p /etc/ethora && date -u +%FT%TZ > /etc/ethora/setup-done; echo "install complete"; else echo "install.sh failed ($rc); re-enabling the setup page"; systemctl enable --now ethora-setup.service; fi
+            if [ $rc -eq 0 ]; then echo "install complete"; else echo "install failed ($rc); re-enabling the setup page"; systemctl enable --now ethora-setup.service; fi
             exit $rc
           - {}
 

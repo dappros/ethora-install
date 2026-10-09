@@ -6,9 +6,10 @@
 #
 # Ethora Core on Akamai (Linode): installs the self-hosted chat and messaging
 # server from the public installer (github.com/dappros/ethora-install) at
-# first boot. Ubuntu 24.04 LTS, 4 GB plan or larger. Log:
-# /var/log/ethora-stackscript.log. Same steps as the unattended path of the
-# AWS CloudFormation template. Licence: https://ethora.com/legal/ethora-core-license/
+# first boot: Docker, then the compose bundle (deploy/compose) through
+# deploy/cloud/install.sh, the same engine the cloud images' setup page runs.
+# Ubuntu 24.04 LTS, 4 GB plan or larger. Log: /var/log/ethora-stackscript.log.
+# Licence: https://ethora.com/legal/ethora-core-license/
 set -uo pipefail
 exec > >(tee -a /var/log/ethora-stackscript.log) 2>&1
 echo "[ethora] $(date -u +%FT%TZ) start"
@@ -28,36 +29,19 @@ if [ -z "${ROOT_DOMAIN:-}" ]; then
 fi
 [ -n "${ADMIN_EMAIL:-}" ] || { echo "[ethora] ERROR: admin_email is required"; exit 1; }
 
+# Docker and the installer checkout (the image bake's base step), then the install.
 git clone -q --branch "$BRANCH" --depth 1 https://github.com/dappros/ethora-install.git "$SRC"
+ETHORA_STEP=base INSTALL_REF="$BRANCH" ETHORA_USER=root ETHORA_HOME=/root bash "$SRC/deploy/cloud/provision.sh" || { echo "[ethora] provisioning failed"; exit 1; }
 export ETHORA_SETUP_LICENSE_KEY="${LICENSE_KEY:-}"
 export ETHORA_SETUP_ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
-bash "$SRC/deploy/scripts/setup.sh" --yes --domain "$ROOT_DOMAIN" --admin-email "$ADMIN_EMAIL" \
-  --edition core --all-modes image --target /root/ethora
+bash "$SRC/deploy/cloud/install.sh" --domain "$ROOT_DOMAIN" --admin-email "$ADMIN_EMAIL"
 rc=$?
-[ "$rc" = 0 ] || { echo "[ethora] setup.sh failed ($rc)"; exit "$rc"; }
-# The generated admin password lives in deploy.yml; keep a copy for root.
-pw=$(yq eval '.admin.password' "$SRC/deploy/config/deploy.yml" 2>/dev/null)
-# Subshell: the umask must not leak into install.sh (rendered configs are read by container users).
-[ -n "$pw" ] && [ "$pw" != null ] && ( umask 077; echo "$pw" > /root/ethora-admin-password.txt )
-
-cd "$SRC/deploy" && NON_INTERACTIVE=true bash scripts/install.sh --yes
-rc=$?
+# The admin password lives in deploy/compose/.env; keep a copy for root.
+pw=$(sed -n "s/^ADMIN_PASSWORD='\{0,1\}\([^']*\)'\{0,1\}$/\1/p" "$SRC/deploy/compose/.env" 2>/dev/null | head -n 1)
+[ -n "$pw" ] && ( umask 077; echo "$pw" > /root/ethora-admin-password.txt )
 if [ "$rc" = 0 ]; then
-  mkdir -p /etc/ethora && date -u +%FT%TZ > /etc/ethora/setup-done
-  cat > /etc/update-motd.d/99-ethora <<MSG
-#!/bin/sh
-cat <<EOM
-********************************************************************************
-Ethora Core is installed. Web app and admin panel: https://app.$ROOT_DOMAIN
-Admin e-mail: $ADMIN_EMAIL, password: see /root/ethora-admin-password.txt
-Configuration: $SRC/deploy/config/deploy.yml, then deploy/scripts/update.sh
-Data: /root/ethora-data (back this up). Docs: https://github.com/dappros/ethora-install
-********************************************************************************
-EOM
-MSG
-  chmod +x /etc/update-motd.d/99-ethora
-  echo "[ethora] $(date -u +%FT%TZ) install complete: https://app.$ROOT_DOMAIN"
+  echo "[ethora] $(date -u +%FT%TZ) install complete: https://app.$ROOT_DOMAIN (admin password: /root/ethora-admin-password.txt)"
 else
-  echo "[ethora] install.sh failed ($rc); see /var/log/ethora-stackscript.log and $SRC/deploy/deploy.log"
+  echo "[ethora] install failed ($rc); see /var/log/ethora-stackscript.log and: cd $SRC/deploy/compose && docker compose logs"
 fi
 exit "$rc"
