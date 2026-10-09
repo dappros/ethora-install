@@ -812,6 +812,11 @@ own "$MODULE_UID:$MODULE_UID" "$stage/mcp"
 own 0:0 "$stage/uptime"                    # the uptime image and caddy run as root
 own "$UPTIME_POSTGRES_UID:$UPTIME_POSTGRES_UID" "$stage/uptime-db"
 mkdir -p "$OUT"
+# base-app/ is written by init.sh (the API image's user) after the first
+# boot and kept across renders: created here once, owned by that user.
+if [ ! -d "$OUT/base-app" ]; then
+  mkdir -p "$OUT/base-app" && chmod 700 "$OUT/base-app" && own "$API_UID:$API_UID" "$OUT/base-app"
+fi
 for d in api frontend centrifugo xmpp mysql minio caddy scripts ai ai-postgres widget push playground mcp uptime uptime-db; do
   rm -rf "$OUT/$d.new"
   cp -a "$stage/$d" "$OUT/$d.new"

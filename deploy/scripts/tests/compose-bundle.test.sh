@@ -394,6 +394,7 @@ else
   grep -q '^uptime.chat.example.com {$' "$cfm" && grep -q 'basic_auth {' "$cfm" && grep -q 'admin {$UPTIME_AUTH_HASH}' "$cfm" && grep -q 'reverse_proxy uptime:8099' "$cfm" \
     && ok "modules, Caddyfile: uptime host behind basic auth (hash from the caddy service)" || fail "uptime site" "$(grep -n -A5 '^uptime' "$cfm")"
   [ "$(stat -c %a "$RM/config/uptime")" = 700 ] && [ "$(stat -c %a "$RM/config/push/push.env")" = 600 ] && ok "modules, rendered modes" || fail "module modes"
+  [ -d "$RM/config/base-app" ] && [ "$(stat -c %a "$RM/config/base-app")" = 700 ] && ok "base-app/ created for init.sh's credentials file" || fail "base-app dir"
   rcfg "$T/rm2" PUBLIC_URL=https://chat.example.com ADMIN_EMAIL=ops@example.com COMPOSE_PROFILES=uptime >"$T/outm2" 2>&1 && fail "uptime on one origin refused by the renderer" || { grep -q 'hosts of their own' "$T/outm2" && ok "uptime/mcp/playground on one origin refused by the renderer"; }
   RM3="$T/rm3"; mkdir -p "$RM3"
   rcfg "$RM3" PUBLIC_URL=https://chat.example.com ADMIN_EMAIL=ops@example.com COMPOSE_PROFILES=push >/dev/null 2>&1 && grep -q 'handle /push/\* {' "$RM3/config/caddy/Caddyfile" \
