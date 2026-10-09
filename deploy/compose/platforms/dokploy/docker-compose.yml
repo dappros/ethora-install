@@ -69,6 +69,18 @@ services:
       CENTRIFUGO_ADMIN_SECRET: ${CENTRIFUGO_ADMIN_SECRET:-}
       ACME_EMAIL: ${ACME_EMAIL:-}
       CADDY_GLOBAL_OPTIONS: ${CADDY_GLOBAL_OPTIONS:-}
+      # The profiles double as the module switches (ai -> AI_SERVICE_ENABLED...).
+      COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
+      AI_SERVICE_SECRET: ${AI_SERVICE_SECRET:-}
+      DOCS_PARSE_SECRET: ${DOCS_PARSE_SECRET:-}
+      AI_POSTGRES_PASSWORD: ${AI_POSTGRES_PASSWORD:-}
+      AI_API_URL: ${AI_API_URL:-https://api.openai.com/v1}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_CHAT_MODEL: ${AI_CHAT_MODEL:-gpt-5.6-luna}
+      AI_EMBEDDING_MODEL: ${AI_EMBEDDING_MODEL:-text-embedding-3-small}
+      AI_PG_URL: ${AI_PG_URL:-}
+      WIDGET_DOMAIN: ${WIDGET_DOMAIN:-}
+      WIDGET_SCRIPT_VERSION: ${WIDGET_SCRIPT_VERSION:-}
     volumes:
       - config:/out/config
       - mysql-initdb:/out/mysql-initdb
@@ -280,6 +292,130 @@ services:
     restart: unless-stopped
     <<: *logging
 
+  # ------------------------------------------------------- ai module (ai) --
+  # Profile `ai` (COMPOSE_PROFILES=caddy,ai): AI agents. The ethora-ai image
+  # carries ai-service, docs-parse and the website chat widget; the config
+  # service renders their env files (templates/ai-service.env.template,
+  # docs-parse.env.template, widget.env.template) and sets AI_SERVICE_ENABLED
+  # and the widget URLs for the API and the web app when the profile is on.
+  ai-postgres:
+    # Embeddings store of ai-service (pgvector). Not started when AI_PG_URL
+    # names an external Postgres: scale it to 0 then, or leave it idle.
+    image: ${AI_POSTGRES_IMAGE:-docker.io/pgvector/pgvector:pg16}
+    profiles: ["ai"]
+    environment:
+      POSTGRES_USER: ai_embeddings
+      POSTGRES_DB: ai_service_embeddings_db
+      POSTGRES_PASSWORD_FILE: /ethora/config/ai-postgres/password
+    volumes:
+      - ai-postgres:/var/lib/postgresql/data
+      - config:/ethora/config:ro
+    depends_on:
+      config:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_embeddings -d ai_service_embeddings_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    <<: *logging
+
+  ai-init:
+    # Creates the pgvector extension and the documents table (idempotent):
+    # the host installer's ensure_ai_postgres_schema, in the AI image.
+    image: ${ETHORA_AI_IMAGE:-docker.io/dappros/ethora-ai:2610}
+    profiles: ["ai"]
+    entrypoint: ["tini", "--", "sh", "/ethora/config/scripts/ai-start.sh"]
+    command: ["pg-schema"]
+    volumes:
+      - config:/ethora/config:ro
+    depends_on:
+      config:
+        condition: service_completed_successfully
+      ai-postgres:
+        condition: service_healthy
+        required: false
+    restart: "no"
+    <<: *logging
+
+  ai-service:
+    image: ${ETHORA_AI_IMAGE:-docker.io/dappros/ethora-ai:2610}
+    profiles: ["ai"]
+    entrypoint: ["tini", "--", "sh", "/ethora/config/scripts/ai-start.sh"]
+    command: ["ai-service"]
+    volumes:
+      - config:/ethora/config:ro
+    depends_on:
+      ai-init:
+        condition: service_completed_successfully
+      api:
+        condition: service_healthy
+      xmpp:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      # A TCP connect: ai-service has no health route, and every other route
+      # would log a warning per check.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8013"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    <<: *logging
+
+  docs-parse:
+    image: ${ETHORA_AI_IMAGE:-docker.io/dappros/ethora-ai:2610}
+    profiles: ["ai"]
+    entrypoint: ["tini", "--", "sh", "/ethora/config/scripts/ai-start.sh"]
+    command: ["docs-parse"]
+    volumes:
+      - config:/ethora/config:ro
+    depends_on:
+      config:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8201/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    <<: *logging
+
+  widget-export:
+    # Renders the widget bundle for this install into the `widget` volume
+    # (the URLs of widget.env), on every start; the widget service serves it.
+    image: ${ETHORA_AI_IMAGE:-docker.io/dappros/ethora-ai:2610}
+    profiles: ["ai"]
+    user: "0:0"
+    entrypoint: ["tini", "--", "sh", "/ethora/config/scripts/ai-start.sh"]
+    command: ["widget-export", "/widget"]
+    volumes:
+      - config:/ethora/config:ro
+      - widget:/widget
+    depends_on:
+      config:
+        condition: service_completed_successfully
+    restart: "no"
+    <<: *logging
+
+  widget:
+    # Static server of the widget bundle (widget.<root>, or /widget/ on one
+    # origin): assistant.js, assistant<version>.js and their assets.
+    image: caddy:2.10-alpine
+    profiles: ["ai"]
+    command: ["caddy", "run", "--config", "/ethora/config/widget/Caddyfile", "--adapter", "caddyfile"]
+    volumes:
+      - config:/ethora/config:ro
+      - widget:/widget:ro
+    depends_on:
+      widget-export:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    <<: *logging
+
 volumes:
   # Your data. Survive `docker compose down`; `down -v` deletes them.
   mongo:
@@ -287,7 +423,9 @@ volumes:
   minio:
   redis:
   secrets:         # secrets generated for values left out of .env
+  ai-postgres:     # ai module: embeddings (pgvector)
   # Regenerated on every start; safe to delete.
   mongo-config:
   config:
   mysql-initdb:
+  widget:          # ai module: the rendered widget bundle

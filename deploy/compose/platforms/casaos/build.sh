@@ -39,6 +39,7 @@ render() {
   yq $YQ_FLAGS 'explode(.)' "$SINGLE" | yq '
     del(.volumes) | del(.["x-logging"]) | del(.["x-api"])
     | del(.services.verify)
+    | del(.services[] | select(has("profiles")))   # Enterprise modules: not in the store package
     | del(.services.caddy.profiles)
     | del(.services.config.env_file)
     | .services.caddy.ports = [{"target": 80, "published": strenv(PORT), "protocol": "tcp"}]

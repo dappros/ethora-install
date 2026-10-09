@@ -43,7 +43,11 @@ records (a wildcard `*.chat.example.com` covers them):
 | `secure-files.chat.example.com` | `api:8080` (chat attachments, gated by chat membership; the API serves this host itself) |
 
 `chat.example.com` is the root domain; every host derives from it. For a
-test without DNS use `<server IP with dashes>.sslip.io` as the root.
+test without DNS use `<server IP with dashes>.sslip.io` as the root. With
+the Enterprise `ai` module (`COMPOSE_PROFILES=ai` in the environment, a
+licence key and `docker login` for the private image; see the bundle's
+README, "Enterprise modules") add a sixth host, `widget.chat.example.com`,
+routed to `widget:8080`.
 
 ## Way 1: Compose service from git (supported)
 

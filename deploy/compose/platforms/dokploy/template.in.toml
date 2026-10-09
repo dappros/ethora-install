@@ -28,6 +28,9 @@ centrifugo_api_key = "${password:64}"
 centrifugo_hmac_secret = "${password:64}"
 centrifugo_admin_password = "${password:24}"
 centrifugo_admin_secret = "${password:64}"
+ai_service_secret = "${password:32}"
+docs_parse_secret = "${password:32}"
+ai_postgres_password = "${password:32}"
 # At-rest encryption: a passphrase for wallet keys, and "<64 hex>:<32 hex>" AES key and IV pairs.
 cryptopair_secret = "${password:48}"
 secret_for_db_encryption = "${hash:64}:${hash:32}"
@@ -36,7 +39,9 @@ secret_for_files_encryption = "${hash:64}:${hash:32}"
 [config]
 # The keys of the bundle's .env.example (deploy/compose/.env.example in
 # github.com/dappros/ethora-install), same order, without the per-host
-# overrides (API_DOMAIN, ...) and the bundled proxy's settings. ADMIN_EMAIL
+# overrides (API_DOMAIN, WIDGET_DOMAIN, ...) and the bundled proxy's settings
+# (the Enterprise modules, COMPOSE_PROFILES=ai, need their hosts routed by
+# Traefik like the five below: widget.<root> to widget:8080). ADMIN_EMAIL
 # is the admin login; ADMIN_PASSWORD its initial password. MYSQL_ROOT_PASSWORD
 # and MINIO_ROOT_* are written into the databases on the first start and must
 # not change after it.
@@ -64,9 +69,19 @@ env = [
   "CENTRIFUGO_HMAC_SECRET=${centrifugo_hmac_secret}",
   "CENTRIFUGO_ADMIN_PASSWORD=${centrifugo_admin_password}",
   "CENTRIFUGO_ADMIN_SECRET=${centrifugo_admin_secret}",
+  "AI_SERVICE_SECRET=${ai_service_secret}",
+  "DOCS_PARSE_SECRET=${docs_parse_secret}",
+  "AI_POSTGRES_PASSWORD=${ai_postgres_password}",
+  "AI_API_URL=https://api.openai.com/v1",
+  "AI_API_KEY=",
+  "AI_CHAT_MODEL=gpt-5.6-luna",
+  "AI_EMBEDDING_MODEL=text-embedding-3-small",
+  "AI_PG_URL=",
+  "WIDGET_SCRIPT_VERSION=",
   "ETHORA_API_IMAGE=docker.io/dappros/ethora-api:2610",
   "ETHORA_FRONTEND_IMAGE=docker.io/dappros/ethora-frontend:2610",
   "ETHORA_XMPP_IMAGE=docker.io/dappros/ethora-xmpp:2610",
+  "ETHORA_AI_IMAGE=docker.io/dappros/ethora-ai:2610",
   "COMPOSE_PROFILES=",
 ]
 
@@ -143,6 +158,14 @@ filePath = "/scripts/frontend-start.sh"
 @content scripts/frontend-start.sh
 
 [[config.mounts]]
+filePath = "/scripts/ai-start.sh"
+@content scripts/ai-start.sh
+
+[[config.mounts]]
+filePath = "/scripts/ai-pg-schema.js"
+@content scripts/ai-pg-schema.js
+
+[[config.mounts]]
 filePath = "/templates/backend.env.template"
 @content templates/backend.env.template
 
@@ -153,3 +176,15 @@ filePath = "/templates/frontend.env.template"
 [[config.mounts]]
 filePath = "/templates/centrifugo-config.json.template"
 @content templates/centrifugo-config.json.template
+
+[[config.mounts]]
+filePath = "/templates/ai-service.env.template"
+@content templates/ai-service.env.template
+
+[[config.mounts]]
+filePath = "/templates/docs-parse.env.template"
+@content templates/docs-parse.env.template
+
+[[config.mounts]]
+filePath = "/templates/widget.env.template"
+@content templates/widget.env.template

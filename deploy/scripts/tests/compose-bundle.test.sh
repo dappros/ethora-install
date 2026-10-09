@@ -17,7 +17,7 @@ have_docker() { command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
 XMPP_IMAGE="$(sed -n 's/^ETHORA_XMPP_IMAGE=//p' "$BUNDLE/.env.example")"
 
 echo "# bundle is in sync with the installer"
-for t in backend.env.template frontend.env.template centrifugo-config.json.template; do
+for t in backend.env.template frontend.env.template centrifugo-config.json.template ai-service.env.template docs-parse.env.template widget.env.template; do
   cmp -s "$BUNDLE/templates/$t" "$DEPLOY/templates/$t" && ok "templates/$t identical to deploy/templates" \
     || fail "templates/$t differs from deploy/templates/$t" "cp deploy/templates/$t deploy/compose/templates/"
 done
@@ -55,7 +55,9 @@ echo "# platforms/dokploy"
 DT="$BUNDLE/platforms/dokploy"
 "$DT/build-template.sh" --check >/dev/null 2>"$T/dtpl.err" && ok "dokploy blueprint regenerates identically" || fail "dokploy blueprint out of date" "run deploy/compose/platforms/dokploy/build-template.sh"
 for f in scripts/api-entrypoint.sh scripts/init.sh scripts/verify.js scripts/render-config.sh scripts/mongo-init.sh scripts/xmpp-start.sh scripts/frontend-start.sh \
-         templates/backend.env.template templates/frontend.env.template templates/centrifugo-config.json.template; do
+         scripts/ai-start.sh scripts/ai-pg-schema.js \
+         templates/backend.env.template templates/frontend.env.template templates/centrifugo-config.json.template \
+         templates/ai-service.env.template templates/docs-parse.env.template templates/widget.env.template; do
   grep -q "^filePath = \"/$f\"$" "$DT/template.toml" || fail "dokploy blueprint carries $f"
 done; ok "dokploy blueprint carries every script and template as a mount"
 DC="$DT/docker-compose.yml"
@@ -79,11 +81,11 @@ for m in c["mounts"]:
     assert m["content"] == open(bundle + m["filePath"]).read(), m["filePath"]
 env = dict(l.split("=", 1) for l in c["env"])
 example = [l.split("=", 1)[0] for l in open(bundle + "/.env.example") if re.match(r"^[A-Z_]+=", l)]
-skipped = {"API_DOMAIN", "WEB_DOMAIN", "XMPP_DOMAIN", "FILES_DOMAIN", "SECURE_FILES_DOMAIN", "ACME_EMAIL", "CADDY_GLOBAL_OPTIONS", "HTTP_PORT", "HTTPS_PORT",
-           "PUBLIC_URL", "ETHORA_COMPOSE_INIT_IMAGE"}  # five hosts routed by Traefik; the dev form renders with the xmpp image
+skipped = {"API_DOMAIN", "WEB_DOMAIN", "XMPP_DOMAIN", "FILES_DOMAIN", "SECURE_FILES_DOMAIN", "WIDGET_DOMAIN", "ACME_EMAIL", "CADDY_GLOBAL_OPTIONS", "HTTP_PORT", "HTTPS_PORT",
+           "PUBLIC_URL", "ETHORA_COMPOSE_INIT_IMAGE"}  # hosts routed by Traefik; the dev form renders with the xmpp image
 assert [k for k in example if k not in skipped] == list(env), list(env)
 assert env["COMPOSE_PROFILES"] == "" and env["ROOT_DOMAIN"] == "${root_domain}"
-secrets = [k for k in env if k.endswith(("_SECRET", "_PASSWORD", "_KEY")) and k != "ETHORA_LICENSE_KEY"] + ["MINIO_ROOT_USER"]
+secrets = [k for k in env if k.endswith(("_SECRET", "_PASSWORD", "_KEY")) and k not in ("ETHORA_LICENSE_KEY", "AI_API_KEY")] + ["MINIO_ROOT_USER"]
 for k in secrets:
     v = re.fullmatch(r"(ethora)?\$\{([a-z_]+)\}", env[k]); assert v and "${password:" in d["variables"][v.group(2)], (k, env[k])
 print(f"{len(c['domains'])} domains, {len(c['mounts'])} mounts, {len(env)} env keys, {len(secrets)} generated secrets")
@@ -133,6 +135,25 @@ cfg --domain chat.example.com --admin-email nope --yes && fail "invalid email re
 cfg --domain chat.example.com --admin-email a@b.co --admin-password "it's" --yes && fail "single quote refused" || ok "single quote refused"
 cfg --domain chat.example.com --admin-email a@b.co --license-key bogus --yes && fail "bad licence key refused" || ok "bad licence key refused"
 cfg --domain chat.example.com --admin-email a@b.co --dry-run --yes; [ ! -f "$E" ] && ok "--dry-run writes nothing" || fail "--dry-run wrote"
+echo "# configure.sh: modules"
+cfg --domain chat.example.com --admin-email ops@example.com --modules ai --ai-api-key sk-test --yes
+[ "$(envval COMPOSE_PROFILES "$E")" = "caddy,ai" ] && ok "--modules ai adds the profile" || fail "--modules ai" "$(envval COMPOSE_PROFILES "$E")"
+[ "$(envval AI_API_KEY "$E")" = "sk-test" ] && [ "$(envval AI_API_URL "$E")" = "https://api.openai.com/v1" ] && ok "AI provider key and default URL written" || fail "AI_API_*" "$(grep '^AI_API' "$E")"
+grep -qE '^WIDGET_SCRIPT_VERSION=[0-9]{4}$' "$E" && ok "widget script version generated (YYMM)" || fail "WIDGET_SCRIPT_VERSION" "$(grep WIDGET_SCRIPT "$E")"
+for k in AI_SERVICE_SECRET DOCS_PARSE_SECRET AI_POSTGRES_PASSWORD; do v="$(envval "$k" "$E")"; [ ${#v} -ge 32 ] || fail "$k generated"; done; ok "ai module secrets generated"
+grep -q 'needs a licence key' "$T/err" && grep -q 'docker login' "$T/out" && ok "warns about the missing licence key, says to docker login" || fail "ai module warnings" "$(cat "$T/err")"
+cp "$E" "$T/ai.env"
+cfg --display-name "Acme" --yes
+[ "$(envval COMPOSE_PROFILES "$E")" = "caddy,ai" ] && [ "$(envval WIDGET_SCRIPT_VERSION "$E")" = "$(envval WIDGET_SCRIPT_VERSION "$T/ai.env")" ] && [ "$(envval AI_API_KEY "$E")" = "sk-test" ] \
+  && ok "re-run keeps the modules, the widget version and the provider key" || fail "re-run with modules" "$(grep -E '^(COMPOSE_PROFILES|WIDGET_SCRIPT_VERSION|AI_API_KEY)=' "$E")"
+cfg --modules none --no-caddy --yes
+[ -z "$(envval COMPOSE_PROFILES "$E")" ] && ok "--modules none --no-caddy empties the profiles" || fail "--modules none" "$(envval COMPOSE_PROFILES "$E")"
+cfg --modules ai --yes
+[ "$(envval COMPOSE_PROFILES "$E")" = "ai" ] && ok "modules without caddy" || fail "modules without caddy" "$(envval COMPOSE_PROFILES "$E")"
+cfg --modules push --yes && fail "unknown module refused" || ok "unknown module refused"
+cfg --widget chat-widget.example.com --modules ai --yes
+[ "$(envval WIDGET_DOMAIN "$E")" = "chat-widget.example.com" ] && ok "explicit widget host" || fail "widget host" "$(envval WIDGET_DOMAIN "$E")"
+rm -f "$E"
 
 echo "# render-config.sh"
 TPL=""
@@ -153,6 +174,7 @@ else
         XMPP_SECRET='x+s/ec=' XMPP_JWT_SECRET='jwt+/=secret' XMPP_ADMIN_PASSWORD=xadm 'MYSQL_ROOT_PASSWORD=my|sq&l\1/x'
         MINIO_ROOT_USER=mu MINIO_ROOT_PASSWORD=mp INTERNAL_REQUESTS_SECRET=irs CENTRIFUGO_API_KEY=cak
         CENTRIFUGO_HMAC_SECRET=chs CENTRIFUGO_ADMIN_PASSWORD=cap CENTRIFUGO_ADMIN_SECRET=cas 'BASE_APP_DISPLAY_NAME=Acme Chat'
+  AI_SERVICE_SECRET=aisvc DOCS_PARSE_SECRET=dparse AI_POSTGRES_PASSWORD=aipg WIDGET_SCRIPT_VERSION=2610
   CRYPTOPAIR_SECRET=testpassphrase SECRET_FOR_DB_ENCRYPTION=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb SECRET_FOR_FILES_ENCRYPTION=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc:dddddddddddddddddddddddddddddddd
 )
   R="$T/r"; mkdir -p "$R"
@@ -215,8 +237,9 @@ else
   # Secrets left out are generated once into the secrets volume and reused.
   R3="$T/r3"; mkdir -p "$R3"
   rcfg "$R3" ROOT_DOMAIN=chat.example.com ADMIN_EMAIL=ops@example.com >"$T/out3" 2>&1 && ok "renders with only ROOT_DOMAIN and ADMIN_EMAIL" || fail "minimal render" "$(cat "$T/out3")"
-  [ "$(grep -c '=' "$R3/secrets/secrets.env")" = "17" ] && [ "$(stat -c %a "$R3/secrets/secrets.env")" = "600" ] \
-    && ok "17 secrets generated into the secrets volume (600)" || fail "generated secrets" "$(cut -d= -f1 "$R3/secrets/secrets.env" | tr '\n' ' ')"
+  [ "$(grep -c '=' "$R3/secrets/secrets.env")" = "21" ] && [ "$(stat -c %a "$R3/secrets/secrets.env")" = "600" ] \
+    && ok "21 secrets generated into the secrets volume (600)" || fail "generated secrets" "$(cut -d= -f1 "$R3/secrets/secrets.env" | tr '\n' ' ')"
+  grep -qE '^WIDGET_SCRIPT_VERSION=[0-9]{4}$' "$R3/secrets/secrets.env" && ok "widget script version fixed at the first start (YYMM)" || fail "WIDGET_SCRIPT_VERSION" "$(grep WIDGET "$R3/secrets/secrets.env")"
   pw="$(sed -n 's/^ADMIN_PASSWORD=//p' "$R3/secrets/secrets.env")"
   grep -q "admin password (generated, shown once): $pw" "$T/out3" && ok "generated admin password printed" || fail "admin password printed"
   cp "$R3/secrets/secrets.env" "$T/secrets.1"
@@ -259,7 +282,7 @@ else
     ETHORA_REDIS_HOST=cache.internal ETHORA_REDIS_PORT=6380 ETHORA_MYSQL_HOST=sql.internal ETHORA_MYSQL_PORT=3307 ETHORA_MYSQL_USER=ejabberd \
     ETHORA_MINIO_HOST=s3.internal ETHORA_MINIO_PORT=9900 ETHORA_CENTRIFUGO_URL=http://rt.internal:8000 \
     ETHORA_XMPP_URL=http://x.internal:5280 ETHORA_API_URL=http://a.internal:8080 \
-    ETHORA_MYSQL_DATABASE=ejdb ETHORA_FRONTEND_URL=http://web.internal:8081 >/dev/null 2>&1
+    ETHORA_MYSQL_DATABASE=ejdb ETHORA_FRONTEND_URL=http://web.internal:8081 ETHORA_WIDGET_URL=http://wg.internal:8082 >/dev/null 2>&1
   be9="$R9/config/api/backend.env"; ej9="$R9/config/xmpp/ejabberd.yml"
   for kv in 'MONGO_URI=mongodb://u:p@db.internal:27017/ethora?tls=true' 'CHAT_DATABASE=mongodb://db.internal/chat_archive' REDIS_HOST=cache.internal REDIS_PORT=6380 \
             MAM_MYSQL_HOST=sql.internal MAM_MYSQL_PORT=3307 MAM_MYSQL_USER=ejabberd MINIO_HOST=s3.internal MINIO_PORT=9900 \
@@ -273,10 +296,56 @@ else
   grep -qxF 'sql_database: "ejdb"' "$ej9" && grep -qxF 'sql_database: "ejabberd_db"' "$R/config/xmpp/ejabberd.yml" \
     && ok "endpoint override, ejabberd.yml: sql_database (default kept otherwise)" || fail "sql_database" "$(grep '^sql_database' "$ej9")"
   grep -qxF 'API_INTERNAL_URL=http://api:8080' "$be" && ok "default internal API URL is the compose service" || fail "default API_INTERNAL_URL"
+
+  # ai module: off by default (Core), on with the profile or the flag.
+  grep -qxF 'AI_SERVICE_ENABLED=false' "$be" && grep -qxF 'VITE_AI_FEATURE_ENABLED=false' "$fe" && grep -qxF 'VITE_WIDGET_URL=' "$fe" \
+    && grep -qxF 'ETHORA_PUBLIC_WIDGET_URL=' "$be" && ! grep -q '^widget' "$R/config/caddy/Caddyfile" && [ ! -f "$R/config/ai/ai-service.env" ] \
+    && ok "ai module off by default: flags false, no widget URL, no widget host, no ai env files" || fail "ai module off" "$(grep -nE 'AI_SERVICE_ENABLED|WIDGET' "$be" "$fe" | head -5)"
+  grep -qxF 'AI_SERVICE_URL=http://ai-service:8013' "$be" && grep -qxF 'DOCS_PARSE_URL=http://docs-parse:8201' "$be" && ok "backend.env: ai-service and docs-parse URLs are the compose services" || fail "AI_SERVICE_URL/DOCS_PARSE_URL" "$(grep -E '^(AI_SERVICE|DOCS_PARSE)_URL' "$be")"
+  RA="$T/ra"; mkdir -p "$RA"
+  rcfg "$RA" "${renv[@]}" COMPOSE_PROFILES=caddy,ai AI_API_KEY=sk-test AI_SERVICE_SECRET=aisec DOCS_PARSE_SECRET=dpsec AI_POSTGRES_PASSWORD=pgpw WIDGET_SCRIPT_VERSION=2610 >"$T/outa" 2>&1 \
+    && ok "renders with the ai profile" || fail "ai render" "$(cat "$T/outa")"
+  bea="$RA/config/api/backend.env"; fea="$RA/config/frontend/frontend.env"; aie="$RA/config/ai/ai-service.env"
+  for kv in AI_SERVICE_ENABLED=true DOCS_PARSE_ENABLED=true CRAWLER_ENABLED=false AI_SERVICE_SECRET=aisec DOCS_PARSE_SECRET=dpsec \
+            'ETHORA_PUBLIC_WIDGET_URL=https://widget.chat.example.com/assistant.js' 'AI_SERVICE_INTERNAL_URL=http://ai-service:8013' 'DOCS_PARSE_INTERNAL_URL=http://docs-parse:8201'; do
+    grep -qxF "$kv" "$bea" && ok "ai, backend.env: $kv" || fail "ai, backend.env: $kv" "$(grep "^${kv%%=*}=" "$bea")"
+  done
+  for kv in VITE_AI_FEATURE_ENABLED=true 'VITE_WIDGET_URL=https://widget.chat.example.com/assistant.js' 'VITE_WIDGET_VERSIONED_URL=https://widget.chat.example.com/assistant2610.js' \
+            VITE_WIDGET_SCRIPT_VERSION=2610 'VITE_QR_URL=https://app.chat.example.com/app/chat/?qrChatId='; do
+    grep -qxF "$kv" "$fea" && ok "ai, frontend.env: $kv" || fail "ai, frontend.env: $kv" "$(grep "^${kv%%=*}=" "$fea")"
+  done
+  for kv in PORT=8013 AI_SERVICE_SECRET=aisec 'XMPP_SERVICE=ws://xmpp:5280/ws' XMPP_HOST=xmpp.chat.example.com 'MONGO_URL=mongodb://mongo:27017/aiservice?directConnection=true' \
+            'BACKEND_MONGO_URL=mongodb://mongo:27017/ethora_prod?directConnection=true' 'PLATFORM_API_URL=http://api:8080' 'AI_API_URL=https://api.openai.com/v1' AI_API_KEY=sk-test \
+            AI_CHAT_MODEL=gpt-5.6-luna AI_EMBEDDING_MODEL=text-embedding-3-small 'PG_URL=postgresql://ai_embeddings:pgpw@ai-postgres:5432/ai_service_embeddings_db'; do
+    grep -qxF "$kv" "$aie" && ok "ai, ai-service.env: $kv" || fail "ai, ai-service.env: $kv" "$(grep "^${kv%%=*}=" "$aie")"
+  done
+  ! grep -nE '\{\{|_PLACEHOLDER' "$aie" "$RA/config/ai/docs-parse.env" "$RA/config/widget/widget.env" >/dev/null && ok "ai env files have no unrendered placeholders" \
+    || fail "ai env files: unrendered placeholders" "$(grep -nE '\{\{|_PLACEHOLDER' "$aie" "$RA/config/ai/docs-parse.env" "$RA/config/widget/widget.env" | head -3)"
+  grep -qxF 'PORT=8201' "$RA/config/ai/docs-parse.env" && grep -qxF 'DOCS_PARSE_SECRET=dpsec' "$RA/config/ai/docs-parse.env" && ok "ai, docs-parse.env" || fail "docs-parse.env" "$(cat "$RA/config/ai/docs-parse.env")"
+  for kv in 'VITE_WIDGET_API_URL=https://api.chat.example.com/v1' VITE_WIDGET_XMPP_DOMAIN=xmpp.chat.example.com 'VITE_WIDGET_XMPP_WS_URL=wss://xmpp.chat.example.com/ws' \
+            VITE_WIDGET_XMPP_CONFERENCE=conference.xmpp.chat.example.com 'VITE_WIDGET_QR_URL=https://app.chat.example.com/app/chat/?qrChatId=' WIDGET_SCRIPT_VERSION=2610; do
+    grep -qxF "$kv" "$RA/config/widget/widget.env" && ok "ai, widget.env: $kv" || fail "ai, widget.env: $kv" "$(grep "^${kv%%=*}=" "$RA/config/widget/widget.env")"
+  done
+  [ "$(cat "$RA/config/ai-postgres/password")" = pgpw ] && [ "$(stat -c %a "$RA/config/ai-postgres/password")" = 600 ] && ok "ai, bundled Postgres password file (600)" || fail "ai-postgres/password"
+  grep -q '^widget.chat.example.com {$' "$RA/config/caddy/Caddyfile" && grep -q '^	import widget$' "$RA/config/caddy/Caddyfile" && grep -q 'reverse_proxy widget:8080' "$RA/config/caddy/Caddyfile" \
+    && ok "ai, Caddyfile: sixth host widget.<root> to widget:8080" || fail "ai Caddyfile" "$(grep -n widget "$RA/config/caddy/Caddyfile")"
+  grep -q '^:8080 {$' "$RA/config/widget/Caddyfile" && grep -q 'file_server' "$RA/config/widget/Caddyfile" && grep -q 'immutable' "$RA/config/widget/Caddyfile" && ok "ai, widget static server Caddyfile" || fail "widget Caddyfile"
+  [ "$(stat -c %a "$RA/config/ai")" = 700 ] && [ "$(stat -c %a "$RA/config/widget")" = 755 ] && ok "ai env files 700, widget config 755" || fail "ai modes"
+  RA2="$T/ra2"; mkdir -p "$RA2"
+  rcfg "$RA2" "${renv[@]}" AI_SERVICE_ENABLED=true WIDGET_DOMAIN=w.example.com 'AI_PG_URL=postgresql://u:p@pg.internal:5432/vec' AI_SERVICE_SECRET=a DOCS_PARSE_SECRET=b AI_POSTGRES_PASSWORD=c WIDGET_SCRIPT_VERSION=2610 >/dev/null 2>&1
+  grep -qxF 'PG_URL=postgresql://u:p@pg.internal:5432/vec' "$RA2/config/ai/ai-service.env" && grep -q '^w.example.com {$' "$RA2/config/caddy/Caddyfile" \
+    && grep -qxF 'VITE_WIDGET_URL=https://w.example.com/assistant.js' "$RA2/config/frontend/frontend.env" \
+    && ok "ai by flag (no profile): external Postgres and explicit widget host" || fail "ai by flag" "$(grep -n 'PG_URL\|^w\.' "$RA2/config/ai/ai-service.env" "$RA2/config/caddy/Caddyfile")"
+  RA3="$T/ra3"; mkdir -p "$RA3"
+  rcfg "$RA3" PUBLIC_URL=https://chat.example.com ADMIN_EMAIL=ops@example.com COMPOSE_PROFILES=ai >/dev/null 2>&1
+  grep -qxF 'VITE_WIDGET_URL=https://chat.example.com/widget/assistant.js' "$RA3/config/frontend/frontend.env" && grep -q 'handle /widget/\* {' "$RA3/config/caddy/Caddyfile" \
+    && grep -q 'uri strip_prefix /widget' "$RA3/config/caddy/Caddyfile" && grep -q 'VITE_WIDGET_API_URL=https://chat.example.com/v1' "$RA3/config/widget/widget.env" \
+    && ok "ai on one origin: widget under /widget/" || fail "ai one origin" "$(grep -n widget "$RA3/config/caddy/Caddyfile" "$RA3/config/frontend/frontend.env" | head -5)"
+  ! grep -q 'handle /widget' "$R7/config/caddy/Caddyfile" && ok "one origin without the module: no /widget/ route" || fail "widget route without the module"
   proxies() { grep -o 'reverse_proxy [^ ]*' "$1" | sort -u | tr '\n' ' '; }
-  [ "$(proxies "$R/config/caddy/Caddyfile")" = "reverse_proxy api:8080 reverse_proxy centrifugo:8000 reverse_proxy frontend:8080 reverse_proxy minio:9000 reverse_proxy xmpp:5280 " ] \
+  [ "$(proxies "$R/config/caddy/Caddyfile")" = "reverse_proxy api:8080 reverse_proxy centrifugo:8000 reverse_proxy frontend:8080 reverse_proxy minio:9000 reverse_proxy widget:8080 reverse_proxy xmpp:5280 " ] \
     && ok "Caddyfile upstreams default to the compose services" || fail "default Caddyfile upstreams" "$(proxies "$R/config/caddy/Caddyfile")"
-  [ "$(proxies "$R9/config/caddy/Caddyfile")" = "reverse_proxy a.internal:8080 reverse_proxy rt.internal:8000 reverse_proxy s3.internal:9900 reverse_proxy web.internal:8081 reverse_proxy x.internal:5280 " ] \
+  [ "$(proxies "$R9/config/caddy/Caddyfile")" = "reverse_proxy a.internal:8080 reverse_proxy rt.internal:8000 reverse_proxy s3.internal:9900 reverse_proxy web.internal:8081 reverse_proxy wg.internal:8082 reverse_proxy x.internal:5280 " ] \
     && ok "endpoint override, Caddyfile upstreams follow the internal URLs" || fail "Caddyfile upstream overrides" "$(proxies "$R9/config/caddy/Caddyfile")"
   # A host that is not compose (the Cloudron package): its own site address
   # behind a TLS-terminating proxy, and an extra site of its own.
@@ -335,7 +404,7 @@ else
 fi
 
 echo "# compose files"
-keys_env_example="$(grep -oE '^[A-Z_]+=' "$BUNDLE/.env.example" | tr -d = | grep -vE '^(ETHORA_[A-Z_]*_IMAGE|COMPOSE_PROFILES|HTTP_PORT|HTTPS_PORT)$' | sort)"
+keys_env_example="$(grep -oE '^[A-Z_]+=' "$BUNDLE/.env.example" | tr -d = | grep -vE '^(ETHORA_[A-Z_]*_IMAGE|HTTP_PORT|HTTPS_PORT)$' | sort)"
 keys_config="$(sed -n '/^  config:/,/^  [a-z]/p' "$BUNDLE/docker-compose.yml" | sed -n 's/^      \([A-Z_]*\): .*/\1/p' | sort)"
 [ "$keys_env_example" = "$keys_config" ] && ok "config lists every .env.example setting (platforms without a .env)" \
   || fail "config environment differs from .env.example" "$(diff <(echo "$keys_env_example") <(echo "$keys_config") | head -5)"
@@ -357,6 +426,12 @@ if have_docker; then
   ports="$(grep -cE '^\s+published: ' "$T/resolved.yml")"
   [ "$ports" = "3" ] && ok "only caddy publishes ports (80, 443, 443/udp)" || fail "published ports" "$ports"
   (cd "$B2" && COMPOSE_PROFILES= docker compose config --services 2>/dev/null) | grep -qx caddy && fail "caddy off without the profile" || ok "caddy off without the profile"
+  (cd "$B2" && docker compose config --services 2>/dev/null) | grep -qE '^(ai-service|widget|ai-postgres)$' && fail "ai module services active without the profile" || ok "ai module services inactive without the profile"
+  (cd "$B2" && docker compose config --images 2>/dev/null) | grep -q 'ethora-ai' && fail "the private ai image is referenced without the profile" || ok "no private image without the ai profile"
+  (cd "$B2" && COMPOSE_PROFILES=caddy,ai docker compose config --quiet) 2>"$T/err" && ok "docker compose config with the ai profile" || fail "docker compose config (ai)" "$(cat "$T/err")"
+  svcs="$(cd "$B2" && COMPOSE_PROFILES=caddy,ai docker compose config --services 2>/dev/null | sort | tr '\n' ' ')"
+  for sv in ai-postgres ai-init ai-service docs-parse widget-export widget; do case " $svcs " in *" $sv "*) ;; *) fail "ai profile starts $sv" ;; esac; done; ok "ai profile adds ai-postgres, ai-init, ai-service, docs-parse, widget-export, widget"
+  (cd "$B2" && COMPOSE_PROFILES=caddy,ai docker compose config 2>/dev/null) | grep -cE '^\s+published: ' | grep -qx 3 && ok "ai profile publishes no port" || fail "ai profile ports"
   S="$T/single"; mkdir -p "$S"; cp "$BUNDLE/single/docker-compose.yml" "$S/"
   printf 'ROOT_DOMAIN=chat.example.com\nADMIN_EMAIL=ops@example.com\n' > "$S/.env"
   (cd "$S" && docker compose config --quiet) 2>"$T/err" && ok "single file validates with a two-line .env" || fail "single file with a two-line .env" "$(cat "$T/err")"
@@ -364,12 +439,15 @@ if have_docker; then
   (cd "$S" && rm .env && ROOT_DOMAIN=chat.example.com ADMIN_EMAIL=ops@example.com docker compose config 2>/dev/null) | grep -q 'ADMIN_EMAIL: ops@example.com' \
     && ok "single file takes the settings from the environment too (no .env)" || fail "single file without .env"
   if docker image inspect caddy:2.10-alpine >/dev/null 2>&1 || docker pull -q caddy:2.10-alpine >/dev/null 2>&1; then
-    for r in r r6 r7 r9 r10; do
+    for r in r r6 r7 r9 r10 ra ra2 ra3; do
       [ -f "$T/$r/config/caddy/Caddyfile" ] || { skip "Caddyfile $r (not rendered)"; continue; }
       docker run --rm -v "$T/$r/config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.10-alpine \
         caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >"$T/cv" 2>&1 \
         && ok "rendered Caddyfile validates ($r)" || fail "Caddyfile $r" "$(tail -n 3 "$T/cv")"
     done
+    docker run --rm -v "$T/ra/config/widget/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.10-alpine \
+      caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >"$T/cv" 2>&1 \
+      && ok "widget static server Caddyfile validates" || fail "widget Caddyfile" "$(tail -n 3 "$T/cv")"
   else
     skip "Caddyfile validation (no caddy image)"
   fi

@@ -43,6 +43,7 @@ render_into() { # render_into <dir>
     yq $YQ_FLAGS 'explode(.)' "$SINGLE" | PORT="$PORT" yq '
       del(.name) | del(.volumes) | del(.["x-logging"]) | del(.["x-api"])
       | del(.services.verify)
+      | del(.services[] | select(has("profiles")))   # Enterprise modules: not in the store package
       | del(.services.caddy.ports) | del(.services.caddy.profiles)
       | del(.services.config.env_file)
       | (.services[] | select(.restart == "unless-stopped" or .restart == "no") | .restart) = "on-failure"
@@ -94,8 +95,10 @@ render_into() { # render_into <dir>
   } > "$out/docker-compose.yml"
   sed "s/@VERSION@/$ETHORA_BUILD/" "$HERE/umbrel-app.in.yml" > "$out/umbrel-app.yml"
   cp "$HERE/exports.sh" "$out/exports.sh"
+  # One bind-mount source per volume the remaining services use (the
+  # Enterprise modules' volumes are not among them).
   local v
-  for v in $(yq '.volumes | keys | .[]' "$SINGLE"); do
+  for v in $(yq '.services[] | select(has("volumes")) | .volumes[]' "$out/docker-compose.yml" | sed -n 's#^\${APP_DATA_DIR}/data/\([a-z-]*\):.*#\1#p' | sort -u); do
     mkdir -p "$out/data/$v" && : > "$out/data/$v/.gitkeep"
   done
 }

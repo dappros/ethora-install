@@ -17,6 +17,10 @@
 //    the same URL without a token is refused. On an install without the
 //    secure files host (one origin) the route must answer 503, which the
 //    web client treats as "use the public bucket".
+// 6. With the ai module on (AI_SERVICE_ENABLED=true in backend.env): the
+//    widget script is served from its public URL with this install's API
+//    URL in it, ai-service and docs-parse answer on the compose network,
+//    and the licence carries the ai feature.
 //
 // Exits non-zero on the first failure. The room it creates is left in place
 // (named "verify <timestamp>").
@@ -33,6 +37,8 @@ const API_URL = origin(env.VERIFY_API_URL || env.ETHORA_PUBLIC_API_URL)
 const FILES_URL = origin(env.VERIFY_FILES_URL || env.ETHORA_PUBLIC_FILES_URL)
 const SECURE_FILES_URL = origin(env.VERIFY_SECURE_FILES_URL || env.ETHORA_PUBLIC_SECURE_FILES_URL)
 const XMPP_WS = env.VERIFY_XMPP_WS_URL || env.ETHORA_PUBLIC_XMPP_WS_URL
+const WIDGET_URL = env.VERIFY_WIDGET_URL || env.ETHORA_PUBLIC_WIDGET_URL || ''
+const AI_MODULE = String(env.AI_SERVICE_ENABLED) === 'true'
 const WEB = hostOf(WEB_URL, '')
 const API = hostOf(API_URL, '')
 const FILES = hostOf(FILES_URL, '')
@@ -106,7 +112,7 @@ async function xmppRoundTrip({ username, token, roomJid }) {
 }
 
 async function main() {
-  console.log(`Ethora Core compose bundle: verify (web=${WEB_URL} api=${API_URL} xmpp=${XMPP_WS} files=${FILES_URL} secure-files=${SECURE_FILES_URL || 'off'})\n`)
+  console.log(`Ethora Core compose bundle: verify (web=${WEB_URL} api=${API_URL} xmpp=${XMPP_WS} files=${FILES_URL} secure-files=${SECURE_FILES_URL || 'off'} ai=${AI_MODULE ? WIDGET_URL : 'off'})\n`)
   if (!WEB_URL || !API_URL || !XMPP_WS || !FILES_URL || !XMPP || !EMAIL || !PASSWORD) die('could not derive the public URLs or admin credentials from backend.env')
 
   // 1. public endpoints and certificates
@@ -138,6 +144,11 @@ async function main() {
   if (lic.status === 200 && l) {
     const desc = [l.edition, l.tier, l.state, l.registered === false ? 'unregistered' : l.registered ? 'registered' : ''].filter(Boolean).join(', ')
     ok(`licence: ${desc || JSON.stringify(l).slice(0, 160)}`)
+    if (AI_MODULE) {
+      const features = Array.isArray(l.features) ? l.features : []
+      if (features.includes('*') || features.includes('ai')) ok('licence carries the ai feature')
+      else fail(`ai module on, but the licence has no ai feature (features: ${features.join(',') || 'none'}); agents will be refused`)
+    }
   } else fail(`GET /v2/license -> HTTP ${lic.status}`)
 
   // 3. chat room + message over XMPP
@@ -203,6 +214,28 @@ async function main() {
       }
       if (sfile._id) await http(`${API_URL}/v2/files/${sfile._id}`, { method: 'DELETE', headers: auth }).catch(() => {})
     }
+  }
+
+  // 6. ai module
+  if (AI_MODULE) {
+    if (!WIDGET_URL) fail('ai module on, but backend.env names no widget URL')
+    else {
+      const w = await http(WIDGET_URL).catch((e) => ({ status: 0, text: e.message }))
+      if (w.status !== 200) fail(`widget script ${WIDGET_URL} -> HTTP ${w.status}`)
+      else if (!w.text.includes(`${API_URL}/v1`)) fail(`widget script ${WIDGET_URL} does not carry this install's API URL ${API_URL}/v1`)
+      else if (w.text.includes('__ETHORA_WIDGET_')) fail(`widget script ${WIDGET_URL} still has unrendered placeholders`)
+      else ok(`widget script served from ${WIDGET_URL} for ${API_URL}`)
+    }
+    const ai = env.AI_SERVICE_INTERNAL_URL || env.AI_SERVICE_URL
+    const dp = env.DOCS_PARSE_INTERNAL_URL || env.DOCS_PARSE_URL
+    // ai-service authorises every route with the shared secret; a 401
+    // without it already proves the server answers.
+    const a = ai ? await http(`${ai}/bots`).catch((e) => ({ status: 0, text: e.message })) : { status: 0, text: 'no URL' }
+    if (a.status > 0 && a.status < 500) ok(`ai-service answers at ${ai} (HTTP ${a.status} without the secret)`)
+    else fail(`ai-service at ${ai || 'unset'} -> ${a.status ? `HTTP ${a.status}` : a.text}`)
+    const d = dp ? await http(`${dp}/health`).catch((e) => ({ status: 0, text: e.message })) : { status: 0, text: 'no URL' }
+    if (d.status === 200) ok(`docs-parse answers at ${dp}`)
+    else fail(`docs-parse at ${dp || 'unset'} -> ${d.status ? `HTTP ${d.status}` : d.text}`)
   }
 
   summary()

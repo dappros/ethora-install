@@ -4,10 +4,11 @@
 # sign and a NAME in braces) and writes the result to the config volume,
 # where the caddy service reads it. The site blocks in ETHORA_SITES depend on
 # the routing mode (render-config.sh): five hosts, each importing one of the
-# role snippets below, or one origin importing single_origin. The upstreams
-# (UPSTREAM_API and the like) are the compose services (api:8080, ...)
-# unless the internal endpoints are overridden; ETHORA_EXTRA_SITES carries
-# any site a host adds (the Cloudron package serves the web bundle from one).
+# role snippets below (six with the ai module's widget host), or one origin
+# importing single_origin. The upstreams (UPSTREAM_API and the like) are the
+# compose services (api:8080, ...) unless the internal endpoints are
+# overridden; ETHORA_EXTRA_SITES carries any site a host adds (the Cloudron
+# package serves the web bundle from one).
 # Comments name the placeholders without braces: Caddy substitutes its own
 # environment everywhere in the file, comments included.
 {
@@ -80,9 +81,19 @@
 	reverse_proxy {$UPSTREAM_API}
 }
 
+# Website chat widget (widget.conf.template), served by the ai module's
+# widget service: assistant.js, the versioned copy and its assets. The pages
+# that embed it are other origins, so the widget service answers CORS
+# itself; nothing is added here.
+(widget) {
+	import security_headers
+	reverse_proxy {$UPSTREAM_WIDGET}
+}
+
 # Everything on one origin (PUBLIC_URL), routed by path. The web app owns
 # every path the others do not: its routes are /, /login, /register and
-# /app/...; the public files bucket is /files/.
+# /app/...; the public files bucket is /files/, the widget (ai module) is
+# /widget/ (ETHORA_WIDGET_ROUTE is empty without the module).
 (single_origin) {
 	import security_headers
 	header X-Robots-Tag "noindex, nofollow"
@@ -92,6 +103,7 @@
 	handle @api {
 		reverse_proxy {$UPSTREAM_API}
 	}
+	{$ETHORA_WIDGET_ROUTE}
 	handle /ws* {
 		reverse_proxy {$UPSTREAM_XMPP}
 	}

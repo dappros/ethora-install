@@ -14,6 +14,25 @@ default is not what you want.
 
 ## 2610 (development line, September 2026)
 
+**Enterprise modules in the compose bundle (ai first).** `deploy/compose`
+now carries the AI module as the compose profile `ai`: `configure.sh
+--modules ai --license-key ... --ai-api-key ...` (or `COMPOSE_PROFILES=caddy,ai`
+in `.env`) starts ai-service, docs-parse, a pgvector Postgres, the schema
+step and the website chat widget on a sixth host, `widget.<root>`
+(`/widget/` on one origin), all rendered by the same config service from
+the installer's `ai-service`, `docs-parse` and `widget` templates. The
+images come from a private `dappros/ethora-ai` repository on Docker Hub
+(registry token from the License page; GHCR until the Hub repository
+exists). Three more generated values (`AI_SERVICE_SECRET`,
+`DOCS_PARSE_SECRET`, `AI_POSTGRES_PASSWORD`) and the widget script version
+(`WIDGET_SCRIPT_VERSION`, fixed at the first start) join the secrets
+volume on every install, module or not. `verify` checks the widget
+script, both services and the licence feature when the module is on. The
+push, playground, MCP and uptime modules follow; the host installer still
+runs them meanwhile. Store packages (Umbrel, CasaOS) and the Coolify
+template stay Core-only; the Dokploy blueprint carries the module behind
+its profile.
+
 **Push certificates of the base app serve every app.** The rules, with no
 settings in `deploy.yml` and no limits:
 

@@ -14,6 +14,12 @@
 #   /out/config/mysql, /out/config/minio   <- the database credentials, as *_FILE secrets
 #   /out/config/scripts/                   <- the bundle's scripts, which every other service runs
 #   /out/mysql-initdb/01-ejabberd.sql      <- /ethora-dist/mysql2.sql (from the xmpp image)
+# and, with the ai module (profile `ai` in COMPOSE_PROFILES, or AI_SERVICE_ENABLED=true):
+#   /out/config/ai/ai-service.env          <- templates/ai-service.env.template
+#   /out/config/ai/docs-parse.env          <- templates/docs-parse.env.template
+#   /out/config/widget/widget.env          <- templates/widget.env.template
+#   /out/config/widget/Caddyfile           the static server of the widget bundle
+#   /out/config/ai-postgres/password       the bundled Postgres' password
 #
 # It runs in the ethora-xmpp image (development form, scripts bind-mounted)
 # or in the ethora-compose-init image, which is the xmpp image plus this
@@ -48,11 +54,17 @@
 #   ETHORA_CENTRIFUGO_URL, ETHORA_XMPP_URL, ETHORA_API_URL, ETHORA_FRONTEND_URL
 #                                                http://centrifugo:8000, http://xmpp:5280,
 #                                                http://api:8080, http://frontend:8080
+#   ETHORA_AI_SERVICE_URL, ETHORA_DOCS_PARSE_URL, ETHORA_WIDGET_URL (ai module)
+#                                                http://ai-service:8013, http://docs-parse:8201,
+#                                                http://widget:8080
+#   ETHORA_AI_POSTGRES_HOST, ETHORA_AI_POSTGRES_PORT   the bundled pgvector Postgres
+#                                                (ai-postgres, 5432) unless AI_PG_URL is set
 # and, for a host that is not compose (the Cloudron package):
 #   ETHORA_SITE_ADDRESS    the one-origin site's Caddy address, e.g. :3000
 #                          behind a proxy that terminates TLS itself
 #   ETHORA_EXTRA_SITES     more Caddy site blocks, appended as they are
-#   API_UID, XMPP_UID, CENTRIFUGO_UID, MYSQL_UID, MINIO_UID, FRONTEND_UID
+#   API_UID, XMPP_UID, CENTRIFUGO_UID, MYSQL_UID, MINIO_UID, FRONTEND_UID,
+#   AI_UID, AI_POSTGRES_UID
 #                          owners of the rendered files (the images' users)
 #
 # Differences from the host installer, all because the services talk over the
@@ -81,6 +93,8 @@ CENTRIFUGO_UID="${CENTRIFUGO_UID:-1000}"
 MYSQL_UID="${MYSQL_UID:-999}"       # mysql: mysql
 MINIO_UID="${MINIO_UID:-0}"         # minio: root
 FRONTEND_UID="${FRONTEND_UID:-0}"   # ethora-frontend: root
+AI_UID="${AI_UID:-1000}"            # ethora-ai: node
+AI_POSTGRES_UID="${AI_POSTGRES_UID:-999}"   # pgvector/pgvector: postgres
 
 log() { echo "[config] $*"; }
 die() { echo "[config] ERROR: $*" >&2; exit 1; }
@@ -92,7 +106,7 @@ if mkdir -p "$SECRETS_DIR" 2>/dev/null && touch "$SECRETS_FILE" 2>/dev/null; the
   chmod 700 "$SECRETS_DIR"; chmod 600 "$SECRETS_FILE"
   store=1
 fi
-rand() { if [ "$1" = keyiv ]; then keyiv; else tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c "$1"; fi; }
+rand() { case "$1" in keyiv) keyiv ;; yymm) date -u +%y%m ;; *) tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c "$1" ;; esac; }
 # "<64 hex>:<32 hex>": AES-256-CBC key and IV for the API's at-rest encryption.
 keyiv() { h="$(head -c 48 /dev/urandom | od -An -tx1 | tr -d ' \n')"; printf '%s:%s' "$(printf '%s' "$h" | cut -c1-64)" "$(printf '%s' "$h" | cut -c65-96)"; }
 stored() { [ -n "$store" ] && sed -n "s/^$1=//p" "$SECRETS_FILE" | head -n 1; }
@@ -130,6 +144,13 @@ secret CENTRIFUGO_API_KEY 64
 secret CENTRIFUGO_HMAC_SECRET 64
 secret CENTRIFUGO_ADMIN_PASSWORD 24
 secret CENTRIFUGO_ADMIN_SECRET 64
+# The ai module's (generated for every install, so switching it on later
+# needs no new values). WIDGET_SCRIPT_VERSION is not secret, only persistent:
+# the version suffix of the widget URL, fixed at the first start.
+secret AI_SERVICE_SECRET 32
+secret DOCS_PARSE_SECRET 32
+secret AI_POSTGRES_PASSWORD 32
+secret WIDGET_SCRIPT_VERSION yymm
 [ -z "$missing" ] || die "missing:$missing (set them in .env, or mount the secrets volume at $SECRETS_DIR so they are generated)"
 [ -z "$generated" ] || log "generated and stored in the secrets volume:$generated"
 case " $generated " in
@@ -199,6 +220,9 @@ ETHORA_CENTRIFUGO_URL="${ETHORA_CENTRIFUGO_URL:-http://centrifugo:8000}"
 ETHORA_XMPP_URL="${ETHORA_XMPP_URL:-http://xmpp:5280}"
 ETHORA_API_URL="${ETHORA_API_URL:-http://api:8080}"
 ETHORA_FRONTEND_URL="${ETHORA_FRONTEND_URL:-http://frontend:8080}"
+ETHORA_AI_SERVICE_URL="${ETHORA_AI_SERVICE_URL:-http://ai-service:8013}"
+ETHORA_DOCS_PARSE_URL="${ETHORA_DOCS_PARSE_URL:-http://docs-parse:8201}"
+ETHORA_WIDGET_URL="${ETHORA_WIDGET_URL:-http://widget:8080}"
 export REDIS_PORT="${ETHORA_REDIS_PORT:-6379}"
 export MYSQL_PORT="${ETHORA_MYSQL_PORT:-3306}"
 MINIO_PORT="${ETHORA_MINIO_PORT:-9000}"
@@ -211,13 +235,21 @@ export MINIO_SECURE_BUCKET="${MINIO_SECURE_BUCKET:-secure-media}"
 def() { # def NAME value: export NAME=value unless NAME is already set
   eval "[ -n \"\${$1+x}\" ]" || export "$1=$2"
 }
-# Ethora Core: the optional modules are not in this bundle (an overlay that
-# adds one sets its flag in .env).
+# Modules: a compose profile in COMPOSE_PROFILES switches a module on; an
+# explicit flag wins (hosts without profiles, e.g. the Helm chart, set the
+# flag). The crawler is not part of the ai module yet.
+profiles=",$(printf '%s' "${COMPOSE_PROFILES:-}" | tr -d ' '),"
+case "$profiles" in *,ai,*) def AI_SERVICE_ENABLED true ;; *) def AI_SERVICE_ENABLED false ;; esac
+AI_MODULE="$AI_SERVICE_ENABLED"
 def BLOCKCHAIN_ENABLED false
-def AI_SERVICE_ENABLED false
-def DOCS_PARSE_ENABLED false
+def DOCS_PARSE_ENABLED "$AI_MODULE"
 def CRAWLER_ENABLED false
-def AI_FEATURE_ENABLED false
+def AI_FEATURE_ENABLED "$AI_MODULE"
+def AI_API_URL https://api.openai.com/v1
+def AI_API_KEY ""
+def AI_CHAT_MODEL gpt-5.6-luna
+def AI_EMBEDDING_MODEL text-embedding-3-small
+def ERRORS_AI_DSN ""
 def ENABLE_SWAGGER true
 def ENABLE_SWAGGER_INTERNAL false
 def DEFAULT_ROOMS_INACTIVE_DAYS 0
@@ -292,6 +324,34 @@ export TEMP_PASSSORD_WEB_URL_PLACEHOLDER="TEMP_PASSSORD_WEB_URL=$web_url/tempPas
 export XMPP_SERVICE_PLACEHOLDER="XMPP_SERVICE=$xmpp_ws"
 export MINIO_URL_PLACEHOLDER="MINIO_URL=$files_url"
 
+# Website chat widget (ai module): its own host next to the others, or
+# /widget/ on one origin. The URLs reach the web app (frontend.env, the embed
+# snippet on the AI Widget tab) and the widget bundle (widget.env); without
+# the module they are empty, as on a host install without widget hosting.
+hostport_of() { u="${1#*://}"; printf '%s' "${u%%/*}"; }
+widget_url=""
+if [ "$AI_MODULE" = true ]; then
+  if [ -z "$PUBLIC_URL" ]; then
+    case "$(printf '%s' "${WIDGET_DOMAIN:-}" | tr 'A-Z' 'a-z')" in
+      ""|off|none|false|no) WIDGET_DOMAIN="widget.$ROOT_DOMAIN" ;;
+    esac
+    widget_url="https://$WIDGET_DOMAIN"
+  else
+    WIDGET_DOMAIN=""
+    widget_url="$PUBLIC_URL/widget"
+  fi
+  export WIDGET_URL="$widget_url/assistant.js" WIDGET_VERSIONED_URL="$widget_url/assistant$WIDGET_SCRIPT_VERSION.js"
+else
+  WIDGET_DOMAIN=""
+  export WIDGET_URL="" WIDGET_VERSIONED_URL=""
+fi
+export WIDGET_DOMAIN
+export WIDGET_API_URL="$api_url/v1" WIDGET_XMPP_DOMAIN="$XMPP_DOMAIN" WIDGET_XMPP_WS_URL="$xmpp_ws"
+export WIDGET_XMPP_CONFERENCE="conference.$XMPP_DOMAIN" WIDGET_QR_URL="$web_url/app/chat/?qrChatId="
+# ai-service joins ejabberd over the compose network, never through the proxy.
+export AI_SERVICE_XMPP_SERVICE_PLACEHOLDER="XMPP_SERVICE=ws://$(hostport_of "$ETHORA_XMPP_URL")/ws"
+export PLATFORM_API_URL="$ETHORA_API_URL"
+
 # ------------------------------------------------------------- render --
 # render TEMPLATE OUT: literal substitution of {{NAME}} with $NAME (empty
 # when unset, like setup-env.sh's ${NAME:-}) and of whole-line NAME_PLACEHOLDER
@@ -344,6 +404,10 @@ set_env_line "$stage/api/backend.env" MAM_MYSQL_DATABASE "$ETHORA_MYSQL_DATABASE
 set_env_line "$stage/api/backend.env" MINIO_HOST "$ETHORA_MINIO_HOST"
 set_env_line "$stage/api/backend.env" MINIO_PORT "$MINIO_PORT"
 set_env_line "$stage/api/backend.env" CENTRIFUGO_API_URL "$ETHORA_CENTRIFUGO_URL/api"
+set_env_line "$stage/api/backend.env" AI_SERVICE_URL "$ETHORA_AI_SERVICE_URL"
+set_env_line "$stage/api/backend.env" DOCS_PARSE_URL "$ETHORA_DOCS_PARSE_URL"
+ai_internal_url=""; docs_parse_internal_url=""
+if [ "$AI_MODULE" = true ]; then ai_internal_url="$ETHORA_AI_SERVICE_URL"; docs_parse_internal_url="$ETHORA_DOCS_PARSE_URL"; fi
 {
   echo "# Rendered by the compose bundle's config service from backend.env.template"
   echo "# on every 'docker compose up'. Edit .env, not this file."
@@ -355,9 +419,34 @@ set_env_line "$stage/api/backend.env" CENTRIFUGO_API_URL "$ETHORA_CENTRIFUGO_URL
   echo "ETHORA_PUBLIC_FILES_URL=$files_url"
   echo "ETHORA_PUBLIC_SECURE_FILES_URL=${SECURE_FILES_DOMAIN:+https://$SECURE_FILES_DOMAIN}"
   echo "ETHORA_PUBLIC_XMPP_WS_URL=$xmpp_ws"
+  echo "ETHORA_PUBLIC_WIDGET_URL=$WIDGET_URL"
   echo "# The API as the other services reach it (scripts/init.sh)."
   echo "API_INTERNAL_URL=$ETHORA_API_URL"
+  echo "# The ai module's services as verify.js reaches them (empty without the module)."
+  echo "AI_SERVICE_INTERNAL_URL=$ai_internal_url"
+  echo "DOCS_PARSE_INTERNAL_URL=$docs_parse_internal_url"
 } > "$stage/api/backend.env.tmp" && mv "$stage/api/backend.env.tmp" "$stage/api/backend.env"
+
+# ai module: ai-service.env, docs-parse.env, widget.env, the bundled
+# Postgres' password and the widget bundle's static server.
+mkdir -p "$stage/ai" "$stage/ai-postgres" "$stage/widget"
+if [ "$AI_MODULE" = true ]; then
+  for t in ai-service.env.template docs-parse.env.template widget.env.template; do
+    [ -f "$TEMPLATES/$t" ] || die "template not found: $TEMPLATES/$t (ai module)"
+  done
+  export AI_PG_URL="${AI_PG_URL:-postgresql://ai_embeddings:$AI_POSTGRES_PASSWORD@${ETHORA_AI_POSTGRES_HOST:-ai-postgres}:${ETHORA_AI_POSTGRES_PORT:-5432}/ai_service_embeddings_db}"
+  render "$TEMPLATES/ai-service.env.template" "$stage/ai/ai-service.env"
+  set_env_line "$stage/ai/ai-service.env" MONGO_URL "${ETHORA_AI_SERVICE_MONGO_URI:-mongodb://mongo:27017/aiservice?directConnection=true}"
+  set_env_line "$stage/ai/ai-service.env" BACKEND_MONGO_URL "${ETHORA_MONGO_URI:-mongodb://mongo:27017/$MONGO_DB?directConnection=true}"
+  render "$TEMPLATES/docs-parse.env.template" "$stage/ai/docs-parse.env"
+  render "$TEMPLATES/widget.env.template" "$stage/widget/widget.env"
+  printf 'WIDGET_SCRIPT_VERSION=%s\n' "$WIDGET_SCRIPT_VERSION" >> "$stage/widget/widget.env"
+  printf '%s' "$AI_POSTGRES_PASSWORD" > "$stage/ai-postgres/password"
+  # The widget service (caddy) serves the exported bundle: the cache policy
+  # of the host installer's widget vhost, and CORS for the pdf.js modules a
+  # page on another origin imports.
+  printf ':8080 {\n\troot * /widget\n\t@versioned path_regexp ^/assistant[0-9]{4}\\.js(\\.map)?$\n\t@pdfjs path /pdfjs/*\n\t@rest not path_regexp ^/(assistant[0-9]{4}\\.js(\\.map)?|pdfjs/.*)$\n\theader @rest Cache-Control "public, max-age=300"\n\theader @versioned Cache-Control "public, max-age=31536000, immutable"\n\theader @pdfjs Cache-Control "public, max-age=86400"\n\theader @pdfjs Access-Control-Allow-Origin "*"\n\tfile_server\n}\n' > "$stage/widget/Caddyfile"
+fi
 
 # frontend.env
 render "$TEMPLATES/frontend.env.template" "$stage/frontend/frontend.env"
@@ -491,6 +580,9 @@ if [ -z "$PUBLIC_URL" ]; then
   if [ -n "$SECURE_FILES_DOMAIN" ]; then
     ETHORA_SITES="$ETHORA_SITES$(printf '\n%s {\n\timport secure_files\n}' "$SECURE_FILES_DOMAIN")"
   fi
+  if [ -n "$WIDGET_DOMAIN" ]; then
+    ETHORA_SITES="$ETHORA_SITES$(printf '\n%s {\n\timport widget\n}' "$WIDGET_DOMAIN")"
+  fi
 elif [ -n "${ETHORA_SITE_ADDRESS:-}" ]; then
   ETHORA_SITES="$(printf '%s {\n\timport single_origin\n}' "$ETHORA_SITE_ADDRESS")"
 elif [ "$scheme" = https ]; then
@@ -502,8 +594,15 @@ else
 fi
 export ETHORA_SITES
 export ETHORA_EXTRA_SITES="${ETHORA_EXTRA_SITES:-}"
-hostport_of() { u="${1#*://}"; printf '%s' "${u%%/*}"; }
 export UPSTREAM_API="$(hostport_of "$ETHORA_API_URL")"
+export UPSTREAM_WIDGET="$(hostport_of "$ETHORA_WIDGET_URL")"
+# One origin with the ai module: the widget under /widget/ (the upstream is
+# written out, Caddy does not substitute inside a substituted value).
+ETHORA_WIDGET_ROUTE=""
+if [ -n "$PUBLIC_URL" ] && [ "$AI_MODULE" = true ]; then
+  ETHORA_WIDGET_ROUTE="$(printf 'handle /widget/* {\n\t\turi strip_prefix /widget\n\t\treverse_proxy %s\n\t}' "$UPSTREAM_WIDGET")"
+fi
+export ETHORA_WIDGET_ROUTE
 export UPSTREAM_XMPP="$(hostport_of "$ETHORA_XMPP_URL")"
 export UPSTREAM_CENTRIFUGO="$(hostport_of "$ETHORA_CENTRIFUGO_URL")"
 export UPSTREAM_FRONTEND="$(hostport_of "$ETHORA_FRONTEND_URL")"
@@ -532,11 +631,13 @@ cp "$SCRIPTS_SRC"/*.sh "$SCRIPTS_SRC"/*.js "$stage/scripts/"
 # ------------------------------------------------------------ install --
 # Hand each directory to the one container user that reads it; secrets stay
 # unreadable to the others. Then swap the whole tree in.
-chmod 700 "$stage/api" "$stage/frontend" "$stage/centrifugo" "$stage/xmpp" "$stage/mysql" "$stage/minio"
+chmod 700 "$stage/api" "$stage/frontend" "$stage/centrifugo" "$stage/xmpp" "$stage/mysql" "$stage/minio" "$stage/ai" "$stage/ai-postgres"
 chmod 600 "$stage"/api/* "$stage"/frontend/* "$stage"/centrifugo/* "$stage"/xmpp/* "$stage"/mysql/* "$stage"/minio/*
-# Neither secret nor per-service: readable by every container.
-chmod 755 "$stage/caddy" "$stage/scripts"
-for f in "$stage"/caddy/* "$stage"/scripts/*; do [ -f "$f" ] && chmod 644 "$f"; done
+for f in "$stage"/ai/* "$stage"/ai-postgres/*; do [ -f "$f" ] && chmod 600 "$f"; done
+# Neither secret nor per-service: readable by every container (the widget's
+# env names public URLs only).
+chmod 755 "$stage/caddy" "$stage/scripts" "$stage/widget"
+for f in "$stage"/caddy/* "$stage"/scripts/* "$stage"/widget/*; do [ -f "$f" ] && chmod 644 "$f"; done
 # (Only root can hand files over; a non-root run, e.g. the bundle's tests,
 # keeps its own ownership.)
 own() { chown -R "$1" "$2" 2>/dev/null || [ "$(id -u)" != 0 ] || die "chown $1 $2 failed"; }
@@ -548,8 +649,11 @@ own "$MYSQL_UID:$MYSQL_UID" "$stage/mysql"
 own "$MINIO_UID:$MINIO_UID" "$stage/minio"
 own 0:0 "$stage/caddy"
 own 0:0 "$stage/scripts"
+own "$AI_UID:$AI_UID" "$stage/ai"
+own "$AI_POSTGRES_UID:$AI_POSTGRES_UID" "$stage/ai-postgres"
+own 0:0 "$stage/widget"
 mkdir -p "$OUT"
-for d in api frontend centrifugo xmpp mysql minio caddy scripts; do
+for d in api frontend centrifugo xmpp mysql minio caddy scripts ai ai-postgres widget; do
   rm -rf "$OUT/$d.new"
   cp -a "$stage/$d" "$OUT/$d.new"
   rm -rf "$OUT/$d"
@@ -565,5 +669,7 @@ chmod 644 "$MYSQL_INITDB/01-ejabberd.sql"
 if [ -n "$PUBLIC_URL" ]; then
   log "rendered for one origin $PUBLIC_URL (xmpp domain $XMPP_DOMAIN, base app slug $BASE_APP_DOMAIN_NAME)"
 else
-  log "rendered for $ROOT_DOMAIN: api=$API_DOMAIN web=$WEB_DOMAIN xmpp=$XMPP_DOMAIN files=$FILES_DOMAIN secure-files=${SECURE_FILES_DOMAIN:-off} (base app slug: $BASE_APP_DOMAIN_NAME)"
+  log "rendered for $ROOT_DOMAIN: api=$API_DOMAIN web=$WEB_DOMAIN xmpp=$XMPP_DOMAIN files=$FILES_DOMAIN secure-files=${SECURE_FILES_DOMAIN:-off}${WIDGET_DOMAIN:+ widget=$WIDGET_DOMAIN} (base app slug: $BASE_APP_DOMAIN_NAME)"
 fi
+[ "$AI_MODULE" != true ] || log "ai module on: ai-service, docs-parse, widget ($WIDGET_URL), postgres ${AI_PG_URL#*@}"
+

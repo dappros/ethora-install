@@ -20,6 +20,13 @@
 #   --display-name NAME      base app display name (default: Ethora)
 #   --license-key KEY        ETHORA1.<payload>.<signature>; empty = Ethora Core
 #   --no-call-home           air-gapped install (needs an offline key)
+#   --modules LIST           Enterprise modules to run, comma-separated (ai), or
+#                            `none`; each one is a compose profile. The images
+#                            are private: `docker login` with the registry token
+#                            from the admin panel's License page first.
+#   --ai-api-key KEY         ai module: key of the OpenAI-compatible provider
+#   --ai-api-url URL         ai module: provider base URL (default https://api.openai.com/v1)
+#   --widget HOST            ai module: widget host (default widget.<root>)
 #   --no-caddy               no bundled proxy; the platform routes the five hosts
 #   --local-certs            Caddy issues self-signed certificates (LAN tests)
 #   --out FILE               default: .env next to this script
@@ -48,6 +55,8 @@ A_ADMIN_PASSWORD="${ETHORA_SETUP_ADMIN_PASSWORD:-}"
 A_DISPLAY_NAME="${ETHORA_SETUP_DISPLAY_NAME:-}"
 A_LICENSE_KEY="${ETHORA_SETUP_LICENSE_KEY:-}"
 A_CALL_HOME="${ETHORA_SETUP_CALL_HOME:-}"
+A_MODULES="${ETHORA_SETUP_MODULES:-}"
+A_AI_API_KEY="${ETHORA_SETUP_AI_API_KEY:-}"; A_AI_API_URL="${ETHORA_SETUP_AI_API_URL:-}"; A_WIDGET="${ETHORA_SETUP_WIDGET:-}"
 A_CADDY=""; A_LOCAL_CERTS=false
 FORCE=false; YES=false; DRY_RUN=false
 
@@ -67,6 +76,10 @@ while [ $# -gt 0 ]; do
     --display-name) A_DISPLAY_NAME="$2"; shift 2 ;;
     --license-key) A_LICENSE_KEY="$2"; shift 2 ;;
     --no-call-home) A_CALL_HOME="false"; shift ;;
+    --modules) A_MODULES="$2"; shift 2 ;;
+    --ai-api-key) A_AI_API_KEY="$2"; shift 2 ;;
+    --ai-api-url) A_AI_API_URL="$2"; shift 2 ;;
+    --widget) A_WIDGET="$2"; shift 2 ;;
     --no-caddy) A_CADDY="off"; shift ;;
     --local-certs) A_LOCAL_CERTS=true; shift ;;
     --out) OUT_FILE="$2"; shift 2 ;;
@@ -137,7 +150,7 @@ if [ -n "$A_PUBLIC_URL" ]; then
   valid_host "$_host" || [[ "$_host" =~ ^[0-9]+(\.[0-9]+){3}$ ]] || [[ "$_host" =~ ^[a-z0-9-]+$ ]] || die "not a valid host in --public-url: $_host"
   A_PUBLIC_URL="$_scheme://$_host${_port:+:$_port}"
   if [ "$_scheme" = http ]; then PORT_FROM_URL="${_port:-80}"; elif [ -n "$_port" ]; then die "an https --public-url uses port 443; drop :$_port"; fi
-  A_DOMAIN=""; V_API=""; V_WEB=""; V_XMPP=""; V_FILES=""; V_SECURE_FILES=""
+  A_DOMAIN=""; V_API=""; V_WEB=""; V_XMPP=""; V_FILES=""; V_SECURE_FILES=""; V_WIDGET=""
 else
   [ -z "$A_DOMAIN" ] && A_DOMAIN="$(old ROOT_DOMAIN)"
   if [ "$YES" != true ] && is_tty && [ -z "$A_DOMAIN" ]; then
@@ -170,6 +183,7 @@ else
   V_WEB="$(host_value "$A_WEB" WEB_DOMAIN app)"
   V_XMPP="$(host_value "$A_XMPP" XMPP_DOMAIN xmpp)"
   V_FILES="$(host_value "$A_FILES" FILES_DOMAIN files)"
+  V_WIDGET="$(host_value "$A_WIDGET" WIDGET_DOMAIN widget)"
   # Attachments host: derived (written empty) unless answered; `off` is kept
   # literally and the renderer then leaves the fifth host out.
   [ -z "$A_SECURE_FILES" ] && A_SECURE_FILES="$(old SECURE_FILES_DOMAIN)"
@@ -200,15 +214,40 @@ fi
 [ -z "$A_CALL_HOME" ] && A_CALL_HOME="$(old ETHORA_LICENSE_CALL_HOME)"
 A_CALL_HOME="${A_CALL_HOME:-true}"
 
-PROFILES="$(old COMPOSE_PROFILES)"
-has_old COMPOSE_PROFILES || PROFILES="caddy"
-[ "$A_CADDY" = "off" ] && PROFILES=""
+# Profiles: the bundled proxy (caddy) and the Enterprise modules. The
+# modules answered replace the previous ones; the proxy choice is kept.
+KNOWN_MODULES=" ai "
+old_profiles="$(old COMPOSE_PROFILES)"; has_old COMPOSE_PROFILES || old_profiles="caddy"
+CADDY_ON=false; case ",$old_profiles," in *,caddy,*) CADDY_ON=true ;; esac
+[ "$A_CADDY" = "off" ] && CADDY_ON=false
+MODULES=""
+if [ -n "$A_MODULES" ]; then
+  for m in $(printf '%s' "$A_MODULES" | tr ',' ' ' | tr 'A-Z' 'a-z'); do
+    [ "$m" = none ] && continue
+    case "$KNOWN_MODULES" in *" $m "*) ;; *) die "unknown module: $m (available:$KNOWN_MODULES)" ;; esac
+    case " $MODULES " in *" $m "*) ;; *) MODULES="$MODULES${MODULES:+ }$m" ;; esac
+  done
+else
+  for m in $(printf '%s' "$old_profiles" | tr ',' ' '); do
+    case "$KNOWN_MODULES" in *" $m "*) MODULES="$MODULES${MODULES:+ }$m" ;; esac
+  done
+fi
+PROFILES=""; [ "$CADDY_ON" != true ] || PROFILES="caddy"
+for m in $MODULES; do PROFILES="$PROFILES${PROFILES:+,}$m"; done
+AI_ON=false; case " $MODULES " in *" ai "*) AI_ON=true ;; esac
+[ -z "$A_AI_API_KEY" ] && A_AI_API_KEY="$(old AI_API_KEY)"
+[ -z "$A_AI_API_URL" ] && A_AI_API_URL="$(old AI_API_URL)"
+A_AI_API_URL="${A_AI_API_URL:-https://api.openai.com/v1}"
+if [ "$AI_ON" = true ]; then
+  [ -n "$A_LICENSE_KEY" ] || warn "WARNING: the ai module needs a licence key with the ai feature (--license-key); without one the API refuses agent requests"
+  [ -n "$A_AI_API_KEY" ] || warn "WARNING: no AI provider key (--ai-api-key); agents cannot answer until AI_API_KEY is set in .env"
+fi
 CADDY_OPTS="$(old CADDY_GLOBAL_OPTIONS)"
 [ "$A_LOCAL_CERTS" = true ] && CADDY_OPTS="local_certs"
 
 # Every value goes into .env. Refuse the one character this file format
 # cannot carry literally in a single-quoted value.
-for v in "$A_ADMIN_PASSWORD" "$A_DISPLAY_NAME"; do
+for v in "$A_ADMIN_PASSWORD" "$A_DISPLAY_NAME" "$A_AI_API_KEY"; do
   case "$v" in *"'"*) die "values cannot contain a single quote (') - choose another admin password / display name" ;; esac
 done
 
@@ -224,6 +263,11 @@ fi
 echo "  Admin:           $A_ADMIN_EMAIL  ($([ "$GENERATED_PASSWORD" = true ] && echo "password generated" || echo "password kept/supplied"))"
 echo "  Display name:    $A_DISPLAY_NAME"
 echo "  License:         $([ -n "$A_LICENSE_KEY" ] && echo "key ${A_LICENSE_KEY:0:24}..." || echo "none (Ethora Core; register from the admin panel)")  call-home=$A_CALL_HOME"
+if [ "$AI_ON" = true ]; then
+  echo "  Modules:         $MODULES (widget=$([ -n "$A_PUBLIC_URL" ] && echo "$A_PUBLIC_URL/widget/" || echo "${V_WIDGET:-widget.$A_DOMAIN}"), AI provider $A_AI_API_URL, key $([ -n "$A_AI_API_KEY" ] && echo set || echo MISSING))"
+else
+  echo "  Modules:         none (Ethora Core)"
+fi
 echo "  Proxy:           $([ -n "$PROFILES" ] && echo "bundled Caddy (ports ${PORT_FROM_URL:-$(old HTTP_PORT | grep . || echo 80)}/$(old HTTPS_PORT | grep . || echo 443))${CADDY_OPTS:+, $CADDY_OPTS}" || echo "none (route the five hosts yourself)")"
 echo "  Output:          $OUT_FILE"
 echo
@@ -244,6 +288,8 @@ set_new PUBLIC_URL "$A_PUBLIC_URL"
 [ -n "$PORT_FROM_URL" ] && set_new HTTP_PORT "$PORT_FROM_URL"
 set_new API_DOMAIN "$V_API"; set_new WEB_DOMAIN "$V_WEB"; set_new XMPP_DOMAIN "$V_XMPP"; set_new FILES_DOMAIN "$V_FILES"
 set_new SECURE_FILES_DOMAIN "$V_SECURE_FILES"
+set_new WIDGET_DOMAIN "$V_WIDGET"
+set_new AI_API_KEY "$A_AI_API_KEY"; set_new AI_API_URL "$A_AI_API_URL"
 set_new ADMIN_EMAIL "$A_ADMIN_EMAIL"; set_new ADMIN_PASSWORD "$A_ADMIN_PASSWORD"
 set_new BASE_APP_DISPLAY_NAME "$A_DISPLAY_NAME"
 set_new ETHORA_LICENSE_KEY "$A_LICENSE_KEY"; set_new ETHORA_LICENSE_CALL_HOME "$A_CALL_HOME"
@@ -271,6 +317,13 @@ secret CENTRIFUGO_API_KEY 64
 secret CENTRIFUGO_HMAC_SECRET 64
 secret CENTRIFUGO_ADMIN_PASSWORD 24
 secret CENTRIFUGO_ADMIN_SECRET 64
+# The ai module's, generated for every install so the module can be switched
+# on later. WIDGET_SCRIPT_VERSION is the widget URL's version suffix: fixed
+# the first time (year and month) and kept, since pages embed that URL.
+secret AI_SERVICE_SECRET 32
+secret DOCS_PARSE_SECRET 32
+secret AI_POSTGRES_PASSWORD 32
+v="$(old WIDGET_SCRIPT_VERSION)"; set_new WIDGET_SCRIPT_VERSION "${v:-$(date -u +%y%m)}"
 
 quote() { # plain when safe, else single-quoted (compose takes it literally)
   if [[ "$1" =~ ^[A-Za-z0-9_./:@,+=-]*$ ]]; then printf '%s' "$1"; else printf "'%s'" "$1"; fi
@@ -313,5 +366,6 @@ if [ "$GENERATED_PASSWORD" = true ]; then
   echo
 fi
 echo "Next:"
+[ "$AI_ON" != true ] || echo "  docker login                # the ai module's images are private: the registry token from the License page"
 echo "  docker compose up -d        # first start takes a few minutes"
 echo "  docker compose logs -f init # first-boot steps; ends with 'done'"

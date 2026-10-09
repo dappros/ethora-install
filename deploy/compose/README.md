@@ -126,6 +126,7 @@ message sent over `wss://xmpp.<root>/ws`, a file uploaded and read back from
 | `minio` | `dappros/minio` | file storage (`files.<root>`) |
 | `mongo`, `mysql`, `redis`, `centrifugo` | stock images | internal only |
 | `config`, `mongo-init`, `init` | the images above | one-shot steps, run on every `up`, then exit (0) |
+| `ai-service`, `docs-parse`, `widget`, `ai-postgres` | `dappros/ethora-ai`, `pgvector`, `caddy` | the `ai` module (profile `ai`; see Enterprise modules) |
 
 `config` renders every service's configuration from `.env` with the same
 templates the host installer uses (and generates the secrets `.env` leaves
@@ -178,6 +179,7 @@ Named Docker volumes (under `/var/lib/docker/volumes/` on a default host):
 | `ethora_redis` | cache and queues |
 | `ethora_caddy-data` | certificates and the ACME account |
 | `ethora_secrets` | the secrets `.env` left out, generated on the first start |
+| `ethora_ai-postgres` | ai module: the agents' document embeddings |
 | `.env` (this directory) | your settings and the secrets it carries |
 
 They survive `docker compose down`, image updates and reboots.
@@ -199,6 +201,8 @@ done
 docker compose start
 ```
 
+(Add `ai-postgres` to the list with the ai module.)
+
 Restore on a new host: copy this directory with `backup/`, then, before
 anything has started there:
 
@@ -219,6 +223,49 @@ docker compose exec -T mysql sh -c 'mysqldump -uroot -p"$(cat "$MYSQL_ROOT_PASSW
 docker run --rm -v ethora_minio:/v:ro -v "$PWD/backup:/b" alpine tar czf /b/minio.tgz -C /v .
 ```
 
+## Enterprise modules
+
+The Enterprise modules run from this same bundle as compose profiles. Each
+module needs a licence key that carries its feature (the admin panel's
+License page, or `--license-key`), and its images come from the private
+`dappros` repositories on Docker Hub: sign in to the registry with the
+token shown on the License page before the first start.
+
+```bash
+docker login -u <registry user> docker.io          # the token from the License page
+./configure.sh --modules ai --license-key ETHORA1.... --ai-api-key sk-...
+docker compose up -d
+```
+
+`configure.sh --modules` writes the profiles into `COMPOSE_PROFILES`
+(`caddy,ai`); without `configure.sh`, set that variable and the module's
+values in `.env` by hand (see `.env.example`, "modules").
+
+| Module | Profile | Runs | Host |
+|---|---|---|---|
+| AI agents | `ai` | `ai-service`, `docs-parse`, `ai-postgres` (pgvector), `ai-init`, `widget-export`, `widget` from `dappros/ethora-ai` | `widget.<root>` (the website chat widget; `/widget/` on one origin) |
+
+The `ai` module turns the Agents section of the admin panel on, serves the
+embeddable website chat widget from `widget.<root>` (a sixth DNS record,
+covered by a wildcard) and needs an OpenAI-compatible provider: `AI_API_KEY`,
+and `AI_API_URL`, `AI_CHAT_MODEL`, `AI_EMBEDDING_MODEL` for another
+provider or model. Embeddings live in the bundled Postgres (volume
+`ethora_ai-postgres`; back it up with the others); `AI_PG_URL` points
+ai-service at a Postgres of your own with the pgvector extension instead.
+The widget's long-lived script URL carries a version suffix
+(`assistant<WIDGET_SCRIPT_VERSION>.js`), fixed at the first start and kept,
+so pages that embed it keep working across updates. `docker compose
+--profile verify run --rm verify` checks the module too: the widget script
+on its public URL, ai-service and docs-parse answering, the licence
+feature.
+
+Switching a module off: remove its profile from `COMPOSE_PROFILES` and run
+`docker compose up -d --remove-orphans`; its volumes stay until
+`docker volume rm`.
+
+The push, SDK playground, MCP and uptime modules follow the same pattern
+and are added in later releases; until then the host installer runs them.
+
 ## On a platform with its own proxy
 
 Coolify, Dokploy and similar platforms run their own reverse proxy on ports
@@ -233,6 +280,7 @@ WebSocket upgrades allowed:
 | `xmpp.<root>` | `xmpp:5280` | `/ws` and `/bosh` only; never `/api` or `/admin` |
 | `files.<root>` | `minio:9000` | all, with the original `Host` header |
 | `secure-files.<root>` | `api:8080` | all, with the original `Host` header (the API serves this host itself) |
+| `widget.<root>` (ai module) | `widget:8080` | all |
 
 For Coolify the exact steps (git-based application, and a draft one-click
 service template) are in `platforms/coolify/README.md`; for Dokploy
