@@ -153,6 +153,21 @@ only ever holds the public one.
 Instance counting for `limits.instances` only works through call-home. Each
 install generates a random instance id on first boot and keeps it in Mongo.
 
+### Registry credential for the Enterprise module images
+
+The Enterprise modules (AI first; push, playground and MCP follow) run from
+private images on Docker Hub (`dappros/ethora-ai` and so on). Each customer
+gets its own pull credential: an organisation access token on Docker Hub
+with Image Pull on the module repositories, created per customer (or per
+plan tier) and stored on the license with the admin API
+(`PATCH /v1/admin/licenses/:lid {"registry": {"username": "dappros",
+"token": "dckr_oat_..."}}`). Every heartbeat of a license in good standing
+carries it; the install keeps it next to the key and the License page shows
+it to super admins with the `docker login` command. Revoking a customer's
+access is deleting the token on Docker Hub and clearing it on the license;
+the install forgets it on its next heartbeat. Air-gapped customers receive
+the token from sales with their offline key. Core installs never get one.
+
 ## Registration, trials and anti-abuse, honestly
 
 Registering is one request from the admin panel (super admin): the backend
