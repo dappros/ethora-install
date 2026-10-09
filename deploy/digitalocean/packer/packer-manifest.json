@@ -1,0 +1,41 @@
+{
+  "builds": [
+    {
+      "name": "ethora",
+      "builder_type": "digitalocean",
+      "build_time": 1790696943,
+      "files": null,
+      "artifact_id": "nyc3:247579824",
+      "packer_run_uuid": "61121889-0efe-cfff-4297-2e2306fc4d87",
+      "custom_data": null
+    },
+    {
+      "name": "ethora",
+      "builder_type": "digitalocean",
+      "build_time": 1790697556,
+      "files": null,
+      "artifact_id": "nyc3:247579863",
+      "packer_run_uuid": "fd4920d2-e9f3-196d-97e3-d9f12289719a",
+      "custom_data": null
+    },
+    {
+      "name": "ethora",
+      "builder_type": "digitalocean",
+      "build_time": 1791548959,
+      "files": null,
+      "artifact_id": "fra1:249014735",
+      "packer_run_uuid": "56208974-a09c-05dc-d41d-b5fae2cf0bd6",
+      "custom_data": null
+    },
+    {
+      "name": "ethora",
+      "builder_type": "digitalocean",
+      "build_time": 1791551081,
+      "files": null,
+      "artifact_id": "fra1:249016017",
+      "packer_run_uuid": "a146c371-e763-8072-8d9b-778a51b6a607",
+      "custom_data": null
+    }
+  ],
+  "last_run_uuid": "a146c371-e763-8072-8d9b-778a51b6a607"
+}

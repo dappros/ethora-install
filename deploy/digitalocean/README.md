@@ -32,7 +32,11 @@ docker run --rm -v "$PWD/deploy/digitalocean/packer:/work" -w /work \
 
 The image check at the end prints `[PASS]`, `[WARN]` and `[FAIL]` lines;
 any `[FAIL]` fails the build. Warnings about log files are expected and
-accepted by the Marketplace team.
+accepted by the Marketplace team. `nyc3` has run out of the build size
+before; `-var region=fra1` (or any region where `s-2vcpu-4gb` is available)
+works the same, the snapshot is transferable. Latest: `ethora-core-main-20261009-1255`
+(ID 249016017, fra1, the compose bundle), verified 2026-10-09 from the setup
+page: install and the bundle's verify green in under a minute after submit.
 
 ## What a buyer sees
 

@@ -62,12 +62,11 @@ build VM may be any size with quota; the captured image is the same. To
 allow NVMe sizes later, create a new image definition with
 `--features DiskControllerTypes=SCSI,NVMe` and bake into it.
 
-Baked 2026-10-09 as 2610.16.0 from ethora-install main (five hosts,
-secure-files served by the API; still the host installer). The compose-bundle
-image replaces it from the next bake. Verified 2026-10-01 on version 2610.5.4
-with a Standard_D2s_v4 VM: setup page with the VM id as password, install in
-under four minutes with sslip.io and Let's Encrypt, second submit refused,
-health check green, a room created and messages delivered in the web app.
+Baked and verified 2026-10-09 as 2610.16.2 (the compose bundle; 2610.16.0 was
+the last host-installer image): a Standard_D2s_v4 VM from the gallery version,
+setup page with the VM id as password, install with sslip.io and Let's Encrypt
+in under three minutes, the bundle's verify green (login, XMPP round trip,
+public file, gated attachment).
 
 ## Submitting
 
