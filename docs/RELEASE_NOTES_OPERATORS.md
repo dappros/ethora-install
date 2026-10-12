@@ -14,6 +14,21 @@ default is not what you want.
 
 ## 2610 (development line, September 2026)
 
+**Pushes for messages that a dead session swallowed.** ejabberd's
+`mod_stream_mgmt` now runs with `resend_on_timeout: if_offline` in the
+shipped `ejabberd*.yml`; a normal update applies it and restarts the xmpp
+container. Messages sent to a session that went away without acknowledging
+them (phone lost the network, app frozen in the background) used to be
+dropped or bounced when ejabberd finally closed the session, so only the
+messages sent after that produced a push. They are now re-routed to offline
+storage when the user has no other live session, so each of them produces
+a push, up to a couple of minutes late. Nothing to configure. The same
+update rebuilds the ejabberd custom modules (`mod_offline_post` now forwards
+the sender JID, chat title and attachment type), and the push service shows
+the attachment type instead of `media`, resolves the sender's name from
+their profile when the stanza carries none, and groups a chat's
+notifications on iOS. Also applied to 2609.
+
 **Enterprise modules in the compose bundle (ai first).** `deploy/compose`
 now carries the AI module as the compose profile `ai`: `configure.sh
 --modules ai --license-key ... --ai-api-key ...` (or `COMPOSE_PROFILES=caddy,ai`
