@@ -27,8 +27,11 @@ server {
     client_max_body_size 1000M;
 
     location / {
-        # /<bucket>/<key>[?ft=...] -> backend /internal/files/serve/<bucket>/<key>[?ft=...]
-        rewrite ^/(.*)$ /internal/files/serve/$1 break;
+        # The API serves this host itself (secureFilesHost.mw): it maps
+        # /<bucket>/<key>[?ft=...] to its internal serve route and answers 404
+        # for any other path, so the proxy only routes the host, like Caddy in
+        # the compose bundle. A rewrite to /internal/files/serve/ here would
+        # make the API see a path it does not accept and 404 every object.
         proxy_pass http://127.0.0.1:{{BACKEND_PORT}};
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
