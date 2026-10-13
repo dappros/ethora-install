@@ -342,6 +342,14 @@ features:
   firebase: false            # Firebase Admin integration (backend)
   # Video/audio calls (LiveKit). Requires a calls-capable chat-component build
   # and a reachable LiveKit server. Disabled by default.
+  #
+  # Call media is end-to-end encrypted automatically when BOTH this and `e2ee`
+  # below are on and the call is in an e2ee room: the LiveKit media key is
+  # exchanged over the chat's OMEMO channel, so the SFU/server never sees it.
+  # No separate toggle - a call in a non-e2ee room (or with e2ee off) runs
+  # transport-encrypted as before. E2EE calls need a secure (HTTPS) context and
+  # a browser with insertable streams; unsupported clients fall back to a plain
+  # call.
   video_calls: false
   # End-to-end encryption (OMEMO 2) for 1:1 chats. Client-side only: the
   # server never holds keys and cannot read encrypted payloads. When on,
