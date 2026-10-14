@@ -478,7 +478,7 @@ if [ "$REG_FAILED" = true ]; then
 else
   echo "Next$([ -n "$MODULES" ] && echo " (as $(id -un 2>/dev/null || echo "the same user"), the user whose registry login docker uses)"):"
 fi
-echo "  docker compose pull         # about 6 GB with every module; any access problem shows here"
+echo "  docker compose pull         # about 10 GB on disk with every module; any access problem shows here"
 echo "  docker compose up -d        # first start takes a few minutes"
 echo "  docker compose logs -f init # first-boot steps; ends with 'done'"
 if [ "$REG_FAILED" = true ]; then exit 3; fi

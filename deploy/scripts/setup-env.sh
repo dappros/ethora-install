@@ -696,6 +696,7 @@ replace_template() {
     replace_literal "{{ETHORA_LICENSE_CALL_HOME}}" "${ETHORA_LICENSE_CALL_HOME:-true}"
     replace_literal "{{ETHORA_LICENSE_SERVER_URL}}" "${ETHORA_LICENSE_SERVER_URL:-}"
     replace_literal "{{ETHORA_LICENSE_GRACE_DAYS}}" "${ETHORA_LICENSE_GRACE_DAYS:-}"
+    replace_literal "{{ETHORA_INSTALL_KIND}}" "host"
     replace_literal "{{STRIPE_ENABLED}}" "${STRIPE_ENABLED:-false}"
     replace_literal "{{STRIPE_SECRET}}" "${STRIPE_SECRET:-}"
     replace_literal "{{STRIPE_PUBLIC}}" "${STRIPE_PUBLIC:-}"

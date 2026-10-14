@@ -12,7 +12,8 @@ configuration templates; this one needs only Docker.
 ## Install
 
 On a server with Docker Engine 24+ and the Compose plugin (2.24+), ports 80
-and 443 open, 2 vCPU and 4 GB RAM:
+and 443 open, 2 vCPU, 4 GB RAM and 20 GB of disk (30 GB with the Enterprise
+modules):
 
 ```bash
 cd ethora-compose            # this directory, copied to the server

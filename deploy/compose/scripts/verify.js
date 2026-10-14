@@ -27,8 +27,8 @@
 //    server's health and the API's OAuth metadata answer, the uptime
 //    dashboard refuses without credentials and answers with them.
 //
-// Exits non-zero on the first failure. The room it creates is left in place
-// (named "verify <timestamp>").
+// Exits non-zero on a failure. It removes what it created (the room and the
+// uploaded files), so the operator's chat list stays empty.
 const { client, xml } = require('/app/node_modules/@xmpp/client')
 
 const env = process.env
@@ -223,6 +223,15 @@ async function main() {
       if (sfile._id) await http(`${API_URL}/v2/files/${sfile._id}`, { method: 'DELETE', headers: auth }).catch(() => {})
     }
   }
+
+  // The room was only needed for the checks above; the files are gone already.
+  const removed = await http(`${API_URL}/v1/chats`, {
+    method: 'DELETE',
+    headers: { ...auth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: String(room.name || localpart) }),
+  }).catch((e) => ({ status: 0, text: e.message }))
+  if (removed.status === 200 || removed.status === 204) ok('test room removed')
+  else fail(`removing the test room -> HTTP ${removed.status} ${String(removed.text || '').slice(0, 160)}`)
 
   // 6. ai module
   if (AI_MODULE) {

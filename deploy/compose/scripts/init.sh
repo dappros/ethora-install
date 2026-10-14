@@ -20,6 +20,22 @@ warn() { echo "[init] WARN: $*" >&2; }
 die()  { echo "[init] ERROR: $*" >&2; exit 1; }
 
 script() { NODE_NO_WARNINGS=1 NODE_OPTIONS="--no-deprecation" node /app/dist/start.js script "$@"; }
+# The scripts log JSON lines (the API's logger); the operator reads this log,
+# so keep each line's message, mark warnings and errors, pass the rest as is.
+tidy() {
+  node -e '
+    require("readline").createInterface({ input: process.stdin }).on("line", (l) => {
+      let j = null
+      if (l[0] === "{") { try { j = JSON.parse(l) } catch (_) {} }
+      if (!j || typeof j.msg !== "string") return console.log(l)
+      const lv = typeof j.level === "number" ? (j.level >= 50 ? "ERROR" : j.level >= 40 ? "WARN" : "") : /error|fatal/.test(j.level) ? "ERROR" : j.level === "warn" ? "WARN" : ""
+      const base = ["level", "time", "pid", "hostname", "caller", "msg", "requestId"]
+      const extra = Object.keys(j).filter((k) => !base.includes(k) && j[k] !== null && typeof j[k] !== "object").map((k) => `${k}=${j[k]}`)
+      console.log((lv ? lv + ": " : "") + j.msg + (extra.length ? " (" + extra.join(", ") + ")" : ""))
+    })'
+}
+# A script whose output is for the operator: tidied and indented under [init].
+step() { script "$@" 2>&1 | tidy | sed 's/^/[init]   /'; }
 
 : "${MONGO_URI:?MONGO_URI missing from backend.env}"
 : "${XMPP_HOST:?XMPP_HOST missing from backend.env}"
@@ -40,7 +56,7 @@ export JWT_SECRET="${SECRET_KEY:-}"
 # attempt takes the "already exists" path, so retry a few times.
 log "base app '${BASE_APP_DOMAIN_NAME:-}' and platform admin ${PLATFORM_ACCOUNT_EMAIL}"
 attempt=1
-until script scripts/initEthoraApp.js; do
+until step scripts/initEthoraApp.js; do
   rc=$?
   [ $attempt -lt 4 ] || die "initEthoraApp.js failed (exit $rc) after $attempt attempts"
   log "initEthoraApp.js failed (exit $rc); retrying in 5 s (attempt $((attempt + 1)) of 4)"
@@ -94,11 +110,11 @@ ensure_xmpp_account "$(field SYSTEM_JID)" "$(field SYSTEM_PASSWORD)" "base app s
 # stamp files are kept.
 for m in scripts/migrateSourceAgentId.js; do
   log "migration $m"
-  script "$m" 2>&1 | sed 's/^/[init]   /' || warn "migration $m failed (non-fatal)"
+  step "$m" || warn "migration $m failed (non-fatal)"
 done
 
 # ---------------------------------------------------- 4. translate languages --
-if out="$(script src/utils/scripts/syncTranslateLanguages.js "${TRANSLATE_LANGUAGES:-}" 2>&1)"; then
+if out="$(script src/utils/scripts/syncTranslateLanguages.js "${TRANSLATE_LANGUAGES:-}" 2>&1 | tidy)"; then
   log "translate languages: $(printf '%s' "$out" | tail -n 1)"
 else
   warn "translate language sync failed (non-fatal): $(printf '%s' "$out" | tr '\n' ' ' | head -c 240)"
