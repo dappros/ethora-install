@@ -233,14 +233,23 @@ docker run --rm -v ethora_minio:/v:ro -v "$PWD/backup:/b" alpine tar czf /b/mini
 The Enterprise modules run from this same bundle as compose profiles. Each
 module needs a licence key that carries its feature (the admin panel's
 License page, or `--license-key`), and its images come from the private
-`dappros` repositories on Docker Hub: sign in to the registry with the
-token shown on the License page before the first start.
+`dappros` repositories on Docker Hub. With a licence key, `configure.sh`
+fetches the licence's registry credential from the licence server, runs
+`docker login` and checks that every module image can be pulled; a missing
+login shows there, by image, and the script exits with status 3.
 
 ```bash
-docker login -u <registry user> docker.io          # the token from the License page
 ./configure.sh --modules ai --license-key ETHORA1.... --ai-api-key sk-...
+docker compose pull                                  # same user as configure.sh
 docker compose up -d
 ```
+
+Docker keeps one login per user: run `configure.sh` and `docker compose`
+as the same user (or both with `sudo`). To log in with a Docker Hub account
+instead of the licence's credential, pass `--registry-user USER
+--registry-token TOKEN` (a personal access token with Read access; a
+public-repo-only token cannot pull private images). `--no-registry-check`
+skips the login and the check.
 
 `configure.sh --modules` writes the profiles into `COMPOSE_PROFILES`
 (`caddy,ai`); without `configure.sh`, set that variable and the module's

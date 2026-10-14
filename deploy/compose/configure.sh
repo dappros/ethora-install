@@ -22,9 +22,13 @@
 #   --no-call-home           air-gapped install (needs an offline key)
 #   --modules LIST           Enterprise modules to run, comma-separated (ai, push,
 #                            playground, mcp, uptime), or `none`; each one is a
-#                            compose profile. The images
-#                            are private: `docker login` with the registry token
-#                            from the admin panel's License page first.
+#                            compose profile. Their images are private: with a
+#                            licence key, configure.sh fetches the licence's
+#                            registry credential, runs `docker login` and checks
+#                            that every module image can be pulled.
+#   --registry-user USER     log in with this Docker Hub account instead of the
+#   --registry-token TOKEN   licence's credential (a dappros org member's token)
+#   --no-registry-check      skip the registry login and the image access check
 #   --ai-api-key KEY         ai module: key of the OpenAI-compatible provider
 #   --ai-api-url URL         ai module: provider base URL (default https://api.openai.com/v1)
 #   --widget HOST            ai module: widget host (default widget.<root>)
@@ -59,6 +63,8 @@ A_LICENSE_KEY="${ETHORA_SETUP_LICENSE_KEY:-}"
 A_CALL_HOME="${ETHORA_SETUP_CALL_HOME:-}"
 A_MODULES="${ETHORA_SETUP_MODULES:-}"
 A_AI_API_KEY="${ETHORA_SETUP_AI_API_KEY:-}"; A_AI_API_URL="${ETHORA_SETUP_AI_API_URL:-}"; A_WIDGET="${ETHORA_SETUP_WIDGET:-}"
+A_REG_USER="${ETHORA_SETUP_REGISTRY_USER:-}"; A_REG_TOKEN="${ETHORA_SETUP_REGISTRY_TOKEN:-}"
+REGISTRY_CHECK="${ETHORA_SETUP_REGISTRY_CHECK:-true}"
 A_CADDY=""; A_LOCAL_CERTS=false
 FORCE=false; YES=false; DRY_RUN=false
 
@@ -82,6 +88,9 @@ while [ $# -gt 0 ]; do
     --ai-api-key) A_AI_API_KEY="$2"; shift 2 ;;
     --ai-api-url) A_AI_API_URL="$2"; shift 2 ;;
     --widget) A_WIDGET="$2"; shift 2 ;;
+    --registry-user) A_REG_USER="$2"; shift 2 ;;
+    --registry-token) A_REG_TOKEN="$2"; shift 2 ;;
+    --no-registry-check) REGISTRY_CHECK=false; shift ;;
     --no-caddy) A_CADDY="off"; shift ;;
     --caddy) A_CADDY="on"; shift ;;
     --local-certs) A_LOCAL_CERTS=true; shift ;;
@@ -256,6 +265,7 @@ CADDY_OPTS="$(old CADDY_GLOBAL_OPTIONS)"
 
 # Every value goes into .env. Refuse the one character this file format
 # cannot carry literally in a single-quoted value.
+[ -z "$A_REG_TOKEN" ] || [ -n "$A_REG_USER" ] || die "--registry-token needs --registry-user"
 for v in "$A_ADMIN_PASSWORD" "$A_DISPLAY_NAME" "$A_AI_API_KEY"; do
   case "$v" in *"'"*) die "values cannot contain a single quote (') - choose another admin password / display name" ;; esac
 done
@@ -382,7 +392,89 @@ if [ "$GENERATED_PASSWORD" = true ]; then
   echo "  $A_ADMIN_PASSWORD"
   echo
 fi
-echo "Next:"
-[ -z "$MODULES" ] || echo "  docker login                # the modules' images are private: the registry token from the License page"
+# --------------------------------------------------------------- registry --
+# The module images are private. Log in with the licence's registry
+# credential (or the one given), then ask the registry for every module image
+# this install will pull, so a missing login shows here as one clear line
+# instead of `docker compose up` aborting every pull with "Interrupted".
+LICENSE_SERVER="${ETHORA_LICENSE_SERVER_URL:-$(old ETHORA_LICENSE_SERVER_URL)}"
+LICENSE_SERVER="${LICENSE_SERVER:-https://license.ethora.com}"
+REG_FAILED=false
+json_str() { sed -n "s/.*\"$1\" *: *\"\([^\"]*\)\".*/\1/p" | head -1; }
+registry_step() {
+  local who errf reg_src="" body user="$A_REG_USER" token="$A_REG_TOKEN" images img out bad=""
+  who="$(id -un 2>/dev/null || echo "this user")"
+  errf="$(mktemp)"
+  if ! command -v docker >/dev/null 2>&1; then
+    warn "docker not found: install Docker, then re-run configure.sh to log in to the registry"; REG_FAILED=true; rm -f "$errf"; return
+  fi
+  if ! docker info >/dev/null 2>"$errf"; then
+    warn "$who cannot reach the Docker daemon ($(head -1 "$errf"))."
+    warn "Run configure.sh and docker compose as the same user, one that can run docker (or both with sudo)."
+    REG_FAILED=true; rm -f "$errf"; return
+  fi
+  echo
+  if [ -z "$token" ] && [ -n "$A_LICENSE_KEY" ] && [ "$A_CALL_HOME" != false ]; then
+    if ! command -v curl >/dev/null 2>&1; then
+      warn "curl not found: cannot fetch the licence's registry credential"
+    elif body="$(curl -sS -m 20 -X POST -H 'Content-Type: application/json' -d "{\"key\":\"$A_LICENSE_KEY\"}" "$LICENSE_SERVER/v1/registry" 2>"$errf")"; then
+      user="$(printf '%s' "$body" | json_str username)"; token="$(printf '%s' "$body" | json_str token)"
+      if [ -n "$token" ]; then reg_src="the licence's registry credential"
+      else warn "licence server: $(printf '%s' "$body" | json_str error)$(printf '%s' "$body" | json_str message)"; fi
+    else
+      warn "cannot reach the licence server $LICENSE_SERVER ($(head -1 "$errf"))"
+    fi
+  elif [ -n "$token" ]; then
+    reg_src="--registry-user $user"
+  fi
+  if [ -n "$token" ]; then
+    if printf '%s' "$token" | docker login -u "$user" --password-stdin docker.io >/dev/null 2>"$errf"; then
+      log "logged in to Docker Hub as $user ($reg_src), for $who"
+    else
+      warn "docker login with $reg_src failed: $(grep -v '^WARNING' "$errf" | head -1)"
+    fi
+  fi
+  if ! images="$(cd "$SCRIPT_DIR" && docker compose --env-file "$OUT_FILE" config --images 2>"$errf")"; then
+    warn "cannot list the images (docker compose config: $(head -1 "$errf")); skipping the access check"; rm -f "$errf"; return
+  fi
+  for img in $(printf '%s\n' "$images" | grep -E '/ethora-(ai|push|playground|mcp|uptime)(:|@)' | sort -u); do
+    if docker manifest inspect "$img" >/dev/null 2>"$errf"; then
+      log "image access ok: $img"
+    else
+      out="$(tr '\n' ' ' <"$errf")"
+      case "$out" in
+        *denied*|*unauthorized*|*authentication*) warn "NO ACCESS: $img" ;;
+        *"no such manifest"*|*"manifest unknown"*|*"not found"*) warn "NOT PUBLISHED: $img (check the *_IMAGE tags in $OUT_FILE)" ;;
+        *) warn "cannot check $img: ${out:0:200}" ;;
+      esac
+      bad="$bad $img"
+    fi
+  done
+  rm -f "$errf"
+  [ -z "$bad" ] && return
+  REG_FAILED=true
+  warn ""
+  warn "The configuration is written, but docker compose cannot pull every module image as $who."
+  if [ -z "$token" ] && [ -n "$A_LICENSE_KEY" ] && [ "$A_CALL_HOME" != false ]; then
+    warn "The licence server gave no registry credential for this key (see above): ask Ethora support, or log in"
+    warn "with a Docker Hub account that has access: --registry-user USER --registry-token TOKEN."
+  elif [ -z "$token" ]; then
+    warn "Log in to the registry first, then re-run configure.sh (or docker compose pull):"
+    warn "  - with a licence key: --license-key ETHORA1... fetches the licence's registry credential;"
+    warn "  - a Docker Hub account with access to the dappros images: --registry-user USER --registry-token TOKEN"
+    warn "    (a personal access token with Read access; public-repo-only tokens cannot pull private images)."
+  else
+    warn "The credential ($reg_src) does not cover these images: ask Ethora support to extend it."
+  fi
+  if [ "$(id -u)" = 0 ] && [ -n "${SUDO_USER:-}" ]; then
+    warn "You ran this with sudo: Docker keeps root's login separate from $SUDO_USER's, so run docker compose with sudo too."
+  fi
+}
+if [ -n "$MODULES" ] && [ "$REGISTRY_CHECK" = true ]; then registry_step; fi
+
+echo
+echo "Next$([ -n "$MODULES" ] && echo " (as $(id -un 2>/dev/null || echo "the same user"), the user whose registry login docker uses)"):"
+echo "  docker compose pull         # about 6 GB with every module; any access problem shows here"
 echo "  docker compose up -d        # first start takes a few minutes"
 echo "  docker compose logs -f init # first-boot steps; ends with 'done'"
+if [ "$REG_FAILED" = true ]; then exit 3; fi

@@ -161,9 +161,19 @@ gets its own pull credential: an organisation access token on Docker Hub
 with Image Pull on the module repositories, created per customer (or per
 plan tier) and stored on the license with the admin API
 (`PATCH /v1/admin/licenses/:lid {"registry": {"username": "dappros",
-"token": "dckr_oat_..."}}`). Every heartbeat of a license in good standing
-carries it; the install keeps it next to the key and the License page shows
-it to super admins with the `docker login` command. Revoking a customer's
+"token": "dckr_oat_..."}}`). Two ways it reaches the customer, both proving
+possession of the signed key (licence ids are guessable, so an id alone gets
+nothing):
+
+- Before the install exists: the compose bundle's `configure.sh` sends the
+  licence key to `POST /v1/registry`, runs `docker login` with the answer and
+  checks every module image can be pulled.
+- After: every heartbeat of a license in good standing that carries the
+  install's current key gets it back; the install keeps it next to the key
+  and the License page shows it to super admins with the `docker login`
+  command. Backends older than this rule send no key and keep what they
+  stored.
+ Revoking a customer's
 access is deleting the token on Docker Hub and clearing it on the license;
 the install forgets it on its next heartbeat. Air-gapped customers receive
 the token from sales with their offline key. Core installs never get one.

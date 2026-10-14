@@ -96,7 +96,9 @@ else skip "dokploy template.toml parses (python3 3.11+ with tomllib not availabl
 
 echo "# configure.sh"
 B="$T/bundle"; cp -r "$BUNDLE" "$B"; rm -f "$B/.env"
-cfg() { "$B/configure.sh" "$@" >"$T/out" 2>"$T/err"; }
+# The registry login and image access check talk to Docker and the licence
+# server; off here, exercised with stubs under "configure.sh: registry".
+cfg() { ETHORA_SETUP_REGISTRY_CHECK=false "$B/configure.sh" "$@" >"$T/out" 2>"$T/err"; }
 cfg --domain Chat.Example.com --admin-email ops@example.com --yes
 E="$B/.env"
 [ -f "$E" ] && ok "wrote .env" || fail "wrote .env" "$(cat "$T/err")"
@@ -143,7 +145,7 @@ cfg --domain chat.example.com --admin-email ops@example.com --modules ai --ai-ap
 [ "$(envval AI_API_KEY "$E")" = "sk-test" ] && [ "$(envval AI_API_URL "$E")" = "https://api.openai.com/v1" ] && ok "AI provider key and default URL written" || fail "AI_API_*" "$(grep '^AI_API' "$E")"
 grep -qE '^WIDGET_SCRIPT_VERSION=[0-9]{4}$' "$E" && ok "widget script version generated (YYMM)" || fail "WIDGET_SCRIPT_VERSION" "$(grep WIDGET_SCRIPT "$E")"
 for k in AI_SERVICE_SECRET DOCS_PARSE_SECRET AI_POSTGRES_PASSWORD; do v="$(envval "$k" "$E")"; [ ${#v} -ge 32 ] || fail "$k generated"; done; ok "ai module secrets generated"
-grep -q 'needs a licence key' "$T/err" && grep -q 'docker login' "$T/out" && ok "warns about the missing licence key, says to docker login" || fail "ai module warnings" "$(cat "$T/err")"
+grep -q 'needs a licence key' "$T/err" && grep -q 'docker compose pull' "$T/out" && ok "warns about the missing licence key, says to pull first" || fail "ai module warnings" "$(cat "$T/err")"
 cp "$E" "$T/ai.env"
 cfg --display-name "Acme" --yes
 [ "$(envval COMPOSE_PROFILES "$E")" = "caddy,ai" ] && [ "$(envval WIDGET_SCRIPT_VERSION "$E")" = "$(envval WIDGET_SCRIPT_VERSION "$T/ai.env")" ] && [ "$(envval AI_API_KEY "$E")" = "sk-test" ] \
@@ -162,6 +164,56 @@ cfg --widget chat-widget.example.com --modules ai --yes
 rm -f "$E"
 cfg --public-url https://chat.example.com --admin-email a@b.co --modules mcp --yes && fail "mcp on one origin refused" || ok "playground/mcp/uptime refused on a one-origin install"
 cfg --public-url https://chat.example.com --admin-email a@b.co --modules ai,push --yes && ok "ai and push allowed on one origin" || fail "ai,push on one origin" "$(cat "$T/err")"
+rm -f "$E"
+
+echo "# configure.sh: registry"
+SB="$T/stub"; mkdir -p "$SB"; SL="$T/stub.log"
+cat > "$SB/docker" <<'STUB'
+#!/bin/sh
+echo "docker $*" >> "$STUB_LOG"
+case "$1" in
+  info) exit "${STUB_INFO:-0}" ;;
+  login) cat > "$STUB_LOG.pw"; exit 0 ;;
+  compose) printf '%s\n' docker.io/dappros/ethora-api:2610 docker.io/dappros/ethora-push:2610 docker.io/dappros/ethora-mcp:2610 docker.io/dappros/ethora-push:2610 ;;
+  manifest) case "$3" in *ethora-push*) [ -z "${STUB_DENY:-}" ] || { echo "denied: requested access to the resource is denied" >&2; exit 1; } ;; esac ;;
+esac
+exit 0
+STUB
+cat > "$SB/curl" <<'STUB'
+#!/bin/sh
+echo "curl $*" >> "$STUB_LOG"
+printf '%s' "$STUB_CURL_BODY"
+STUB
+chmod +x "$SB/docker" "$SB/curl"
+rcf() { # rcf [VAR=value ...] [configure.sh flags ...]
+  local vars=()
+  while [ $# -gt 0 ] && [[ "$1" =~ ^[A-Z_]+= ]]; do vars+=("$1"); shift; done
+  rm -f "$SL" "$SL.pw"
+  env STUB_LOG="$SL" PATH="$SB:$PATH" ${vars[@]+"${vars[@]}"} "$B/configure.sh" --domain chat.example.com --admin-email ops@example.com --yes "$@" >"$T/out" 2>"$T/err"
+}
+REGBODY='{"ok":true,"registry":{"username":"dappros","token":"dckr_oat_t1"}}'
+rcf STUB_CURL_BODY="$REGBODY" --modules push,mcp --license-key ETHORA1.abc.def \
+  && grep -q '^curl .*https://license.ethora.com/v1/registry' "$SL" && grep -q '"key":"ETHORA1.abc.def"' "$SL" \
+  && grep -q '^docker login -u dappros --password-stdin docker.io' "$SL" && [ "$(cat "$SL.pw")" = "dckr_oat_t1" ] \
+  && ok "licence key: fetches the registry credential and logs in (token on stdin)" || fail "registry login from the licence" "$(cat "$SL" "$T/err")"
+[ "$(grep -c '^docker manifest inspect' "$SL")" = 2 ] && ! grep -q 'manifest inspect .*ethora-api' "$SL" \
+  && ok "access check covers each module image once, not the public core images" || fail "access check images" "$(grep manifest "$SL")"
+grep -q 'dckr_oat_t1' "$T/out" "$T/err" "$B/.env" && fail "registry token never printed or written to .env" || ok "registry token never printed or written to .env"
+rcf STUB_CURL_BODY="$REGBODY" STUB_DENY=1 --license-key ETHORA1.abc.def; rc=$?
+[ "$rc" = 3 ] && grep -q 'NO ACCESS: docker.io/dappros/ethora-push:2610' "$T/err" && grep -q 'ask Ethora support' "$T/err" \
+  && ok "image without access: named, exit 3, .env still written" || fail "denied image" "rc=$rc $(cat "$T/err")"
+rcf STUB_CURL_BODY='{"ok":false,"error":"licence key expired; ask for a new one"}' --license-key ETHORA1.abc.def
+grep -q 'licence server: licence key expired' "$T/err" && ! grep -q '^docker login' "$SL" && ok "licence server refusal shown, no login attempted" || fail "licence refusal" "$(cat "$T/err")"
+rcf STUB_CURL_BODY="$REGBODY" STUB_DENY=1 --registry-user someone --registry-token pat_x; rc=$?
+grep -q '^docker login -u someone' "$SL" && [ "$(cat "$SL.pw")" = pat_x ] && ! grep -q '^curl' "$SL" && [ "$rc" = 3 ] \
+  && ok "--registry-user/--registry-token log in instead of the licence's credential" || fail "explicit registry login" "rc=$rc $(cat "$SL")"
+rcf STUB_INFO=1 --license-key ETHORA1.abc.def; rc=$?
+[ "$rc" = 3 ] && grep -q 'cannot reach the Docker daemon' "$T/err" && ok "docker daemon out of reach: same-user hint, exit 3" || fail "daemon unreachable" "rc=$rc $(cat "$T/err")"
+rcf --modules none; rc=$?
+[ "$rc" = 0 ] && [ ! -s "$SL" ] && ok "no modules: no registry step" || fail "no modules" "rc=$rc $(cat "$SL" 2>/dev/null)"
+rcf --modules push --no-registry-check; rc=$?
+[ "$rc" = 0 ] && [ ! -s "$SL" ] && ok "--no-registry-check skips it" || fail "--no-registry-check" "rc=$rc"
+rcf --registry-token x --modules push && fail "--registry-token without --registry-user refused" || ok "--registry-token without --registry-user refused"
 rm -f "$E"
 
 echo "# render-config.sh"
