@@ -576,7 +576,7 @@ license:
   key: ""              # ETHORA1.<payload>.<signature>, as issued
   key_file: ""         # Alternatively, a path to a file holding the key
   call_home: true      # Daily heartbeat to the license server; set false for air-gapped installs (needs an `offline` key)
-  server_url: ""       # License server base URL; empty = no call-home, no call-home enforcement
+  server_url: ""       # License server base URL; empty = https://license.ethora.com (set only for a staging server)
   grace_days: ""       # Override the default grace window (days); leave empty for the default
 
 # Security

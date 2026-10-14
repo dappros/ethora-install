@@ -14,6 +14,19 @@ default is not what you want.
 
 ## 2610 (development line, September 2026)
 
+**Licence call-home is on by default.** An empty `license.server_url` (or
+`ETHORA_LICENSE_SERVER_URL` in the compose bundle) used to switch the daily
+heartbeat off; it now means https://license.ethora.com. Keys renew on their
+own and the registry credential for the module images reaches the License
+page. With call-home on, a key that is not `offline` must reach the server
+within 30 days or the install goes to grace, then unlicensed. Air-gapped
+installs set `license.call_home: false` and use an offline key. The License
+page now shows the last contact and a renewed key without an API restart.
+
+**Fresh installs: the admin is a super admin.** A new install's admin
+account could not apply a licence key or open Server settings. The next
+init (`docker compose up`, or `update.sh`) repairs an affected install.
+
 **Pushes for messages that a dead session swallowed.** ejabberd's
 `mod_stream_mgmt` now runs with `resend_on_timeout: if_offline` in the
 shipped `ejabberd*.yml`; a normal update applies it and restarts the xmpp

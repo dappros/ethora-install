@@ -272,7 +272,7 @@ license:
   key: ""              # ETHORA1.<payload>.<signature>, as issued
   key_file: ""         # or a path to a file holding the key (wins over key)
   call_home: true      # daily heartbeat to the license server; false for air-gapped
-  server_url: ""       # license server base URL; empty = no call-home
+  server_url: ""       # license server base URL; empty = https://license.ethora.com
   grace_days: ""       # override the 14-day default
 ```
 

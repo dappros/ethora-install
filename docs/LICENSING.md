@@ -107,7 +107,7 @@ license:
   key: "ETHORA1...."   # or:
   key_file: /home/ubuntu/ethora-license.txt
   call_home: true
-  server_url: ""       # license server base URL; empty = no call-home
+  server_url: ""       # license server base URL; empty = https://license.ethora.com
   grace_days: ""       # override the 14-day default
 ```
 
@@ -132,13 +132,18 @@ license:
 
 ## Call-home and air-gapped installs
 
-When `license.server_url` is set and `license.call_home` is true, the jobs
-process posts a heartbeat once a day (and once shortly after boot): instance
-id, license id, configured hosts, state, version, and app/user counts. The
-server may answer with a refreshed key, which is stored if it verifies. A key
-that is not marked `offline` must have reached the server within 30 days,
-otherwise the install drops to grace; this is only enforced when a server URL
-is configured.
+Unless `license.call_home` is false, the jobs process posts a heartbeat to
+https://license.ethora.com (or `license.server_url`, for a staging server)
+once a day and once shortly after boot: instance id, license id and key,
+configured hosts, state, version, and app/user counts. The server may answer
+with a refreshed key, which is stored if it verifies, and the registry
+credential for the module images. The API process picks both up from Mongo
+within 5 minutes, and at once when the License page is opened. A key that is
+not marked `offline` must have reached the server within 30 days, otherwise
+the install drops to grace (full entitlements for `grace_days`), then to
+unlicensed. Until 2610.35 an empty `server_url` meant no call-home at all;
+installs that relied on that and cannot reach the server need
+`call_home: false` and an offline key.
 
 Air-gapped customers set `call_home: false` and receive a key signed with
 `offline: true`, typically for 12 months. No outbound attempt is ever made.
