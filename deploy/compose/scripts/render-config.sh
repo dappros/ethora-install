@@ -518,6 +518,7 @@ if [ "$PUSH_MODULE" = true ]; then
   render "$TEMPLATES/push.env.template" "$stage/push/push.env"
   set_env_line "$stage/push/push.env" MONGO_URI "${ETHORA_MONGO_URI:-mongodb://mongo:27017/$MONGO_DB?directConnection=true}"
   set_env_line "$stage/push/push.env" REDIS_HOST "$ETHORA_REDIS_HOST"
+  set_env_line "$stage/push/push.env" API_INTERNAL_URL "$ETHORA_API_URL"
 fi
 if [ "$PLAYGROUND_MODULE" = true ]; then
   # What the host installer writes to the playground's .env.local; the base

@@ -693,7 +693,10 @@ stash_local_mods_if_any() {
 
   local stash_label="$label_prefix auto-stash $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   log "Source repo has local modifications, stashing before checkout:"
-  git -C "$repo" status --short 2>/dev/null | head -20 | sed 's/^/    /' >&2
+  # `|| true`: with more than 20 modified files `head` closes the pipe early,
+  # git dies of SIGPIPE and under `set -o pipefail` the whole script would
+  # stop here, right after printing the list.
+  git -C "$repo" status --short 2>/dev/null | head -20 | sed 's/^/    /' >&2 || true
   # IMPORTANT: do NOT pass --include-untracked. Stray multi-GB untracked
   # directories (e.g. an old docker volume mounted under deploy/ from a
   # misconfigured install) can hang `git update-index` for minutes while
@@ -1007,8 +1010,12 @@ else
     # matching remote branch exists; that creates-or-resets the local
     # tracking branch in one step (and as a bonus replaces the previous
     # post-checkout `reset --hard` "fast-forward to origin" guard).
+    # `-f` also here: the sync workflow writes files into this tree outside
+    # git, so a file that is new on the target branch sits here untracked
+    # and a plain checkout refuses to overwrite it ("Please move or remove
+    # them before you switch branches").
     if [ -z "$ROLLBACK_SHA" ] && git -C "$SRC_ROOT" show-ref --verify --quiet "refs/remotes/origin/$target"; then
-      git -C "$SRC_ROOT" checkout -B "$target" "origin/$target"
+      git -C "$SRC_ROOT" checkout -f -B "$target" "origin/$target"
     else
       git -C "$SRC_ROOT" checkout -f "$target"
     fi

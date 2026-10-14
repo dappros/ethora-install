@@ -1166,6 +1166,7 @@ if [ "$PUSH_MODULE" = true ]; then
   render "$TEMPLATES/push.env.template" "$stage/push/push.env"
   set_env_line "$stage/push/push.env" MONGO_URI "${ETHORA_MONGO_URI:-mongodb://mongo:27017/$MONGO_DB?directConnection=true}"
   set_env_line "$stage/push/push.env" REDIS_HOST "$ETHORA_REDIS_HOST"
+  set_env_line "$stage/push/push.env" API_INTERNAL_URL "$ETHORA_API_URL"
 fi
 if [ "$PLAYGROUND_MODULE" = true ]; then
   # What the host installer writes to the playground's .env.local; the base
@@ -2480,6 +2481,11 @@ PUSH_PLATFORM_PROJECT_ID={{PUSH_PLATFORM_PROJECT_ID}}
 # with the Bearer token issued for this instance. Empty = no forwarding.
 PUSH_GATEWAY_URL={{PUSH_GATEWAY_URL}}
 PUSH_GATEWAY_TOKEN={{PUSH_GATEWAY_TOKEN}}
+
+# The API as this service reaches it: the app-icon badge on chat pushes asks
+# it for the receiver's unread total (POST /internal/push/badge-count, with
+# B2B_PUSH_SECRET). Empty = pushes go without a badge.
+API_INTERNAL_URL=http://127.0.0.1:{{BACKEND_PORT}}
 
 # Error tracker (Bugsink on the central monitoring server, Sentry protocol):
 # services.monitoring.errors.push in deploy.yml. Empty = the push service and
