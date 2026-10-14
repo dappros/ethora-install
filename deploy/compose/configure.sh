@@ -453,7 +453,7 @@ registry_step() {
   rm -f "$errf"
   [ -z "$bad" ] && return
   REG_FAILED=true
-  warn ""
+  echo >&2
   warn "The configuration is written, but docker compose cannot pull every module image as $who."
   if [ -z "$token" ] && [ -n "$A_LICENSE_KEY" ] && [ "$A_CALL_HOME" != false ]; then
     warn "The licence server gave no registry credential for this key (see above): ask Ethora support, or log in"
@@ -473,7 +473,11 @@ registry_step() {
 if [ -n "$MODULES" ] && [ "$REGISTRY_CHECK" = true ]; then registry_step; fi
 
 echo
-echo "Next$([ -n "$MODULES" ] && echo " (as $(id -un 2>/dev/null || echo "the same user"), the user whose registry login docker uses)"):"
+if [ "$REG_FAILED" = true ]; then
+  echo "Next, once the registry problem above is fixed (re-run configure.sh to check again):"
+else
+  echo "Next$([ -n "$MODULES" ] && echo " (as $(id -un 2>/dev/null || echo "the same user"), the user whose registry login docker uses)"):"
+fi
 echo "  docker compose pull         # about 6 GB with every module; any access problem shows here"
 echo "  docker compose up -d        # first start takes a few minutes"
 echo "  docker compose logs -f init # first-boot steps; ends with 'done'"

@@ -1957,6 +1957,10 @@ x-file-frontend-template: &file-frontend-template
     # Install gate only: the frontend ANDs this with the per-app `e2eeEnabled`
     # it reads from GET /apps/get-config, so `true` here surfaces the setting to
     # app owners rather than enabling encryption for every app.
+    #
+    # Also gates end-to-end encrypted CALLS: when this and VITE_VIDEO_CALLS_ENABLED
+    # are both true, a call in an e2ee room encrypts its LiveKit media with a key
+    # exchanged over OMEMO (never through the server). Nothing extra to configure.
     VITE_E2EE_ENABLED={{E2EE_ENABLED}}
     # LiveKit server URL for video/audio calls (integrations.livekit.url).
     VITE_LIVEKIT_URL={{LIVEKIT_URL}}
