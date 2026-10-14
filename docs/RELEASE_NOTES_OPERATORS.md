@@ -291,6 +291,21 @@ without the flag, to drop the accumulated rooms; a long list made the agent
 miss new conversations after a restart once it passed ejabberd's
 `max_user_conferences`.
 
+**Web Index refresh and the crawler.** Crawled sites are re-crawled on a
+schedule (Server settings: `SITE_REFRESH_ENABLED`, `SITE_REFRESH_DEFAULT_SCHEDULE`,
+`SITE_REFRESH_INACTIVE_DAYS`). Sites crawled before this release are watched
+after running, from `ethora-backend/services/api`,
+`node tools/sources/backfill-site-watches.js --mongo-uri "$MONGO_URI"` (dry run)
+and then with `--apply`; from `services/ai/ai-service`,
+`node dist/tools/pruneStaleSiteChunks.js` (dry run, then `--apply`) removes
+duplicate knowledge chunks earlier re-crawls left behind. The crawler runs
+`CRAWL_WORKERS` crawls at once (default 2, never two on one site; each is
+about one more Chromium renderer of memory). `update.sh` now restarts the
+crawler when its `main.py` changed and rebuilds it when its Dockerfile or
+requirements changed; before, the running container kept the old code until
+someone restarted it (`docker restart crawler-service`). The first update
+with this change restarts it once.
+
 **Host.** No new ports. Node.js 24 as in 2609.
 
 ## 2609 (production line, promoted 2026-09-15)

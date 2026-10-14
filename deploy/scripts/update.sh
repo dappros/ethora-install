@@ -1360,6 +1360,43 @@ if [ -f "$RUNTIME_DEPLOY_DIR/docker-compose.enterprise.yml" ]; then
     compose -f "$RUNTIME_DEPLOY_DIR/docker-compose.enterprise.yml" restart centrifugo || true
     echo "$centrifugo_hash" >"$centrifugo_stamp" 2>/dev/null || true
   fi
+
+  # The crawler runs main.py bind-mounted from the backend tree, and `up -d`
+  # recreates the container for neither kind of change: a new main.py is a new
+  # file (new inode) that the running container never sees, and a changed
+  # Dockerfile / requirements.txt needs a new image. So: restart when main.py
+  # changed (the mount is re-resolved on start), rebuild and recreate when the
+  # image inputs changed. A crawl in progress is cut short either way, as it is
+  # by the backend restart of the same update. With no stamp yet (first run
+  # of this logic) the code may be stale, so the crawler is restarted once.
+  if [ "${CRAWLER_ENABLED:-false}" == "true" ]; then
+    CRAWLER_SRC_DIR="${BACKEND_DIR:-$ROOT_DIR/ethora-backend}/services/ai/crawler"
+    crawler_stamp="$STATE_DIR/crawler.sha256"
+    crawler_image_hash="$(hash_file_sha256 "$CRAWLER_SRC_DIR/Dockerfile")$(hash_file_sha256 "$CRAWLER_SRC_DIR/requirements.txt")"
+    crawler_code_hash="$(hash_file_sha256 "$CRAWLER_SRC_DIR/main.py")"
+    crawler_prev="$(cat "$crawler_stamp" 2>/dev/null || echo '')"
+    if [ -n "$crawler_code_hash" ] && [ "$crawler_prev" != "${crawler_image_hash}|${crawler_code_hash}" ]; then
+      crawler_ok="false"
+      if [ -n "$crawler_prev" ] && [ "${crawler_prev%%|*}" != "$crawler_image_hash" ]; then
+        log "Rebuilding and recreating the crawler (Dockerfile or requirements changed)..."
+        if compose -f "$RUNTIME_DEPLOY_DIR/docker-compose.enterprise.yml" --profile ai build crawler \
+          && compose -f "$RUNTIME_DEPLOY_DIR/docker-compose.enterprise.yml" --profile ai up -d --force-recreate --no-deps crawler; then
+          crawler_ok="true"
+        else
+          warn "crawler rebuild failed (non-fatal); the previous image keeps running and the next update retries. By hand: (cd $RUNTIME_DEPLOY_DIR && docker compose -f docker-compose.enterprise.yml --profile ai build crawler && docker compose -f docker-compose.enterprise.yml --profile ai up -d --force-recreate --no-deps crawler)"
+        fi
+      else
+        log "Restarting the crawler (main.py changed)..."
+        if compose -f "$RUNTIME_DEPLOY_DIR/docker-compose.enterprise.yml" --profile ai restart crawler; then
+          crawler_ok="true"
+        else
+          warn "crawler restart failed (non-fatal); the next update retries. By hand: docker restart crawler-service"
+        fi
+      fi
+      # Only once it worked, so a failure is retried by the next update.
+      [ "$crawler_ok" = "true" ] && { echo "${crawler_image_hash}|${crawler_code_hash}" >"$crawler_stamp" 2>/dev/null || true; }
+    fi
+  fi
 fi
 
 # ejabberd keeps its MUC rooms in MySQL; make sure the index prefixes are wide
