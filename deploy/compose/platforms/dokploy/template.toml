@@ -206,7 +206,8 @@ content = '''
 #   1. base app + platform admin        scripts/initEthoraApp.js (exits 0 when present)
 #   2. ejabberd accounts of the base    scripts/deploy/xmpp-app-lookup.js, then
 #      app owner and system account     register / change_password over ejabberd's HTTP API
-#   3. data migrations                  scripts/migrateSourceAgentId.js (re-runnable by design)
+#   3. data migrations                  scripts/migrateSourceAgentId.js (re-runnable by design),
+#      and the standard agent templates scripts/seedAgentTemplates.js (creates what is missing)
 #   4. translation server languages     src/utils/scripts/syncTranslateLanguages.js
 #
 # The environment is backend.env, loaded by api-entrypoint.sh. The ejabberd
@@ -310,6 +311,12 @@ for m in scripts/migrateSourceAgentId.js; do
   log "migration $m"
   step "$m" || warn "migration $m failed (non-fatal)"
 done
+# The standard agent templates the New Agent dialog offers (Support Agent).
+# Images older than the script skip it.
+if [ -f /app/dist/scripts/seedAgentTemplates.jsc ] || [ -f /app/dist/scripts/seedAgentTemplates.js ]; then
+  log "agent templates"
+  step scripts/seedAgentTemplates.js || warn "agent template seeding failed (non-fatal)"
+fi
 
 # ---------------------------------------------------- 4. translate languages --
 if out="$(script src/utils/scripts/syncTranslateLanguages.js "${TRANSLATE_LANGUAGES:-}" 2>&1 | tidy)"; then

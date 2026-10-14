@@ -76,6 +76,11 @@ MIGRATIONS=(
   # and re-saves every room so one that lived only in memory gets its row.
   # Idempotent, so it is also the repair tool: --only reconcile-muc-rooms --force.
   "reconcile-muc-rooms|scripts/reconcileMucRooms.js|"
+  # The standard agent templates (Support Agent) the New Agent dialog offers.
+  # Before this they appeared only once an App was created with AI set up, so
+  # a fresh install offered just "Blank agent". Creates what is missing, never
+  # rewrites an existing template.
+  "agent-templates|scripts/seedAgentTemplates.js|"
 )
 
 DRY_RUN=""
