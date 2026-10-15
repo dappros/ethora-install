@@ -419,8 +419,12 @@ else
   bem="$RM/config/api/backend.env"; fem="$RM/config/frontend/frontend.env"; cfm="$RM/config/caddy/Caddyfile"
   for kv in PUSH_ENABLED=true PLAYGROUND_ENABLED=true MCP_ENABLED=true UPTIME_ENABLED=true B2B_PUSH_SECRET=b2bsec 'OAUTH_ISSUER=https://api.chat.example.com' \
             RATE_LIMIT_AUTH_LOGIN_MAX=120 RATE_LIMIT_AUTH_SIGNUP_MAX=30 'ETHORA_PUBLIC_PLAYGROUND_URL=https://playground.chat.example.com' 'ETHORA_PUBLIC_MCP_URL=https://mcp.chat.example.com/mcp' \
-            'ETHORA_PUBLIC_UPTIME_URL=https://uptime.chat.example.com' 'PUSH_INTERNAL_URL=http://push:8098' 'MCP_INTERNAL_URL=http://mcp:3030' 'UPTIME_INTERNAL_URL=http://uptime:8099' UPTIME_AUTH_USER=admin UPTIME_AUTH_PASSWORD=upauth; do
+            'ETHORA_PUBLIC_UPTIME_URL=https://uptime.chat.example.com' 'PUSH_INTERNAL_URL=http://push:8098' 'MCP_INTERNAL_URL=http://mcp:3030' 'UPTIME_INTERNAL_URL=http://uptime:8099' 'PLAYGROUND_INTERNAL_URL=http://playground:3020' 'ETHORA_MODULES=push,playground,mcp,uptime' ETHORA_INSTALL_KIND=compose UPTIME_AUTH_USER=admin UPTIME_AUTH_PASSWORD=upauth; do
     grep -qxF "$kv" "$bem" && ok "modules, backend.env: $kv" || fail "modules, backend.env: $kv" "$(grep "^${kv%%=*}=" "$bem")"
+  done
+  dups="$(grep -oE '^(ETHORA_MODULES|ETHORA_INSTALL_KIND|MCP_INTERNAL_URL|PLAYGROUND_INTERNAL_URL|UPTIME_INTERNAL_URL|E2EE_ENABLED|TRANSLATE_URL)=' "$bem" | sort | uniq -d | tr '\n' ' ')"
+  [ -z "$dups" ] && ok "modules, backend.env: module keys once each" || fail "modules, backend.env: duplicate keys" "$dups"
+  for _ in once; do :
   done
   grep -qxF 'VITE_MCP_PUBLIC_URL=https://mcp.chat.example.com/mcp' "$fem" && ok "modules, frontend.env: MCP public URL" || fail "VITE_MCP_PUBLIC_URL" "$(grep MCP "$fem")"
   for kv in PUSH_PORT=8098 B2B_PUSH_SECRET=b2bsec PUSH_OFFLINE_AUTH_TOKEN=b2bsec 'MONGO_URI=mongodb://mongo:27017/ethora_prod?directConnection=true' REDIS_HOST=redis PUSH_UPLOADS_DIR=/app/push/uploads; do

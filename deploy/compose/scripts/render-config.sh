@@ -271,6 +271,17 @@ def MCP_ENABLED "$(flag_of mcp)"
 def UPTIME_ENABLED "$(flag_of uptime)"
 AI_MODULE="$AI_SERVICE_ENABLED"; PUSH_MODULE="$PUSH_ENABLED"; PLAYGROUND_MODULE="$PLAYGROUND_ENABLED"
 MCP_MODULE="$MCP_ENABLED"; UPTIME_MODULE="$UPTIME_ENABLED"
+# For the admin panel's module cards (backend.env ETHORA_MODULES and the
+# internal URLs of the modules the API has no other address for).
+ETHORA_MODULES=""
+for _m in ai:$AI_MODULE push:$PUSH_MODULE playground:$PLAYGROUND_MODULE mcp:$MCP_MODULE uptime:$UPTIME_MODULE; do
+  [ "${_m#*:}" != true ] || ETHORA_MODULES="$ETHORA_MODULES${ETHORA_MODULES:+,}${_m%%:*}"
+done
+export ETHORA_MODULES
+export MCP_INTERNAL_URL=""; [ "$MCP_MODULE" != true ] || MCP_INTERNAL_URL="${ETHORA_MCP_URL:-http://mcp:3030}"
+export PLAYGROUND_INTERNAL_URL=""; [ "$PLAYGROUND_MODULE" != true ] || PLAYGROUND_INTERNAL_URL="${ETHORA_PLAYGROUND_URL:-http://playground:3020}"
+export UPTIME_INTERNAL_URL=""; [ "$UPTIME_MODULE" != true ] || UPTIME_INTERNAL_URL="${ETHORA_UPTIME_URL:-http://uptime:8099}"
+export TRANSLATE_URL="${TRANSLATE_URL:-}"
 if [ -n "$PUBLIC_URL" ] && { [ "$PLAYGROUND_MODULE" = true ] || [ "$MCP_MODULE" = true ] || [ "$UPTIME_MODULE" = true ]; }; then
   die "the playground, mcp and uptime modules need hosts of their own (ROOT_DOMAIN), not a one-origin install (PUBLIC_URL)"
 fi
@@ -477,8 +488,6 @@ set_env_line "$stage/api/backend.env" PUSH_SERVER_URL "$ETHORA_PUSH_URL"
 ai_internal_url=""; docs_parse_internal_url=""
 if [ "$AI_MODULE" = true ]; then ai_internal_url="$ETHORA_AI_SERVICE_URL"; docs_parse_internal_url="$ETHORA_DOCS_PARSE_URL"; fi
 push_internal_url=""; [ "$PUSH_MODULE" != true ] || push_internal_url="$ETHORA_PUSH_URL"
-mcp_internal_url=""; [ "$MCP_MODULE" != true ] || mcp_internal_url="$ETHORA_MCP_URL"
-uptime_internal_url=""; [ "$UPTIME_MODULE" != true ] || uptime_internal_url="$ETHORA_UPTIME_URL"
 {
   echo "# Rendered by the compose bundle's config service from backend.env.template"
   echo "# on every 'docker compose up'. Edit .env, not this file."
@@ -496,7 +505,8 @@ uptime_internal_url=""; [ "$UPTIME_MODULE" != true ] || uptime_internal_url="$ET
   echo "# The ai module's services as verify.js reaches them (empty without the module)."
   echo "AI_SERVICE_INTERNAL_URL=$ai_internal_url"
   echo "DOCS_PARSE_INTERNAL_URL=$docs_parse_internal_url"
-  echo "# The other modules (verify.js): switches, public URLs and internal endpoints, empty when off."
+  echo "# The other modules (verify.js): switches, public URLs and internal endpoints, empty when off"
+  echo "# (MCP_INTERNAL_URL and UPTIME_INTERNAL_URL come from the template, with ETHORA_MODULES)."
   echo "PUSH_ENABLED=$PUSH_MODULE"
   echo "PLAYGROUND_ENABLED=$PLAYGROUND_MODULE"
   echo "MCP_ENABLED=$MCP_MODULE"
@@ -505,8 +515,6 @@ uptime_internal_url=""; [ "$UPTIME_MODULE" != true ] || uptime_internal_url="$ET
   echo "ETHORA_PUBLIC_MCP_URL=$MCP_PUBLIC_URL"
   echo "ETHORA_PUBLIC_UPTIME_URL=$uptime_url"
   echo "PUSH_INTERNAL_URL=$push_internal_url"
-  echo "MCP_INTERNAL_URL=$mcp_internal_url"
-  echo "UPTIME_INTERNAL_URL=$uptime_internal_url"
   echo "UPTIME_AUTH_USER=$UPTIME_AUTH_USER"
   echo "UPTIME_AUTH_PASSWORD=$UPTIME_AUTH_PASSWORD"
 } > "$stage/api/backend.env.tmp" && mv "$stage/api/backend.env.tmp" "$stage/api/backend.env"

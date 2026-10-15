@@ -697,6 +697,13 @@ replace_template() {
     replace_literal "{{ETHORA_LICENSE_SERVER_URL}}" "${ETHORA_LICENSE_SERVER_URL:-}"
     replace_literal "{{ETHORA_LICENSE_GRACE_DAYS}}" "${ETHORA_LICENSE_GRACE_DAYS:-}"
     replace_literal "{{ETHORA_INSTALL_KIND}}" "host"
+    # Module cards on the Server settings page: the host installer does not
+    # report a module list (each card then shows what its health probe finds).
+    replace_literal "{{ETHORA_MODULES}}" ""
+    if [ "${MCP_ENABLED:-false}" = "true" ]; then replace_literal "{{MCP_INTERNAL_URL}}" "http://127.0.0.1:${MCP_PORT:-3030}"; else replace_literal "{{MCP_INTERNAL_URL}}" ""; fi
+    if [ "${PLAYGROUND_ENABLED:-false}" = "true" ]; then replace_literal "{{PLAYGROUND_INTERNAL_URL}}" "http://127.0.0.1:${PLAYGROUND_PORT:-3020}"; else replace_literal "{{PLAYGROUND_INTERNAL_URL}}" ""; fi
+    replace_literal "{{UPTIME_INTERNAL_URL}}" ""
+    replace_literal "{{TRANSLATE_URL}}" "${TRANSLATE_URL:-}"
     replace_literal "{{STRIPE_ENABLED}}" "${STRIPE_ENABLED:-false}"
     replace_literal "{{STRIPE_SECRET}}" "${STRIPE_SECRET:-}"
     replace_literal "{{STRIPE_PUBLIC}}" "${STRIPE_PUBLIC:-}"
