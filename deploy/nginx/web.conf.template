@@ -46,17 +46,35 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
+    # The entry page, and every SPA route (try_files above lands here): never
+    # cached, so a visitor does not keep an index.html that points at bundles a
+    # deploy has replaced. add_header in a location drops the server-level
+    # headers, hence the security headers repeated below.
+    location = /index.html {
+        add_header Cache-Control "no-cache" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header X-Robots-Tag "noindex, nofollow" always;
+    }
+
     # Cache static assets
     # Runtime configuration (see ethora-app-reactjs/src/config/env.ts). Must
     # never be cached: it is what changes between deploys of the same bundle.
     # Exact match wins over the regex rule below.
     location = /config.js {
-        add_header Cache-Control "no-store, must-revalidate";
+        add_header Cache-Control "no-store, must-revalidate" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header X-Robots-Tag "noindex, nofollow" always;
     }
 
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
         add_header X-Robots-Tag "noindex, nofollow" always;
     }
 }
