@@ -16,6 +16,7 @@ Day to day:
 - [Install](#install)
   - [First login: secure the superadmin account](#first-login-secure-the-superadmin-account)
 - [Update and rollback](#update-and-rollback)
+  - [Update from GitHub Actions (QA)](#update-from-github-actions-qa)
 - [Licensing](#licensing)
 - [Image mode (prebuilt containers)](#image-mode-prebuilt-containers)
 - [Runbooks and further reading](#runbooks-and-further-reading)
@@ -262,6 +263,28 @@ Changing configuration between releases is the same command: edit
 `deploy/config/deploy.yml` in the source directory and run `update.sh` with
 the ref you are already on. It re-renders and restarts what the change
 touches.
+
+### Update from GitHub Actions (QA)
+
+QA can also be updated without logging in: Actions > **Deploy QA** > Run
+workflow, `ref` left at the release line (or a branch, tag or commit to
+try). The workflow (`.github/workflows/deploy-qa.yml`) runs on a self-hosted
+runner installed on the QA host as the `ubuntu` user, so it executes the
+very command above (`sudo ETHORA_UPDATE_PRUNE=true deploy/scripts/update.sh
+--ref <ref>` in `~/ethora-install-shared`) with the log in the job and a
+summary with the deployed commit and `pm2 list`. Runs are listed under the
+`qa` environment (Deployments). Two runs started together queue: the second
+waits for the first. Anyone with write access to the repository can run it.
+
+Setting the runner up on a host (once): repository Settings > Actions >
+Runners > New self-hosted runner (Linux, x64) gives the download and
+`config.sh` commands with a one-hour registration token; run them as
+`ubuntu` in `~/actions-runner`, adding `--name qa --labels qa --unattended`
+to `config.sh`, then `sudo ./svc.sh install ubuntu && sudo ./svc.sh start`.
+The runner needs outbound HTTPS only. `ubuntu` must be able to `sudo`
+without a password (the AWS default); otherwise add a sudoers rule limited
+to `deploy/scripts/update.sh`. Prod is not wired: it would be the same
+workflow with a `prod` environment that requires a reviewer.
 
 ## Licensing
 
