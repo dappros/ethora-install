@@ -14,6 +14,13 @@ default is not what you want.
 
 ## 2610 (development line, September 2026)
 
+**Reaction pushes can be switched off.** Clients that put an emoji on a
+message now trigger a push to the message's author (silent, one per sender
+and receiver per 10 seconds). `features.reaction_pushes: false` in
+`deploy.yml` (`REACTION_PUSHES_ENABLED=false` in the compose bundle's `.env`)
+makes the push service drop them for the whole install; chat message pushes
+are not affected. Default: on.
+
 **Licence call-home is on by default.** An empty `license.server_url` (or
 `ETHORA_LICENSE_SERVER_URL` in the compose bundle) used to switch the daily
 heartbeat off; it now means https://license.ethora.com. Keys renew on their

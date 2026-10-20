@@ -805,6 +805,7 @@ replace_template() {
     replace_literal "{{WIDGET_VERSIONED_URL}}" "${WIDGET_VERSIONED_URL:-}"
     replace_literal "{{AI_FEATURE_ENABLED}}" "${AI_FEATURE_ENABLED:-false}"
     replace_literal "{{VIDEO_CALLS_ENABLED}}" "${VIDEO_CALLS_ENABLED:-false}"
+    replace_literal "{{REACTION_PUSHES_ENABLED}}" "${REACTION_PUSHES_ENABLED:-true}"
     replace_literal "{{E2EE_ENABLED}}" "${E2EE_ENABLED:-false}"
     replace_literal "{{RATE_LIMIT_DISABLED}}" "${RATE_LIMIT_DISABLED:-false}"
     replace_literal "{{RATE_LIMIT_AUTH_LOGIN_MAX}}" "${RATE_LIMIT_AUTH_LOGIN_MAX:-}"
@@ -1083,6 +1084,7 @@ if command -v yq >/dev/null 2>&1 && [ -f "$CONFIG_FILE" ]; then
     # don't accidentally re-enable AI for customers whose contract excludes it.
     export AI_FEATURE_ENABLED="$(yq eval '.features.ai_service // "false"' "$CONFIG_FILE" 2>/dev/null || echo "false")"
     export VIDEO_CALLS_ENABLED="$(yq eval '.features.video_calls // "false"' "$CONFIG_FILE" 2>/dev/null || echo "false")"
+    export REACTION_PUSHES_ENABLED="$(yq eval '.features.reaction_pushes // "true"' "$CONFIG_FILE" 2>/dev/null || echo "true")"
     # End-to-end encryption (OMEMO 2) in the chat client. Frontend-only
     # switch: the server holds no keys either way.
     export E2EE_ENABLED="$(yq eval '.features.e2ee // "false"' "$CONFIG_FILE" 2>/dev/null || echo "false")"
@@ -1236,6 +1238,7 @@ persist_env_var "IMMUTABLE_LOGS_AWS_S3_BUCKET_NAME" "${IMMUTABLE_LOGS_AWS_S3_BUC
 
 persist_env_var "AI_FEATURE_ENABLED" "${AI_FEATURE_ENABLED:-false}"
 persist_env_var "VIDEO_CALLS_ENABLED" "${VIDEO_CALLS_ENABLED:-false}"
+persist_env_var "REACTION_PUSHES_ENABLED" "${REACTION_PUSHES_ENABLED:-true}"
 persist_env_var "E2EE_ENABLED" "${E2EE_ENABLED:-false}"
 persist_env_var "RATE_LIMIT_DISABLED" "${RATE_LIMIT_DISABLED:-false}"
 persist_env_var "RATE_LIMIT_AUTH_LOGIN_MAX" "${RATE_LIMIT_AUTH_LOGIN_MAX:-}"

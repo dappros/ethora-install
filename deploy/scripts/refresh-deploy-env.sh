@@ -145,6 +145,7 @@ postmark_from_name="$(read_config '.integrations.postmark.from_name // "Ethora P
 postmark_subject_prefix="$(read_config '.integrations.postmark.subject_prefix // "Ethora"')"
 analytics_enabled="$(read_config '.features.analytics // "false"')"
 video_calls_enabled="$(read_config '.features.video_calls // "false"')"
+reaction_pushes_enabled="$(read_config '.features.reaction_pushes // "true"')"
 e2ee_enabled="$(read_config '.features.e2ee // "false"')"
 rate_limit_disabled="$(read_config '.features.rate_limit_disabled // "false"')"
 refresh_token_ttl_days="$(read_config '.features.refresh_token_ttl_days // 7')"
@@ -171,6 +172,7 @@ update_env_var "POSTMARK_FROM_NAME" "$postmark_from_name"
 update_env_var "POSTMARK_SUBJECT_PREFIX" "$postmark_subject_prefix"
 update_env_var "ANALYTICS_ENABLED" "$analytics_enabled"
 update_env_var "VIDEO_CALLS_ENABLED" "$video_calls_enabled"
+update_env_var "REACTION_PUSHES_ENABLED" "$reaction_pushes_enabled"
 update_env_var "E2EE_ENABLED" "$e2ee_enabled"
 # Load-testing kill switch: disables all auth rate limiters when true. Default
 # false (safe for prod). Set features.rate_limit_disabled: true only on a QA/load box.

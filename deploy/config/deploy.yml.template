@@ -351,6 +351,9 @@ features:
   # a browser with insertable streams; unsupported clients fall back to a plain
   # call.
   video_calls: false
+  # Pushes about emoji reactions to a user's messages. false = the push
+  # service drops them (chat message pushes are not affected). On by default.
+  reaction_pushes: true
   # End-to-end encryption (OMEMO 2) for 1:1 chats. Client-side only: the
   # server never holds keys and cannot read encrypted payloads. When on,
   # users can start an encrypted chat alongside a plain one; encrypted
