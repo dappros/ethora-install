@@ -276,6 +276,19 @@ summary with the deployed commit and `pm2 list`. Runs are listed under the
 `qa` environment (Deployments). Two runs started together queue: the second
 waits for the first. Anyone with write access to the repository can run it.
 
+A run has three jobs. `bump` (on by default) moves the submodules of the
+release line to their tracked-branch tips, as the hourly bot does. `mirror`
+waits until `ethora-install-shared`, the snapshot repository the host
+actually fetches, carries the current head of the line: a push to a release
+line (the bump included) starts `sync-install-shared-release.yml`, which
+needs about a minute, and an update started before it finished would deploy
+the previous snapshot. The job waits for the sync run of the head, dispatches
+one when none shows up within a minute, and fails when the sync fails. A
+`ref` that is not a release line (a tag, a commit, a feature branch) is not
+mirrored this way and skips the wait. `update` then runs update.sh; its
+summary shows the snapshot commit and the monoserver commit it was taken
+from (`Snapshot of: Source: <sha>`), which should be the head of the line.
+
 Setting the runner up on a host (once): repository Settings > Actions >
 Runners > New self-hosted runner (Linux, x64) gives the download and
 `config.sh` commands with a one-hour registration token; run them as
