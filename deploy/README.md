@@ -246,10 +246,13 @@ Every update log prints the commit the host ran before fetching
 like an update. Data migrations are not reversed; every registered migration
 is written so that the previous release keeps working on migrated data.
 
-Other `update.sh` flags: `--no-qa` skips the QA probes, `--skip-migrations`
-holds data migrations back for a host that must schedule them,
-`--no-reexec` keeps the currently checked-out script (for testing a local
-edit). `update.sh --help` lists them.
+Other `update.sh` flags: `--only web` updates the web app only (fetches the
+ref, syncs and builds `ethora-app-reactjs` with the chat component and the
+widget; nginx, ejabberd, docker and Node services, migrations and checks are
+left as they are, a few minutes instead of a full update), `--no-qa` skips
+the QA probes, `--skip-migrations` holds data migrations back for a host
+that must schedule them, `--no-reexec` keeps the currently checked-out
+script (for testing a local edit). `update.sh --help` lists them.
 
 After an update:
 
@@ -268,7 +271,9 @@ touches.
 
 QA can also be updated without logging in: Actions > **Deploy QA** > Run
 workflow, `ref` left at the release line (or a branch, tag or commit to
-try). The workflow (`.github/workflows/deploy-qa.yml`) runs on a self-hosted
+try), `scope` at `all`, or `web` for the quick frontend path (the web app,
+the chat component and the widget are bumped and rebuilt, nothing else is
+touched). The workflow (`.github/workflows/deploy-qa.yml`) runs on a self-hosted
 runner installed on the QA host as the `ubuntu` user, so it executes the
 very command above (`sudo ETHORA_UPDATE_PRUNE=true deploy/scripts/update.sh
 --ref <ref>` in `~/ethora-install-shared`) with the log in the job and a

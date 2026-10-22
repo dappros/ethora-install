@@ -28,11 +28,25 @@ docker build -t ethora-api:dev .                          # plain JavaScript
 docker build --build-arg BYTECODE=1 -t ethora-api:dev .   # V8 bytecode
 ```
 
-Published by `.github/workflows/release-images.yml` (manual run, or push to
-a release branch that moves the `ethora-backend` pointer) as
+Published by `.github/workflows/release-images.yml` as
 `docker.io/dappros/ethora-api:<release>` and `:<release>.<n>` (and the same
-on `ghcr.io/dappros/`, the canonical store for every image), for
-linux/amd64 and linux/arm64. The workflow boots the amd64 image with
+on `ghcr.io/dappros/`, the canonical store for every image). When it runs:
+
+- **Weekly** (Monday 03:00 UTC, the default branch's release line) and **on
+  demand**: `gh workflow run release-images.yml --ref 2610 -f ref=2610`.
+  Pointer bumps do not build.
+- **Only what changed**: an image is rebuilt when one of its sources changed
+  since the last complete build (the newest `<release>.<n>` git tag); the
+  others get the new number on their previous manifest, so `<release>.<n>`
+  always names all nine images. `-f images=all` or `-f images=api,frontend`
+  overrides it.
+- **linux/amd64 only**, except for the monthly stable release:
+  `-f arm64=true -f images=all` builds linux/amd64 and linux/arm64. A dev
+  build of a changed image therefore has no arm64 variant (Apple-silicon
+  Macs and arm64 servers need the stable release or a build from source;
+  bytecode images do not run under emulation).
+
+The workflow boots the amd64 image with
 `CI_SMOKE_TEST=true` and checks `/v1/ping` before pushing anything, and for
 bytecode builds also asserts that no `.js` remains under `dist/src`.
 

@@ -969,6 +969,13 @@ fi
 
 log "Setting up Node.js services..."
 
+# ETHORA_NODE_SERVICES_ONLY=web (update.sh --only web): the web app, the chat
+# component and the widget only; the Node services and pm2 are not touched.
+ONLY_SERVICES="${ETHORA_NODE_SERVICES_ONLY:-}"
+if [ "$ONLY_SERVICES" = "web" ]; then
+    log "Web only: the backend, push, AI, docs, playground and MCP services are left as they are"
+fi
+
 # Many installs run on small VMs. TypeScript builds can look "stuck" when the machine is memory-starved
 # (GC thrash / swapping). Allow a configurable Node heap for build steps (used by tsc/vite/etc).
 NODE_BUILD_MAX_OLD_SPACE_MB="${NODE_BUILD_MAX_OLD_SPACE_MB:-2048}"
@@ -1101,6 +1108,8 @@ wait_for_port() { # name host port tries delay
     done
     warn "$name did not open $host:$port within timeout"; return 1
 }
+
+if [ "$ONLY_SERVICES" != "web" ]; then
 
 if [ "$BACKEND_MODE" = "image" ]; then
     # ------------------------------------------------------------ image mode
@@ -1300,6 +1309,8 @@ elif [ "${DOCS_PARSE_ENABLED}" == "true" ]; then
         run_as_deploy_user "cd \"$DOCS_PARSE_DIR\" && pm2 start index.js --name docs-parse --time --update-env" || warn "Failed to start docs parse service"
     fi
 fi
+
+fi  # ONLY_SERVICES != web
 
 # Setup Frontend
 log "Setting up frontend..."
@@ -1546,6 +1557,8 @@ if [ "${WIDGET_ENABLED:-false}" == "true" ]; then
         ensure_nginx_can_read_static_dir "$WIDGET_DIR/dist" "widget dist"
     fi
 fi
+
+if [ "$ONLY_SERVICES" != "web" ]; then
 
 # Setup SDK Playground (optional)
 if [ "${PLAYGROUND_ENABLED:-false}" == "true" ]; then
@@ -1797,6 +1810,8 @@ ensure_pm2_startup() {
     fi
 }
 ensure_pm2_startup
+
+fi  # ONLY_SERVICES != web
 
 log "Node.js services setup completed"
 

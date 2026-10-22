@@ -38,6 +38,9 @@ CLI_REF=""
 CLI_ROLLBACK_SHA=""
 CLI_NO_QA=""
 CLI_SKIP_MIGRATIONS=""
+# --only web: the web app and its local packages only (see usage).
+CLI_ONLY=""
+ONLY=""
 
 # Original argv, kept verbatim so a self re-exec (see maybe_reexec_updated_script)
 # can replay the same invocation against the newer script the deployed ref ships.
@@ -46,11 +49,15 @@ NO_REEXEC="false"
 
 usage() {
   cat <<EOF
-Usage: $0 [--ref <ref>] [--rollback <sha>] [--no-qa] [--skip-migrations] [--no-reexec]
+Usage: $0 [--ref <ref>] [--rollback <sha>] [--only web] [--no-qa] [--skip-migrations] [--no-reexec]
 
 Options:
   --ref <ref>        Git ref to deploy (default: ${REF})
   --rollback <sha>   Roll back to a specific commit SHA
+  --only web         Update the web app only: fetch the ref, then sync and
+                     build ethora-app-reactjs with the chat component and the
+                     widget. Nginx, ejabberd, docker and Node services,
+                     migrations and checks are left as they are
   --no-qa            Skip qa checks
   --skip-migrations  Skip data migrations (see scripts/run-migrations.sh)
   --no-reexec        Do not re-execute the newer update.sh shipped by the deployed ref
@@ -88,6 +95,14 @@ while [ $# -gt 0 ]; do
     --skip-migrations)
       CLI_SKIP_MIGRATIONS="true"
       shift 1
+      ;;
+    --only)
+      CLI_ONLY="${2:-}"
+      if [ "$CLI_ONLY" != "web" ]; then
+        echo "[ERROR] --only accepts: web" >&2
+        exit 1
+      fi
+      shift 2
       ;;
     --no-reexec)
       NO_REEXEC="true"
@@ -766,6 +781,9 @@ fi
 if [ -n "${CLI_SKIP_MIGRATIONS:-}" ]; then
   SKIP_MIGRATIONS="$CLI_SKIP_MIGRATIONS"
 fi
+if [ -n "${CLI_ONLY:-}" ]; then
+  ONLY="$CLI_ONLY"
+fi
 
 # Ensure EJABBERD_CONFIG_NAME is set (older installs may not have it in .deploy.env).
 # - localhost: use `ejabberd-local.yml` (does not enable unused custom modules like mod_get_user_rooms)
@@ -1158,6 +1176,15 @@ else
     "uptime service|ethora-uptime|"
     "ejabberd|ejabberd-docker|docker/sitecert.pem"
   )
+  if [ "$ONLY" = "web" ]; then
+    web_targets=()
+    for spec in "${SYNC_TARGETS[@]}"; do
+      case "$spec" in
+        "frontend|"*|"chat component|"*|"widget|"*) web_targets+=("$spec") ;;
+      esac
+    done
+    SYNC_TARGETS=("${web_targets[@]}")
+  fi
 
   # Pass 1: preview what pruning (--delete) would remove across all targets.
   PRUNE_LIST="$(mktemp)"
@@ -1256,6 +1283,13 @@ fi
 if [ "${WIDGET_ENABLED:-false}" = "true" ] && [ ! -f "$ROOT_DIR/ethora-ai-chat-widget/package.json" ]; then
   echo "[ERROR] Widget hosting is enabled, but target widget sources are missing after sync: $ROOT_DIR/ethora-ai-chat-widget" >&2
   exit 1
+fi
+
+if [ "$ONLY" = "web" ]; then
+  log "Web-only update: building the web app and its local packages; nginx, ejabberd, docker and Node services, migrations and checks are left as they are"
+  ETHORA_NODE_SERVICES_ONLY=web bash "$RUNTIME_DEPLOY_DIR/scripts/setup-node-services.sh"
+  log "Web-only update completed successfully"
+  exit 0
 fi
 
 # Refresh SSL material before generating/reloading nginx configs.
