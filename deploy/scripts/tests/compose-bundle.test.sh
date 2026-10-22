@@ -629,6 +629,12 @@ bad=""; for c in $(sed -n 's/^command=//p' "$CL/supervisor/ethora.conf" | grep -
 [ -z "$bad" ] && ok "supervisor programs run the bundle's scripts" || fail "supervisor programs name missing scripts:$bad"
 grep -rn $'\xe2\x80\x94' "$CL" >/dev/null && fail "em dash in deploy/cloudron" || ok "no em dashes in deploy/cloudron"
 
+echo "# installer compose files publish on loopback only"
+for f in docker-compose.enterprise.yml docker-compose.ai.yml docker-compose.uptime.yml; do
+  open="$(grep -nE '^\s*-\s*"?(\$\{[A-Z_]+:-[0-9]+\}|[0-9]+):[0-9]+"?\s*$' "$DEPLOY/$f" || true)"
+  [ -z "$open" ] && ok "$f: every published port is bound to 127.0.0.1" || fail "$f publishes a port on all interfaces" "$open"
+done
+
 echo
 echo "passed: $PASS  failed: $FAIL  skipped: $SKIP"
 [ "$FAIL" -eq 0 ]

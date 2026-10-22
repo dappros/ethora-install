@@ -2708,7 +2708,7 @@ instances:
       - id: minio_live
         name: MinIO_live
         type: http
-        url: "http://host.docker.internal:9000/minio/health/live"
+        url: "http://minio:9000/minio/health/live"
         intervalSeconds: 30
         timeoutMs: 3000
         expect:

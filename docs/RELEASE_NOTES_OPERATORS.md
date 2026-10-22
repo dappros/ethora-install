@@ -14,6 +14,18 @@ default is not what you want.
 
 ## 2610 (development line, September 2026)
 
+**Docker-published ports are bound to loopback.** MongoDB, Redis, MySQL,
+MinIO (9000/9001), Centrifugo, the crawler, ejabberd's HTTP listeners
+(5280/5443), the AI and uptime Postgres and the uptime service now listen on
+127.0.0.1 only; nginx keeps proxying them where they are public (the XMPP
+websocket, files, the uptime page). Nothing changes for clients. If you
+connected to a datastore from outside the host, use an SSH tunnel. The
+monitoring stack's Prometheus joins the platform's docker network
+(`deploy_ethora-network`, override with `ETHORA_STACK_NETWORK` in
+`deploy/monitoring/.env`) to scrape the uptime container. The first update
+with this change recreates the docker containers once (new port bindings), a
+short interruption of chat and files.
+
 **Reaction pushes can be switched off.** Clients that put an emoji on a
 message now trigger a push to the message's author (silent, one per sender
 and receiver per 10 seconds). `features.reaction_pushes: false` in

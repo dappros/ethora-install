@@ -1050,29 +1050,32 @@ The deployment system sets up:
 
 ### Firewall
 
-Recommended firewall configuration:
+The install needs three inbound ports: 22 (SSH), 80 and 443 (nginx, which
+also proxies the XMPP websocket on the `xmpp.` domain). Everything else the
+installer publishes from docker (MongoDB, Redis, MySQL, MinIO, Centrifugo,
+the crawler, ejabberd's 5280/5443, the AI and uptime Postgres, the uptime
+service) is bound to 127.0.0.1 and is not reachable from other hosts. Note
+that a host firewall does not protect docker-published ports: docker inserts
+its own iptables rules ahead of `ufw`, so a port published on all interfaces
+is open regardless of `ufw`; the loopback binding is what keeps them local.
+
+Recommended host firewall:
 
 ```bash
-# Allow SSH
 sudo ufw allow 22/tcp
-
-# Allow HTTP/HTTPS
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
-
-# Allow XMPP (if needed externally)
-sudo ufw allow 5280/tcp
-sudo ufw allow 5443/tcp
-
-# Enable firewall
 sudo ufw enable
 ```
 
+To reach a datastore from your machine (Compass, redis-cli), use an SSH
+tunnel: `ssh -L 27017:127.0.0.1:27017 ubuntu@<host>`.
+
 ### Database Security
 
-- MongoDB: Configured with replica set (local only)
-- MySQL: Root password auto-generated
-- Redis: No password (local only, behind firewall)
+- MongoDB: replica set, listens on 127.0.0.1 only, no authentication
+- MySQL: root password auto-generated, listens on 127.0.0.1 only
+- Redis: no password, listens on 127.0.0.1 only
 
 ### Service Isolation
 

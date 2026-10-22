@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: ${AI_POSTGRES_PASSWORD}
       POSTGRES_DB: ${AI_POSTGRES_DB:-ai_service_embeddings_db}
     ports:
-      - "${AI_POSTGRES_PORT:-5434}:5432"
+      - "127.0.0.1:${AI_POSTGRES_PORT:-5434}:5432"
     volumes:
       - ai_pgdata:/var/lib/postgresql/data
     networks:

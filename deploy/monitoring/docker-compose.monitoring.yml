@@ -53,6 +53,11 @@ services:
       - "127.0.0.1:9090:9090"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # The platform's network too: the uptime container is scraped by service
+    # name, its port is published on loopback only.
+    networks:
+      - default
+      - ethora-stack
 
   grafana:
     image: grafana/grafana:11.2.0
@@ -156,6 +161,9 @@ services:
       - "127.0.0.1:9090:9090"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - ethora-stack
 
   # --- both modes: the exporters ---------------------------------------------
   cadvisor:
@@ -273,3 +281,10 @@ volumes:
   grafana-data:
   victorialogs-data:
   vector-data:
+
+# The platform's docker network (docker-compose.enterprise.yml, project
+# "deploy" by default), joined by Prometheus for the uptime scrape.
+networks:
+  ethora-stack:
+    external: true
+    name: ${ETHORA_STACK_NETWORK:-deploy_ethora-network}

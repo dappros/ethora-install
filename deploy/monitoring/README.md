@@ -142,7 +142,9 @@ docker compose -f deploy/monitoring/docker-compose.monitoring.yml down
 ```
 
 The ports bind to loopback only; reach them through an SSH tunnel. The
-`ethora_load` scrape job expects the uptime container on host port 8099.
+`ethora_load` scrape job reaches the uptime container by service name over
+the platform's docker network (`deploy_ethora-network`; `ETHORA_STACK_NETWORK`
+overrides the name), since its port 8099 is published on loopback only.
 The Node services run under pm2 on the host, so they are not containers in
 cAdvisor: `pm2-exporter.js` reports their CPU / memory per process (panels
 "PM2 — CPU % by process" and "PM2 — memory (MB) by process"), and their load is

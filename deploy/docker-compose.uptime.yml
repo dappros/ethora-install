@@ -13,7 +13,7 @@ services:
       POSTGRES_PASSWORD: uptime
       POSTGRES_DB: uptime
     ports:
-      - "${UPTIME_POSTGRES_PORT:-5433}:5432"
+      - "127.0.0.1:${UPTIME_POSTGRES_PORT:-5433}:5432"
     volumes:
       - uptime_pgdata:/var/lib/postgresql/data
     networks:
@@ -39,7 +39,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "${UPTIME_PORT:-8099}:${UPTIME_PORT:-8099}"
+      - "127.0.0.1:${UPTIME_PORT:-8099}:${UPTIME_PORT:-8099}"
     volumes:
       - ./generated/uptime/uptime.yml:/config/uptime.yml:ro
     depends_on:
