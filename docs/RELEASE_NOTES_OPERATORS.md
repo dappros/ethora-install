@@ -14,6 +14,25 @@ default is not what you want.
 
 ## 2610 (development line, September 2026)
 
+**The SDK playground is off by default and runs as a sandbox app.** The
+playground (`playground.<root>`) is a public demo whose server routes mint
+tokens of the app it runs as for anonymous visitors; until now the installer
+pointed it at the base app, so anyone could obtain a server token of the
+platform's base app or a session as any of its users. `services.playground.enabled`
+now defaults to `false`, and enabling it requires `playground.app_id` /
+`playground.app_secret` in `deploy.yml`: an app created for the purpose in
+the admin panel (App ID and App Secret are on its settings page, API tab).
+The installer no longer falls back to the base app's credentials (pointing
+the keys at the base app on purpose still works). Existing installs with
+`enabled: true` and the two keys empty: the next update stops the playground (PM2 process and
+nginx site removed) and prints a warning; to keep it, create the sandbox app
+and set the keys first. Compose bundle: `PLAYGROUND_APP_ID` /
+`PLAYGROUND_APP_SECRET` in `.env`, and the `playground` profile does not
+render without them. The uptime B2B journey keeps signing in as the base app
+(`UPTIME_B2B_APP_ID` / `UPTIME_B2B_APP_SECRET` in `.deploy.env`, filled by
+`init-services.sh`). Treat the sandbox app as throwaway: anyone can create
+users and rooms in it.
+
 **Docker-published ports are bound to loopback.** MongoDB, Redis, MySQL,
 MinIO (9000/9001), Centrifugo, the crawler, ejabberd's HTTP listeners
 (5280/5443), the AI and uptime Postgres and the uptime service now listen on
@@ -99,8 +118,9 @@ ejabberd's offline pushes go to it directly; the playground, MCP server
 (with the API's OAuth server switched on) and uptime dashboard get their
 own hosts (`playground.`, `mcp.`, `uptime.<root>`), the uptime one behind
 basic auth whose bcrypt hash the caddy service computes at start. The
-playground and uptime modules sign in as the base app with credentials the
-init step leaves in the config volume. Three more generated values
+uptime module signs in as the base app with credentials the init step leaves
+in the config volume; the playground runs as the sandbox app named in `.env`
+(see the note above). Three more generated values
 (`B2B_PUSH_SECRET`, `UPTIME_POSTGRES_PASSWORD`, `UPTIME_AUTH_PASSWORD`; 24 in
 all) and a fifth private image, `dappros/ethora-uptime`, built by
 release-images from the submodule's own Dockerfile. Each private image

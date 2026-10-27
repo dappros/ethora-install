@@ -1051,7 +1051,7 @@ parse_config() {
     export API_CLIENT_MAX_BODY_SIZE=$(yq eval '.services.backend.client_max_body_size // "50M"' "$CONFIG_FILE")
     export PUSH_ENABLED="$(yq eval '.services.push.enabled | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; export PUSH_ENABLED="${PUSH_ENABLED:-true}"
     export PUSH_PORT=$(yq eval '.services.push.port // 8098' "$CONFIG_FILE")
-    export PLAYGROUND_ENABLED="$(yq eval '.services.playground.enabled | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; export PLAYGROUND_ENABLED="${PLAYGROUND_ENABLED:-true}"
+    export PLAYGROUND_ENABLED="$(yq eval '.services.playground.enabled | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; export PLAYGROUND_ENABLED="${PLAYGROUND_ENABLED:-false}"
     export PLAYGROUND_PORT=$(yq eval '.services.playground.port // 3020' "$CONFIG_FILE")
     # Hosted MCP server (optional; off unless explicitly enabled). Read raw so
     # an explicit false is not swallowed by yq's `//` alternative.
@@ -1142,9 +1142,15 @@ parse_config() {
     export BASE_APP_OWNER_PASSWORD=$(yq eval '.base_app.owner_password // ""' "$CONFIG_FILE")
     export BASE_APP_START_BALANCE=$(yq eval '.base_app.start_balance // 1000000' "$CONFIG_FILE")
 
-    # SDK playground credentials (optional; required for backend SDK calls)
+    # SDK playground: the sandbox app it runs as (deploy.yml playground.app_id /
+    # app_secret). Without both the playground stays off: it hands this app's
+    # tokens to anonymous visitors, so it must never fall back to the base app.
     export PLAYGROUND_APP_ID=$(yq eval '.playground.app_id // ""' "$CONFIG_FILE")
     export PLAYGROUND_APP_SECRET=$(yq eval '.playground.app_secret // ""' "$CONFIG_FILE")
+    if [ "${PLAYGROUND_ENABLED}" == "true" ] && { [ -z "$PLAYGROUND_APP_ID" ] || [ -z "$PLAYGROUND_APP_SECRET" ]; }; then
+        warn "services.playground.enabled is true but playground.app_id / app_secret are empty: the SDK playground needs a sandbox app of its own (create one in the admin panel after the install, put its App ID and App Secret under playground: in deploy.yml, then run update.sh). Not starting it."
+        export PLAYGROUND_ENABLED="false"
+    fi
 
     # If base_app.domain_name is not provided, derive it from domains.web (subdomain).
     # Example: app.chat.example.com -> app
@@ -1543,7 +1549,7 @@ export NODE_ENV="${NODE_ENV:-production}"
 export API_CLIENT_MAX_BODY_SIZE="${API_CLIENT_MAX_BODY_SIZE:-50M}"
 export PUSH_ENABLED="${PUSH_ENABLED:-true}"
 export PUSH_PORT="${PUSH_PORT:-8098}"
-export PLAYGROUND_ENABLED="${PLAYGROUND_ENABLED:-true}"
+export PLAYGROUND_ENABLED="${PLAYGROUND_ENABLED:-false}"
 export PLAYGROUND_PORT="${PLAYGROUND_PORT:-3020}"
 export MCP_ENABLED="${MCP_ENABLED:-false}"
 export MCP_PORT="${MCP_PORT:-3030}"
@@ -2111,9 +2117,10 @@ EOF
     log "Initializing services..."
     "$SCRIPT_DIR/init-services.sh" || error "Service initialization failed"
 
-    # init-services.sh may discover and persist PLAYGROUND_APP_ID / PLAYGROUND_APP_SECRET
-    # after the base app is initialized. Regenerate env templates so uptime picks up
-    # ETHORA_B2B_APP_ID / ETHORA_B2B_APP_SECRET automatically on fresh installs.
+    # init-services.sh looks the base app's credentials up once it exists and
+    # persists them as UPTIME_B2B_APP_ID / UPTIME_B2B_APP_SECRET. Regenerate env
+    # templates so uptime picks up ETHORA_B2B_APP_ID / ETHORA_B2B_APP_SECRET on
+    # fresh installs.
     log "Regenerating environment files after service initialization..."
     ensure_runtime_tree_owned_by_deploy_user
     "$SCRIPT_DIR/setup-env.sh" || error "Environment setup failed after init-services"

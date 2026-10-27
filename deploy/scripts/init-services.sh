@@ -1026,37 +1026,20 @@ else
     error "initEthoraApp.js not found at $BACKEND_API_DIR/scripts/initEthoraApp.js - base app initialization is required"
 fi
 
-# If SDK playground is enabled, auto-populate App ID/Secret from Mongo and refresh .env.local.
-sync_playground_credentials() {
-    if [ "${PLAYGROUND_ENABLED:-false}" != "true" ]; then
-        return 0
-    fi
-
-    if [ ! -f "$PLAYGROUND_DIR/package.json" ]; then
-        warn "SDK playground sources not found at $PLAYGROUND_DIR (submodule not initialized?)"
+# The uptime B2B journey signs in as the base app: once the base app exists,
+# look its id and secret up in Mongo and persist them for setup-env.sh
+# (ETHORA_B2B_APP_ID / ETHORA_B2B_APP_SECRET in uptime.env). The SDK
+# playground never gets these: it runs as the sandbox app named in deploy.yml.
+sync_uptime_b2b_credentials() {
+    if [ "${UPTIME_ENABLED:-false}" != "true" ]; then
         return 0
     fi
 
     local app_id=""
     local app_secret=""
-    local explicit_app_id=""
-    local explicit_app_secret=""
 
-    if command -v yq >/dev/null 2>&1 && [ -f "$CONFIG_FILE" ]; then
-        explicit_app_id="$(yq eval '.playground.app_id // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
-        explicit_app_secret="$(yq eval '.playground.app_secret // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
-        [ "$explicit_app_id" = "null" ] && explicit_app_id=""
-        [ "$explicit_app_secret" = "null" ] && explicit_app_secret=""
-    fi
-
-    # Explicit deploy.yml values win. Otherwise, derive the current base-app credentials
-    # from Mongo so stale persisted PLAYGROUND_* values do not survive reinstall/update cycles.
-    if [ -n "$explicit_app_id" ] && [ -n "$explicit_app_secret" ]; then
-        app_id="$explicit_app_id"
-        app_secret="$explicit_app_secret"
-    else
-        # Try to read from Mongo via mongosh (fast path).
-        local js="
+    # Try to read from Mongo via mongosh (fast path).
+    local js="
 const dbName = '${MONGO_DB}';
 const domain = '${BASE_APP_DOMAIN_NAME}';
 const app = db.getSiblingDB(dbName).apps.findOne({ domainName: domain }, { appSecret: 1, tenantSecret: 1 });
@@ -1067,92 +1050,75 @@ if (app) {
   print('ETHORA_PLAYGROUND_APP_SECRET_B64=' + b64(authSecret));
 }
 "
-        local out=""
-        out="$(mongo_eval_safe 8 "$js" 2>/dev/null || true)"
-        if [ -n "$out" ]; then
-            local id_b64=""
-            local secret_b64=""
-            id_b64="$(echo "$out" | grep -m1 '^ETHORA_PLAYGROUND_APP_ID_B64=' | sed 's/^[^=]*=//')"
-            secret_b64="$(echo "$out" | grep -m1 '^ETHORA_PLAYGROUND_APP_SECRET_B64=' | sed 's/^[^=]*=//')"
-            if [ -n "$id_b64" ] && [ -n "$secret_b64" ] && command -v base64 >/dev/null 2>&1; then
-                app_id="$(echo "$id_b64" | base64 -d 2>/dev/null || true)"
-                app_secret="$(echo "$secret_b64" | base64 -d 2>/dev/null || true)"
-            fi
+    local out=""
+    out="$(mongo_eval_safe 8 "$js" 2>/dev/null || true)"
+    if [ -n "$out" ]; then
+        local id_b64=""
+        local secret_b64=""
+        id_b64="$(echo "$out" | grep -m1 '^ETHORA_PLAYGROUND_APP_ID_B64=' | sed 's/^[^=]*=//')"
+        secret_b64="$(echo "$out" | grep -m1 '^ETHORA_PLAYGROUND_APP_SECRET_B64=' | sed 's/^[^=]*=//')"
+        if [ -n "$id_b64" ] && [ -n "$secret_b64" ] && command -v base64 >/dev/null 2>&1; then
+            app_id="$(echo "$id_b64" | base64 -d 2>/dev/null || true)"
+            app_secret="$(echo "$secret_b64" | base64 -d 2>/dev/null || true)"
         fi
+    fi
 
-        # Fallback: query Mongo using backend models (handles mongosh empty stdout issues).
-        if [ -z "$app_id" ] || [ -z "$app_secret" ]; then
-            if have_backend_node; then
-                [ "$BACKEND_MODE" = "image" ] || ensure_backend_node_modules "$BACKEND_API_DIR" >/dev/null 2>&1 || true
-                local node_out=""
-                node_out="$(backend_node scripts/deploy/playground-app-secret.js "${MONGO_URI}" "${BASE_APP_DOMAIN_NAME}" 2>/dev/null || true)"
-                if [ -n "$node_out" ]; then
-                    local id_b64=""
-                    local secret_b64=""
-                    id_b64="$(echo "$node_out" | grep -m1 '^ETHORA_PLAYGROUND_APP_ID_B64=' | sed 's/^[^=]*=//')"
-                    secret_b64="$(echo "$node_out" | grep -m1 '^ETHORA_PLAYGROUND_APP_SECRET_B64=' | sed 's/^[^=]*=//')"
-                    if [ -n "$id_b64" ] && [ -n "$secret_b64" ] && command -v base64 >/dev/null 2>&1; then
-                        app_id="$(echo "$id_b64" | base64 -d 2>/dev/null || true)"
-                        app_secret="$(echo "$secret_b64" | base64 -d 2>/dev/null || true)"
-                    fi
+    # Fallback: query Mongo using backend models (handles mongosh empty stdout
+    # issues). The backend helper keeps its ETHORA_PLAYGROUND_* output markers.
+    if [ -z "$app_id" ] || [ -z "$app_secret" ]; then
+        if have_backend_node; then
+            [ "$BACKEND_MODE" = "image" ] || ensure_backend_node_modules "$BACKEND_API_DIR" >/dev/null 2>&1 || true
+            local node_out=""
+            node_out="$(backend_node scripts/deploy/playground-app-secret.js "${MONGO_URI}" "${BASE_APP_DOMAIN_NAME}" 2>/dev/null || true)"
+            if [ -n "$node_out" ]; then
+                local id_b64=""
+                local secret_b64=""
+                id_b64="$(echo "$node_out" | grep -m1 '^ETHORA_PLAYGROUND_APP_ID_B64=' | sed 's/^[^=]*=//')"
+                secret_b64="$(echo "$node_out" | grep -m1 '^ETHORA_PLAYGROUND_APP_SECRET_B64=' | sed 's/^[^=]*=//')"
+                if [ -n "$id_b64" ] && [ -n "$secret_b64" ] && command -v base64 >/dev/null 2>&1; then
+                    app_id="$(echo "$id_b64" | base64 -d 2>/dev/null || true)"
+                    app_secret="$(echo "$secret_b64" | base64 -d 2>/dev/null || true)"
                 fi
-            fi
-        fi
-
-        if [ -z "$app_id" ] || [ -z "$app_secret" ]; then
-            if [ -n "${PLAYGROUND_APP_ID:-}" ] && [ -n "${PLAYGROUND_APP_SECRET:-}" ]; then
-                warn "Falling back to existing PLAYGROUND_APP_ID / PLAYGROUND_APP_SECRET because current base-app credentials could not be derived from Mongo."
-                app_id="${PLAYGROUND_APP_ID}"
-                app_secret="${PLAYGROUND_APP_SECRET}"
             fi
         fi
     fi
 
     if [ -z "$app_id" ] || [ -z "$app_secret" ]; then
-        warn "SDK playground credentials not found for base app domain '${BASE_APP_DOMAIN_NAME}'."
-        warn "Playground will start but SDK calls may fail until credentials are set."
+        if [ -n "${UPTIME_B2B_APP_ID:-}" ] && [ -n "${UPTIME_B2B_APP_SECRET:-}" ]; then
+            warn "Keeping the previous UPTIME_B2B_APP_ID / UPTIME_B2B_APP_SECRET: the base app's credentials could not be read from Mongo."
+            return 0
+        fi
+        warn "Base app credentials not found for domain '${BASE_APP_DOMAIN_NAME}': the uptime B2B journey has no ETHORA_B2B_APP_ID / ETHORA_B2B_APP_SECRET until the next deploy."
         return 0
     fi
 
-    # Persist into .deploy.env for future runs (non-fatal if it fails).
+    # Persist into .deploy.env for setup-env.sh (non-fatal if it fails).
     if [ -n "${DEPLOY_DIR:-}" ] && [ -f "$DEPLOY_DIR/.deploy.env" ]; then
         local tmp_env
         tmp_env="$(mktemp)"
-        grep -v '^PLAYGROUND_APP_ID=' "$DEPLOY_DIR/.deploy.env" >"$tmp_env" 2>/dev/null || true
-        grep -v '^PLAYGROUND_APP_SECRET=' "$tmp_env" >"${tmp_env}.2" 2>/dev/null || true
-        mv "${tmp_env}.2" "$tmp_env"
-        echo "PLAYGROUND_APP_ID=$app_id" >>"$tmp_env"
-        echo "PLAYGROUND_APP_SECRET=$app_secret" >>"$tmp_env"
-        mv "$tmp_env" "$DEPLOY_DIR/.deploy.env"
+        grep -v -E '^(export )?UPTIME_B2B_APP_(ID|SECRET)=' "$DEPLOY_DIR/.deploy.env" >"$tmp_env" 2>/dev/null || true
+        printf 'export UPTIME_B2B_APP_ID="%s"\nexport UPTIME_B2B_APP_SECRET="%s"\n' "$app_id" "$app_secret" >>"$tmp_env"
+        cat "$tmp_env" >"$DEPLOY_DIR/.deploy.env"
+        rm -f "$tmp_env"
     fi
 
-    # Generate .env.local for playground
-    local api_url=""
-    local backend_url=""
-    if [ "${API_DOMAIN:-}" == "localhost" ]; then
-        api_url="http://localhost:${BACKEND_PORT:-8080}"
-        backend_url="http://localhost:${PLAYGROUND_PORT:-3020}"
-    else
-        api_url="https://${API_DOMAIN}"
-        if [ -n "${PLAYGROUND_DOMAIN:-}" ] && [ "${PLAYGROUND_DOMAIN:-}" != "null" ]; then
-            backend_url="https://${PLAYGROUND_DOMAIN}"
-        else
-            backend_url="https://${WEB_DOMAIN}"
-        fi
+    # update.sh runs setup-env.sh before this script, so the uptime env of
+    # this run was rendered without the values: patch them in for the uptime
+    # restart that follows, instead of waiting for the next deploy.
+    local uptime_env="$DEPLOY_DIR/generated/uptime/uptime.env"
+    if [ -f "$uptime_env" ]; then
+        local tmp_uptime
+        tmp_uptime="$(mktemp)"
+        grep -v -E '^ETHORA_B2B_APP_(ID|SECRET)=' "$uptime_env" >"$tmp_uptime" 2>/dev/null || true
+        printf 'ETHORA_B2B_APP_ID=%s\nETHORA_B2B_APP_SECRET=%s\n' "$app_id" "$app_secret" >>"$tmp_uptime"
+        cat "$tmp_uptime" >"$uptime_env"
+        rm -f "$tmp_uptime"
     fi
-
-    cat > "$PLAYGROUND_DIR/.env.local" <<EOF
-ETHORA_CHAT_API_URL=${api_url}
-NEXT_PUBLIC_ETHORA_CHAT_API_URL=${api_url}
-ETHORA_CHAT_APP_ID=${app_id}
-ETHORA_CHAT_APP_SECRET=${app_secret}
-NEXT_PUBLIC_BACKEND_URL=${backend_url}
-EOF
-    log "SDK playground credentials synced to $PLAYGROUND_DIR/.env.local"
+    log "Uptime B2B journey credentials synced from the base app"
 }
 
-# Sync playground credentials after base app is initialized.
-sync_playground_credentials || true
+# Sync the uptime B2B credentials after the base app is initialized.
+sync_uptime_b2b_credentials || true
 
 # Verify the base app config is actually retrievable (frontend blocks on this).
 # If this returns 404, the frontend will show an infinite spinner while retrying.

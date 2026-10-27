@@ -23,13 +23,13 @@
 # and likewise for the push, playground, mcp and uptime modules (profiles of the
 # same names, or PUSH_ENABLED / PLAYGROUND_ENABLED / MCP_ENABLED / UPTIME_ENABLED):
 #   /out/config/push/push.env              <- templates/push.env.template
-#   /out/config/playground/playground.env  the SDK playground's public URLs
+#   /out/config/playground/playground.env  the SDK playground's public URLs and its sandbox app
 #   /out/config/mcp/mcp.env                <- templates/mcp.env.template
 #   /out/config/uptime/uptime.env, uptime.yml, auth-password
 #                                          <- templates/uptime.env.template, uptime-config.yml.template
 #   /out/config/uptime-db/password         the uptime Postgres' password
 # (init.sh adds /out/config/base-app/credentials.env, the base app's API
-# credentials the playground and uptime modules sign in with.)
+# credentials the uptime module signs in with.)
 #
 # It runs in the ethora-xmpp image (development form, scripts bind-mounted)
 # or in the ethora-compose-init image, which is the xmpp image plus this
@@ -292,6 +292,8 @@ def ETHORA_INSTALL_KIND compose
 def PUSH_PLATFORM_PROJECT_ID ""
 def PUSH_GATEWAY_URL ""
 def PUSH_GATEWAY_TOKEN ""
+def PLAYGROUND_APP_ID ""
+def PLAYGROUND_APP_SECRET ""
 def REACTION_PUSHES_ENABLED true
 def ERRORS_PUSH_DSN ""
 export PUSH_PORT=8098 MCP_PORT=3030 UPTIME_PORT=8099 PLAYGROUND_PORT=3020
@@ -531,11 +533,17 @@ if [ "$PUSH_MODULE" = true ]; then
   set_env_line "$stage/push/push.env" API_INTERNAL_URL "$ETHORA_API_URL"
 fi
 if [ "$PLAYGROUND_MODULE" = true ]; then
-  # What the host installer writes to the playground's .env.local; the base
-  # app's id and secret are added at start from base-app/credentials.env.
+  # What the host installer writes to the playground's .env.local. The
+  # playground mints tokens of the app it runs as for anonymous visitors, so
+  # it runs as the app the operator names (PLAYGROUND_APP_ID /
+  # PLAYGROUND_APP_SECRET in .env), best a sandbox app of its own.
+  [ -n "$PLAYGROUND_APP_ID" ] && [ -n "$PLAYGROUND_APP_SECRET" ] \
+    || die "the playground module needs PLAYGROUND_APP_ID and PLAYGROUND_APP_SECRET in .env (an app created for it in the admin panel)"
   {
     echo "ETHORA_CHAT_API_URL=$api_url"
     echo "NEXT_PUBLIC_ETHORA_CHAT_API_URL=$api_url"
+    echo "ETHORA_CHAT_APP_ID=$PLAYGROUND_APP_ID"
+    echo "ETHORA_CHAT_APP_SECRET=$PLAYGROUND_APP_SECRET"
     echo "NEXT_PUBLIC_BACKEND_URL=$playground_url"
     echo "PORT=$PLAYGROUND_PORT"
   } > "$stage/playground/playground.env"
@@ -552,7 +560,7 @@ if [ "$UPTIME_MODULE" = true ]; then
   export UPTIME_DATABASE_URL="postgresql://uptime:$UPTIME_POSTGRES_PASSWORD@${ETHORA_UPTIME_POSTGRES_HOST:-uptime-db}:${ETHORA_UPTIME_POSTGRES_PORT:-5432}/uptime"
   export UPTIME_PUBLIC_ENABLED="${UPTIME_PUBLIC_ENABLED:-true}" UPTIME_ETHORA_ENABLED="${UPTIME_ETHORA_ENABLED:-false}"
   export UPTIME_MCP_ENABLED="$MCP_MODULE" UPTIME_MCP_PUBLIC_ENABLED="$MCP_MODULE" UPTIME_MCP_DOMAIN="${MCP_DOMAIN:-mcp.localhost}"
-  export PLAYGROUND_APP_ID="" PLAYGROUND_APP_SECRET=""
+  export UPTIME_B2B_APP_ID="" UPTIME_B2B_APP_SECRET=""
   render "$TEMPLATES/uptime.env.template" "$stage/uptime/uptime.env"
   set_env_line "$stage/uptime/uptime.env" ETHORA_API_BASE "$ETHORA_API_URL"
   set_env_line "$stage/uptime/uptime.env" ETHORA_XMPP_API_URL "$ETHORA_XMPP_URL/api"

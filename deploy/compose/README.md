@@ -260,14 +260,18 @@ values in `.env` by hand (see `.env.example`, "modules").
 |---|---|---|---|
 | AI agents | `ai` | `ai-service`, `docs-parse`, `ai-postgres` (pgvector), `ai-init`, `widget-export`, `widget` from `dappros/ethora-ai` | `widget.<root>` (the website chat widget; `/widget/` on one origin) |
 | Push notifications | `push` | `push`, `push-worker` from `dappros/ethora-push` | none of its own: the API proxies `/v1/push/*`, mobile apps use `api.<root>/push/` |
-| SDK playground | `playground` | `playground` from `dappros/ethora-playground` (builds on its first start, about 1.5 GB of RAM for a few minutes) | `playground.<root>` |
+| SDK playground | `playground` | `playground` from `dappros/ethora-playground` (builds on its first start, about 1.5 GB of RAM for a few minutes); runs as the app in `PLAYGROUND_APP_ID` / `PLAYGROUND_APP_SECRET` (`.env`) | `playground.<root>` |
 | Hosted MCP server | `mcp` | `mcp` from `dappros/ethora-mcp`; the API serves OAuth on `api.<root>` | `mcp.<root>` (`/mcp`) |
 | Uptime | `uptime` | `uptime`, `uptime-db` (Postgres) from `dappros/ethora-uptime` | `uptime.<root>`, basic auth (`UPTIME_AUTH_USER`, `UPTIME_AUTH_PASSWORD` in `.env`) |
 
 `./configure.sh --modules ai,push,playground,mcp,uptime` takes any subset.
 The playground, mcp and uptime modules need the five-host layout (a host
 each, covered by a wildcard record); on a one-origin install only `ai` and
-`push` run. The push service sends with the platform keys uploaded in the
+`push` run. The playground runs as the app named in `.env`
+(`PLAYGROUND_APP_ID`, `PLAYGROUND_APP_SECRET`); it hands that app's tokens to
+anonymous visitors, so create a sandbox app for it in the admin panel rather
+than using the base app. The module does not start without the two values.
+The push service sends with the platform keys uploaded in the
 admin panel; `PUSH_PLATFORM_PROJECT_ID` and the `PUSH_GATEWAY_*` values in
 `.env.example` cover the other arrangements. The uptime dashboard's
 password is generated into `.env`; behind a proxy of your own, protect

@@ -60,7 +60,7 @@ force_update_env_var() {
 
   local tmp
   tmp="$(mktemp)"
-  grep -v "^export ${key}=" "$ENV_FILE" > "$tmp" 2>/dev/null || true
+  grep -v -E "^(export )?${key}=" "$ENV_FILE" > "$tmp" 2>/dev/null || true
   printf 'export %s="%s"\n' "$key" "$(escape_env_value "$value")" >> "$tmp"
   cat "$tmp" > "$ENV_FILE"
   rm -f "$tmp"
@@ -296,8 +296,15 @@ update_env_var "SSL_EMAIL" "$ssl_email"
 backend_port="$(read_config '.services.backend.port')"
 node_env="$(read_config '.services.backend.node_env // "production"')"
 api_client_max_body_size="$(read_config '.services.backend.client_max_body_size // "50M"')"
-playground_enabled="$(read_config '.services.playground.enabled | select(. != null)')"; playground_enabled="${playground_enabled:-true}"
+playground_enabled="$(read_config '.services.playground.enabled | select(. != null)')"; playground_enabled="${playground_enabled:-false}"
 playground_port="$(read_config '.services.playground.port // 3020')"
+# The playground runs as the sandbox app in deploy.yml (playground.app_id /
+# app_secret) and stays off without both; setup-node-services.sh says why.
+playground_app_id="$(read_config '.playground.app_id // ""')"
+playground_app_secret="$(read_config '.playground.app_secret // ""')"
+if [ "$playground_enabled" = "true" ] && { [ -z "$playground_app_id" ] || [ -z "$playground_app_secret" ]; }; then
+  playground_enabled="false"
+fi
 # Widget enabled: respect explicit value; otherwise default to features.ai_service
 # so the admin panel's AI Widget tab gets a usable embed URL whenever AI is on.
 # Read raw (no `//`) since yq's alternative also falls through on explicit false,
@@ -364,6 +371,8 @@ update_env_var "NODE_ENV" "$node_env"
 update_env_var "API_CLIENT_MAX_BODY_SIZE" "$api_client_max_body_size"
 update_env_var "PLAYGROUND_ENABLED" "$playground_enabled"
 update_env_var "PLAYGROUND_PORT" "$playground_port"
+force_update_env_var "PLAYGROUND_APP_ID" "$playground_app_id"
+force_update_env_var "PLAYGROUND_APP_SECRET" "$playground_app_secret"
 update_env_var "WIDGET_ENABLED" "$widget_enabled"
 update_env_var "WIDGET_SCRIPT_VERSION" "$widget_script_version"
 update_env_var "MCP_ENABLED" "$mcp_enabled"

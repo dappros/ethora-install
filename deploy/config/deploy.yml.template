@@ -141,7 +141,10 @@ services:
     gateway_url: ""
     gateway_token: ""
   playground:
-    enabled: true
+    # Off by default. The playground is a public demo that hands tokens of the
+    # app it runs as to anonymous visitors, so give it an app of its own:
+    # fill in `playground:` at the end of this file before enabling it.
+    enabled: false
     port: 3020
     mode: source                                  # source | image (Next bundle is built on first start)
     image: ghcr.io/dappros/ethora-playground:2610
@@ -617,9 +620,12 @@ base_app:
   owner_password: # Uses admin.password if not specified
   start_balance: 1000000
 
-# SDK Playground (optional)
-# - App ID/Secret are required for @ethora/sdk-backend
-# - If omitted, playground will start but API calls will fail with "SDK not configured"
+# SDK Playground (optional; services.playground.enabled)
+# The app the playground runs as. Its server routes mint this app's tokens
+# for anonymous visitors, so a sandbox app of its own is the safe choice: in
+# the admin panel create a new app, open its settings (API tab) and copy App
+# ID and App Secret here. The installer does not start the playground
+# without them and never fills in the base app's credentials by itself.
 playground:
   app_id: ""
   app_secret: ""

@@ -1,12 +1,12 @@
 #!/bin/sh
 # module-start.sh - entrypoint of the push, playground, mcp and uptime module
 # containers in the compose bundle. Exports the env file the config service
-# rendered for the module (plain KEY=value lines), plus the base app's API
-# credentials that init.sh leaves in base-app/credentials.env for the modules
-# that drive the API as a B2B client, and hands over to the image's own start.
+# rendered for the module (plain KEY=value lines), plus, for the uptime
+# module, the base app's API credentials that init.sh leaves in
+# base-app/credentials.env, and hands over to the image's own start.
 #
 #   module-start.sh push server|worker   push/push.env         -> ethora-push
-#   module-start.sh playground           playground/playground.env + base app -> ethora-playground
+#   module-start.sh playground           playground/playground.env -> ethora-playground
 #   module-start.sh mcp                  mcp/mcp.env           -> node /app/dist/index.js
 #   module-start.sh uptime               uptime/uptime.env + base app -> node dist/server.js
 set -eu
@@ -43,8 +43,10 @@ case "$cmd" in
     load "$CONFIG/push/push.env"
     exec /usr/local/bin/ethora-push "${1:-server}" ;;
   playground)
+    # Runs as the app named in .env (PLAYGROUND_APP_ID / PLAYGROUND_APP_SECRET,
+    # in playground.env); it hands that app's tokens to anonymous visitors,
+    # so an app of its own is the safe choice.
     load "$CONFIG/playground/playground.env"
-    base_app
     exec /usr/local/bin/ethora-playground ;;
   mcp)
     load "$CONFIG/mcp/mcp.env"

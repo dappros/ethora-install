@@ -128,9 +128,9 @@ else
 fi
 
 # ------------------------------------------ 5. base app credentials --
-# The playground and uptime modules drive the API as the base app (B2B):
-# leave its id and secret in the config volume for module-start.sh. Mongo
-# through the API image's own models (bytecode builds included).
+# The uptime module drives the API as the base app (B2B): leave its id and
+# secret in the config volume for module-start.sh. Mongo through the API
+# image's own models (bytecode builds included).
 creds_dir="${ETHORA_CONFIG_DIR:-/ethora/config}/base-app"
 if mkdir -p "$creds_dir" 2>/dev/null && [ -w "$creds_dir" ]; then
   if out="$(NODE_NO_WARNINGS=1 node -e '
@@ -150,7 +150,7 @@ if mkdir -p "$creds_dir" 2>/dev/null && [ -w "$creds_dir" ]; then
     if [ -n "$app_id" ] && [ -n "$app_secret" ]; then
       umask 077
       printf 'ETHORA_CHAT_APP_ID=%s\nETHORA_CHAT_APP_SECRET=%s\n' "$app_id" "$app_secret" > "$creds_dir/credentials.env.tmp" \
-        && mv "$creds_dir/credentials.env.tmp" "$creds_dir/credentials.env" && log "base app credentials written for the playground and uptime modules"
+        && mv "$creds_dir/credentials.env.tmp" "$creds_dir/credentials.env" && log "base app credentials written for the uptime module"
     else
       warn "base app credentials incomplete (non-fatal): $(printf '%s' "$out" | head -c 200)"
     fi

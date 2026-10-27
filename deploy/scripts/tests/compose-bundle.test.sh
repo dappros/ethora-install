@@ -87,7 +87,7 @@ skipped = {"API_DOMAIN", "WEB_DOMAIN", "XMPP_DOMAIN", "FILES_DOMAIN", "SECURE_FI
            "PUBLIC_URL", "ETHORA_COMPOSE_INIT_IMAGE"}  # hosts routed by Traefik; the dev form renders with the xmpp image
 assert [k for k in example if k not in skipped] == list(env), list(env)
 assert env["COMPOSE_PROFILES"] == "" and env["ROOT_DOMAIN"] == "${root_domain}"
-secrets = [k for k in env if k.endswith(("_SECRET", "_PASSWORD", "_KEY")) and k not in ("ETHORA_LICENSE_KEY", "AI_API_KEY")] + ["MINIO_ROOT_USER"]
+secrets = [k for k in env if k.endswith(("_SECRET", "_PASSWORD", "_KEY")) and k not in ("ETHORA_LICENSE_KEY", "AI_API_KEY", "PLAYGROUND_APP_SECRET")] + ["MINIO_ROOT_USER"]
 for k in secrets:
     v = re.fullmatch(r"(ethora)?\$\{([a-z0-9_]+)\}", env[k]); assert v and "${password:" in d["variables"][v.group(2)], (k, env[k])
 print(f"{len(c['domains'])} domains, {len(c['mounts'])} mounts, {len(env)} env keys, {len(secrets)} generated secrets")
@@ -414,7 +414,7 @@ else
     && [ ! -f "$R/config/push/push.env" ] && [ ! -f "$R/config/uptime/uptime.yml" ] && ok "modules off: no MCP URL, no push route, no module hosts, no module env files" || fail "modules off leftovers"
   grep -q 'common_post_url: "https://api.chat.example.com/push/api/v2/push"' "$R/config/xmpp/ejabberd.yml" && ok "modules off: ejabberd pushes to the public push URL (as the host installer)" || fail "offline push URL without the module" "$(grep common_post_url "$R/config/xmpp/ejabberd.yml")"
   RM="$T/rm"; mkdir -p "$RM"
-  rcfg "$RM" "${renv[@]}" COMPOSE_PROFILES=caddy,push,playground,mcp,uptime B2B_PUSH_SECRET=b2bsec UPTIME_POSTGRES_PASSWORD=uppg UPTIME_AUTH_PASSWORD=upauth >"$T/outm" 2>&1 \
+  rcfg "$RM" "${renv[@]}" COMPOSE_PROFILES=caddy,push,playground,mcp,uptime B2B_PUSH_SECRET=b2bsec UPTIME_POSTGRES_PASSWORD=uppg UPTIME_AUTH_PASSWORD=upauth PLAYGROUND_APP_ID=pgapp PLAYGROUND_APP_SECRET=pgsec >"$T/outm" 2>&1 \
     && ok "renders with the push, playground, mcp and uptime profiles" || fail "modules render" "$(cat "$T/outm")"
   bem="$RM/config/api/backend.env"; fem="$RM/config/frontend/frontend.env"; cfm="$RM/config/caddy/Caddyfile"
   for kv in PUSH_ENABLED=true PLAYGROUND_ENABLED=true MCP_ENABLED=true UPTIME_ENABLED=true B2B_PUSH_SECRET=b2bsec 'OAUTH_ISSUER=https://api.chat.example.com' \
@@ -430,7 +430,7 @@ else
   for kv in PUSH_PORT=8098 B2B_PUSH_SECRET=b2bsec PUSH_OFFLINE_AUTH_TOKEN=b2bsec 'MONGO_URI=mongodb://mongo:27017/ethora_prod?directConnection=true' REDIS_HOST=redis PUSH_UPLOADS_DIR=/app/push/uploads; do
     grep -qxF "$kv" "$RM/config/push/push.env" && ok "modules, push.env: $kv" || fail "modules, push.env: $kv" "$(grep "^${kv%%=*}=" "$RM/config/push/push.env")"
   done
-  for kv in 'ETHORA_CHAT_API_URL=https://api.chat.example.com' 'NEXT_PUBLIC_BACKEND_URL=https://playground.chat.example.com' PORT=3020; do
+  for kv in 'ETHORA_CHAT_API_URL=https://api.chat.example.com' 'NEXT_PUBLIC_BACKEND_URL=https://playground.chat.example.com' PORT=3020 ETHORA_CHAT_APP_ID=pgapp ETHORA_CHAT_APP_SECRET=pgsec; do
     grep -qxF "$kv" "$RM/config/playground/playground.env" && ok "modules, playground.env: $kv" || fail "modules, playground.env: $kv"
   done
   for kv in ETHORA_MCP_HTTP_PORT=3030 'ETHORA_MCP_PUBLIC_URL=https://mcp.chat.example.com/mcp' 'ETHORA_API_URL=http://api:8080/v1' 'ETHORA_MCP_AUTH_ISSUER=https://api.chat.example.com' ETHORA_APP_DOMAIN_NAME=app ETHORA_MCP_ENABLE_DANGEROUS_TOOLS=true; do
@@ -452,6 +452,8 @@ else
   [ "$(stat -c %a "$RM/config/uptime")" = 700 ] && [ "$(stat -c %a "$RM/config/push/push.env")" = 600 ] && ok "modules, rendered modes" || fail "module modes"
   [ -d "$RM/config/base-app" ] && [ "$(stat -c %a "$RM/config/base-app")" = 700 ] && ok "base-app/ created for init.sh's credentials file" || fail "base-app dir"
   rcfg "$T/rm2" PUBLIC_URL=https://chat.example.com ADMIN_EMAIL=ops@example.com COMPOSE_PROFILES=uptime >"$T/outm2" 2>&1 && fail "uptime on one origin refused by the renderer" || { grep -q 'hosts of their own' "$T/outm2" && ok "uptime/mcp/playground on one origin refused by the renderer"; }
+  rcfg "$T/rm4" "${renv[@]}" COMPOSE_PROFILES=caddy,playground >"$T/outm4" 2>&1 && fail "playground without a sandbox app refused by the renderer" \
+    || { grep -q 'PLAYGROUND_APP_ID' "$T/outm4" && ok "playground without PLAYGROUND_APP_ID / PLAYGROUND_APP_SECRET refused by the renderer" || fail "playground refusal message" "$(tail -n 3 "$T/outm4")"; }
   RM3="$T/rm3"; mkdir -p "$RM3"
   rcfg "$RM3" PUBLIC_URL=https://chat.example.com ADMIN_EMAIL=ops@example.com COMPOSE_PROFILES=push >/dev/null 2>&1 && grep -q 'handle /push/\* {' "$RM3/config/caddy/Caddyfile" \
     && grep -qxF 'PUSH_ENABLED=true' "$RM3/config/api/backend.env" && ok "push on one origin: /push/ routed" || fail "push on one origin"

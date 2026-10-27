@@ -102,6 +102,8 @@ services:
       PUSH_PLATFORM_PROJECT_ID: ${PUSH_PLATFORM_PROJECT_ID:-}
       PUSH_GATEWAY_URL: ${PUSH_GATEWAY_URL:-}
       PUSH_GATEWAY_TOKEN: ${PUSH_GATEWAY_TOKEN:-}
+      PLAYGROUND_APP_ID: ${PLAYGROUND_APP_ID:-}
+      PLAYGROUND_APP_SECRET: ${PLAYGROUND_APP_SECRET:-}
       PLAYGROUND_DOMAIN: ${PLAYGROUND_DOMAIN:-}
       MCP_DOMAIN: ${MCP_DOMAIN:-}
       UPTIME_DOMAIN: ${UPTIME_DOMAIN:-}
@@ -285,7 +287,7 @@ services:
     <<: *api
     command: ["init"]
     # Read-write: init leaves the base app's API credentials for the
-    # playground and uptime modules in base-app/ (see scripts/init.sh).
+    # uptime module in base-app/ (see scripts/init.sh).
     volumes:
       - config:/ethora/config
     depends_on:
@@ -489,7 +491,8 @@ services:
     <<: *logging
 
   # ------------------------------------------------ playground (playground) --
-  # Profile `playground`: the SDK playground (Next.js) on playground.<root>.
+  # Profile `playground`: the SDK playground (Next.js) on playground.<root>,
+  # running as the sandbox app in PLAYGROUND_APP_ID / PLAYGROUND_APP_SECRET.
   # Next inlines its public URLs at build time, so the container builds on
   # its first start for this install (about 1.5 GB of RAM for a few minutes)
   # and keeps the build in the playground-next volume.

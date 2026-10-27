@@ -26,6 +26,7 @@ Reference:
 - [Update behaviour in detail](#update-behaviour-in-detail) and [Data migrations](#data-migrations)
 - [Quick QA checks](#quick-qa-checks)
 - [Hosted MCP server (optional)](#hosted-mcp-server-optional)
+- [SDK playground (optional)](#sdk-playground-optional)
 - [Feedback channel](#feedback-channel)
 - [Uptime monitoring (ethora-uptime)](#uptime-monitoring-ethora-uptime)
 - [Backend jobs / cron runner (PM2)](#backend-jobs--cron-runner-pm2)
@@ -591,6 +592,47 @@ Enabling the MCP service also raises the backend's per-IP auth limits (login
 Claude and ChatGPT reach the API from a handful of vendor egress IPs shared by
 all their users. Set explicit values in the top-level `rate_limits` block of
 `deploy.yml` to override; per-email limits are unchanged.
+
+## SDK playground (optional)
+
+[`ethora-sdk-playground`](../ethora-sdk-playground) is the public "try the SDK
+without signing up" demo on `playground.<root>`: a visitor picks a template,
+gets a live chat and a code snippet to copy. To work without a login, its
+server routes mint tokens of the app it runs as for anyone who asks, so that
+app should be a sandbox of its own: the installer never falls back to the
+base app's secret.
+
+Off by default. To enable it:
+
+1. In the admin panel create a new app for the playground (for example "SDK
+   playground"); open its settings, API tab, and copy App ID and App Secret.
+2. Put them in `deploy.yml` and switch the service on:
+
+   ```yaml
+   domains:
+     playground: playground.chat.example.com
+
+   services:
+     playground:
+       enabled: true
+
+   playground:
+     app_id: "<App ID of the sandbox app>"
+     app_secret: "<App Secret of the sandbox app>"
+   ```
+
+3. Run `update.sh`. `setup-env.sh` writes `ethora-sdk-playground/.env.local`,
+   `setup-ssl.sh` requests a certificate for the host, `setup-nginx.sh` writes
+   `ethora-playground.conf` and `setup-node-services.sh` builds the app and
+   starts PM2 process `sdk-playground` (or the container in image mode).
+
+With `enabled: true` but no `app_id` / `app_secret`, the deploy prints a
+warning and does not start the playground (`enabled: false`, or the keys
+missing, also removes the PM2 process and the nginx site on the next deploy).
+Treat the sandbox app as throwaway: anyone can create users and rooms in it,
+and whoever points the playground at the base app hands out that app's tokens.
+The compose bundle takes the same two values as `PLAYGROUND_APP_ID` /
+`PLAYGROUND_APP_SECRET` in `.env` (see its README).
 
 ## Feedback channel
 

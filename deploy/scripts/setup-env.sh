@@ -162,7 +162,7 @@ if command -v yq >/dev/null 2>&1 && [ -f "$CONFIG_FILE" ]; then
     if [ "$ERRORS_SEND_PII" = "false" ]; then ERRORS_SEND_PII="false"; else ERRORS_SEND_PII="true"; fi
     export ERRORS_API_DSN ERRORS_PUSH_DSN ERRORS_AI_DSN ERRORS_WEB_DSN ERRORS_ENVIRONMENT ERRORS_SEND_PII
     if [ -z "${PLAYGROUND_ENABLED:-}" ] || [ "${PLAYGROUND_ENABLED:-}" == "null" ]; then
-        PLAYGROUND_ENABLED="$(yq eval '.services.playground.enabled | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; PLAYGROUND_ENABLED="${PLAYGROUND_ENABLED:-true}"
+        PLAYGROUND_ENABLED="$(yq eval '.services.playground.enabled | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; PLAYGROUND_ENABLED="${PLAYGROUND_ENABLED:-false}"
     fi
     # Always re-read WIDGET_ENABLED from deploy.yml so toggling
     # services.widget.enabled (and the AI umbrella below) takes effect on
@@ -225,11 +225,12 @@ if command -v yq >/dev/null 2>&1 && [ -f "$CONFIG_FILE" ]; then
     else
         MCP_ENABLE_DANGEROUS_TOOLS="true"
     fi
-    if [ -z "${PLAYGROUND_APP_ID:-}" ] || [ "${PLAYGROUND_APP_ID:-}" == "null" ]; then
-        PLAYGROUND_APP_ID="$(yq eval '.playground.app_id // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
-    fi
-    if [ -z "${PLAYGROUND_APP_SECRET:-}" ] || [ "${PLAYGROUND_APP_SECRET:-}" == "null" ]; then
-        PLAYGROUND_APP_SECRET="$(yq eval '.playground.app_secret // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
+    # The playground's sandbox app comes from deploy.yml only; without both
+    # values the playground stays off (setup-node-services.sh says why).
+    PLAYGROUND_APP_ID="$(yq eval '.playground.app_id // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
+    PLAYGROUND_APP_SECRET="$(yq eval '.playground.app_secret // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
+    if [ "${PLAYGROUND_ENABLED:-false}" == "true" ] && { [ -z "$PLAYGROUND_APP_ID" ] || [ -z "$PLAYGROUND_APP_SECRET" ]; }; then
+        PLAYGROUND_ENABLED="false"
     fi
 
     # Postmark / analytics (may not be in .deploy.env yet)
@@ -776,8 +777,10 @@ replace_template() {
     # Uptime instance tiles (local/public/ethora)
     replace_literal "{{UPTIME_PUBLIC_ENABLED}}" "${UPTIME_PUBLIC_ENABLED:-true}"
     replace_literal "{{UPTIME_ETHORA_ENABLED}}" "${UPTIME_ETHORA_ENABLED:-false}"
-    replace_literal "{{PLAYGROUND_APP_ID}}" "${PLAYGROUND_APP_ID:-}"
-    replace_literal "{{PLAYGROUND_APP_SECRET}}" "${PLAYGROUND_APP_SECRET:-}"
+    # Base app credentials for the uptime B2B journey (persisted by
+    # init-services.sh); the playground's sandbox app is not used here.
+    replace_literal "{{UPTIME_B2B_APP_ID}}" "${UPTIME_B2B_APP_ID:-}"
+    replace_literal "{{UPTIME_B2B_APP_SECRET}}" "${UPTIME_B2B_APP_SECRET:-}"
     # Hosted MCP server
     replace_literal "{{MCP_DOMAIN}}" "${MCP_DOMAIN:-}"
     # Uptime tiles for the MCP service: the local /healthz check follows the
@@ -1548,8 +1551,9 @@ if [ "${PLAYGROUND_ENABLED:-false}" == "true" ]; then
 
         cat > "$PLAYGROUND_DIR/.env.local" <<EOF
 ETHORA_CHAT_API_URL=${PLAYGROUND_CHAT_API_URL}
-ETHORA_CHAT_APP_ID=${PLAYGROUND_APP_ID:-}
-ETHORA_CHAT_APP_SECRET=${PLAYGROUND_APP_SECRET:-}
+NEXT_PUBLIC_ETHORA_CHAT_API_URL=${PLAYGROUND_CHAT_API_URL}
+ETHORA_CHAT_APP_ID=${PLAYGROUND_APP_ID}
+ETHORA_CHAT_APP_SECRET=${PLAYGROUND_APP_SECRET}
 NEXT_PUBLIC_BACKEND_URL=${PLAYGROUND_BACKEND_URL}
 EOF
         log "Generated: $PLAYGROUND_DIR/.env.local"

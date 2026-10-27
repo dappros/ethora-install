@@ -920,10 +920,9 @@ fi
 
 # Optional: refresh playground settings from deploy.yml (useful for upgrades)
 CONFIG_FILE="$DEPLOY_DIR/config/deploy.yml"
-PLAYGROUND_CREDENTIALS_EXPLICIT="false"
 if command -v yq >/dev/null 2>&1 && [ -f "$CONFIG_FILE" ]; then
     if [ -z "${PLAYGROUND_ENABLED:-}" ] || [ "${PLAYGROUND_ENABLED:-}" == "null" ]; then
-        PLAYGROUND_ENABLED="$(yq eval '.services.playground.enabled | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; PLAYGROUND_ENABLED="${PLAYGROUND_ENABLED:-true}"
+        PLAYGROUND_ENABLED="$(yq eval '.services.playground.enabled | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; PLAYGROUND_ENABLED="${PLAYGROUND_ENABLED:-false}"
     fi
     if [ -z "${PLAYGROUND_PORT:-}" ] || [ "${PLAYGROUND_PORT:-}" == "null" ]; then
         PLAYGROUND_PORT="$(yq eval '.services.playground.port // 3020' "$CONFIG_FILE" 2>/dev/null || echo "3020")"
@@ -951,14 +950,14 @@ if command -v yq >/dev/null 2>&1 && [ -f "$CONFIG_FILE" ]; then
     if [ -z "${WIDGET_SCRIPT_VERSION:-}" ] || [ "${WIDGET_SCRIPT_VERSION:-}" == "null" ]; then
         WIDGET_SCRIPT_VERSION="$(yq eval '.services.widget.script_version // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
     fi
-    config_playground_app_id="$(yq eval '.playground.app_id // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
-    config_playground_app_secret="$(yq eval '.playground.app_secret // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
-    [ "$config_playground_app_id" = "null" ] && config_playground_app_id=""
-    [ "$config_playground_app_secret" = "null" ] && config_playground_app_secret=""
-    if [ -n "$config_playground_app_id" ] && [ -n "$config_playground_app_secret" ]; then
-        PLAYGROUND_APP_ID="$config_playground_app_id"
-        PLAYGROUND_APP_SECRET="$config_playground_app_secret"
-        PLAYGROUND_CREDENTIALS_EXPLICIT="true"
+    # The SDK playground runs as the app named in deploy.yml and as nothing
+    # else: its server routes mint that app's tokens for anonymous visitors,
+    # so the installer never fills in the base app's credentials by itself.
+    PLAYGROUND_APP_ID="$(yq eval '.playground.app_id // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
+    PLAYGROUND_APP_SECRET="$(yq eval '.playground.app_secret // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
+    if [ "${PLAYGROUND_ENABLED:-false}" == "true" ] && { [ -z "$PLAYGROUND_APP_ID" ] || [ -z "$PLAYGROUND_APP_SECRET" ]; }; then
+        warn "services.playground.enabled is true but playground.app_id / app_secret are empty: the SDK playground needs a sandbox app of its own (create one in the admin panel, copy its App ID and App Secret into deploy.yml under playground:, then run update.sh). Not starting it."
+        PLAYGROUND_ENABLED="false"
     fi
 fi
 
@@ -1564,105 +1563,11 @@ if [ "$ONLY_SERVICES" != "web" ]; then
 if [ "${PLAYGROUND_ENABLED:-false}" == "true" ]; then
     if [ ! -f "$PLAYGROUND_DIR/package.json" ]; then
         warn "SDK playground sources not found at $PLAYGROUND_DIR (submodule not initialized?)"
+    elif [ ! -f "$PLAYGROUND_DIR/.env.local" ]; then
+        warn "SDK playground env not found at $PLAYGROUND_DIR/.env.local (run setup-env.sh); skipping SDK playground start"
     else
         log "Setting up SDK playground..."
         cd "$PLAYGROUND_DIR"
-
-        # Explicit deploy.yml values win. Otherwise, derive the current base-app credentials
-        # from Mongo so stale persisted PLAYGROUND_* values do not survive reinstall/update cycles.
-        if [ "${PLAYGROUND_CREDENTIALS_EXPLICIT:-false}" != "true" ]; then
-            prev_playground_app_id="${PLAYGROUND_APP_ID:-}"
-            prev_playground_app_secret="${PLAYGROUND_APP_SECRET:-}"
-            PLAYGROUND_APP_ID=""
-            PLAYGROUND_APP_SECRET=""
-
-            if command -v node >/dev/null 2>&1 && [ -n "${MONGO_DB:-}" ] && [ -n "${BASE_APP_DOMAIN_NAME:-}" ]; then
-                tmp_js="/tmp/ethora-playground-mongo.$$.js"
-                cat >"$tmp_js" <<'NODEJS'
-const { createRequire } = require('module');
-const requireFromCwd = createRequire(process.cwd() + '/');
-const mongoose = requireFromCwd('mongoose');
-const App = requireFromCwd('./src/models/apps');
-
-const mongoUri = process.argv[2] || '';
-const domainName = process.argv[3] || '';
-
-async function main() {
-  if (!mongoUri || !domainName) return;
-  await mongoose.connect(mongoUri);
-  const app = await App.findOne({ domainName }).lean();
-  if (!app) return;
-  const b64 = v => Buffer.from(String(v || ''), 'utf8').toString('base64');
-  const authSecret = app.tenantSecret || app.appSecret || '';
-  console.log(`ETHORA_PLAYGROUND_APP_ID_B64=${b64(app._id)}`);
-  console.log(`ETHORA_PLAYGROUND_APP_SECRET_B64=${b64(authSecret)}`);
-  await mongoose.disconnect();
-}
-main().catch(() => process.exit(0));
-NODEJS
-                MONGO_URI="mongodb://localhost:${MONGO_PORT}/${MONGO_DB}?directConnection=true"
-                node_out=""
-                node_out="$(run_as_deploy_user "cd \"$BACKEND_API_DIR\" && node \"$tmp_js\" \"${MONGO_URI}\" \"${BASE_APP_DOMAIN_NAME}\"" 2>/dev/null || true)"
-                rm -f "$tmp_js" 2>/dev/null || true
-                if [ -n "$node_out" ]; then
-                    id_b64=""
-                    secret_b64=""
-                    id_b64="$(echo "$node_out" | grep -m1 '^ETHORA_PLAYGROUND_APP_ID_B64=' | sed 's/^[^=]*=//')"
-                    secret_b64="$(echo "$node_out" | grep -m1 '^ETHORA_PLAYGROUND_APP_SECRET_B64=' | sed 's/^[^=]*=//')"
-                    if [ -n "$id_b64" ] && [ -n "$secret_b64" ] && command -v base64 >/dev/null 2>&1; then
-                        PLAYGROUND_APP_ID="$(echo "$id_b64" | base64 -d 2>/dev/null || true)"
-                        PLAYGROUND_APP_SECRET="$(echo "$secret_b64" | base64 -d 2>/dev/null || true)"
-                    fi
-                fi
-            fi
-
-            if { [ -z "${PLAYGROUND_APP_ID:-}" ] || [ -z "${PLAYGROUND_APP_SECRET:-}" ]; } && [ -f "$PLAYGROUND_DIR/.env.local" ]; then
-                PLAYGROUND_APP_ID="$(grep -m1 '^ETHORA_CHAT_APP_ID=' "$PLAYGROUND_DIR/.env.local" | cut -d= -f2-)"
-                PLAYGROUND_APP_SECRET="$(grep -m1 '^ETHORA_CHAT_APP_SECRET=' "$PLAYGROUND_DIR/.env.local" | cut -d= -f2-)"
-            fi
-
-            if [ -z "${PLAYGROUND_APP_ID:-}" ] || [ -z "${PLAYGROUND_APP_SECRET:-}" ]; then
-                PLAYGROUND_APP_ID="${prev_playground_app_id:-}"
-                PLAYGROUND_APP_SECRET="${prev_playground_app_secret:-}"
-            fi
-        fi
-
-        if [ -n "${PLAYGROUND_APP_ID:-}" ] && [ -n "${PLAYGROUND_APP_SECRET:-}" ]; then
-            # Persist to .deploy.env for future runs.
-            if [ -n "${DEPLOY_DIR:-}" ] && [ -f "$DEPLOY_DIR/.deploy.env" ]; then
-                tmp_env="$(mktemp)"
-                grep -v '^PLAYGROUND_APP_ID=' "$DEPLOY_DIR/.deploy.env" >"$tmp_env" 2>/dev/null || true
-                grep -v '^PLAYGROUND_APP_SECRET=' "$tmp_env" >"${tmp_env}.2" 2>/dev/null || true
-                mv "${tmp_env}.2" "$tmp_env"
-                echo "PLAYGROUND_APP_ID=$PLAYGROUND_APP_ID" >>"$tmp_env"
-                echo "PLAYGROUND_APP_SECRET=$PLAYGROUND_APP_SECRET" >>"$tmp_env"
-                mv "$tmp_env" "$DEPLOY_DIR/.deploy.env"
-            fi
-
-            # Ensure .env.local is written with correct values.
-            if [ "${API_DOMAIN}" == "localhost" ]; then
-                PLAYGROUND_CHAT_API_URL="http://localhost:${BACKEND_PORT}"
-                PLAYGROUND_BACKEND_URL="http://localhost:${PLAYGROUND_PORT:-3020}"
-            else
-                PLAYGROUND_CHAT_API_URL="https://${API_DOMAIN}"
-                if [ -n "${PLAYGROUND_DOMAIN:-}" ] && [ "${PLAYGROUND_DOMAIN:-}" != "null" ]; then
-                    PLAYGROUND_BACKEND_URL="https://${PLAYGROUND_DOMAIN}"
-                else
-                    PLAYGROUND_BACKEND_URL="https://${WEB_DOMAIN}"
-                fi
-            fi
-            cat > "$PLAYGROUND_DIR/.env.local" <<EOF
-ETHORA_CHAT_API_URL=${PLAYGROUND_CHAT_API_URL}
-NEXT_PUBLIC_ETHORA_CHAT_API_URL=${PLAYGROUND_CHAT_API_URL}
-ETHORA_CHAT_APP_ID=${PLAYGROUND_APP_ID}
-ETHORA_CHAT_APP_SECRET=${PLAYGROUND_APP_SECRET}
-NEXT_PUBLIC_BACKEND_URL=${PLAYGROUND_BACKEND_URL}
-EOF
-        fi
-
-        if [ -z "${PLAYGROUND_APP_ID:-}" ] || [ -z "${PLAYGROUND_APP_SECRET:-}" ]; then
-            warn "PLAYGROUND_APP_ID or PLAYGROUND_APP_SECRET is empty. SDK calls may fail until configured."
-        fi
 
         if [ "$PLAYGROUND_MODE" = "image" ] && [ "${API_DOMAIN}" != "localhost" ]; then
             log "SDK playground runs from image $ETHORA_PLAYGROUND_IMAGE (no host build; Next builds inside the container on first start)"
@@ -1697,6 +1602,11 @@ EOF
         fi
         fi  # PLAYGROUND_MODE
     fi
+else
+    # Off in deploy.yml, or no sandbox app configured: make sure a previously
+    # started playground does not linger.
+    run_as_deploy_user "pm2 delete sdk-playground 2>/dev/null || true"
+    image_down playground playground
 fi
 
 # Setup hosted MCP server (optional)

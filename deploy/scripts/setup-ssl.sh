@@ -311,7 +311,7 @@ if [ "$SSL_METHOD" == "certbot" ]; then
     # Domains to get certificates for
     # Production default uses nginx TLS for XMPP on 443 (xmpp.<domain>), so include XMPP_DOMAIN here too.
     DOMAINS=("$API_DOMAIN" "$WEB_DOMAIN" "$FILES_DOMAIN" "$XMPP_DOMAIN")
-    if [ -n "${PLAYGROUND_DOMAIN:-}" ] && [ "${PLAYGROUND_DOMAIN:-}" != "null" ]; then
+    if [ "${PLAYGROUND_ENABLED:-false}" == "true" ] && [ -n "${PLAYGROUND_DOMAIN:-}" ] && [ "${PLAYGROUND_DOMAIN:-}" != "null" ]; then
         DOMAINS+=("$PLAYGROUND_DOMAIN")
     fi
     if [ -n "${WIDGET_DOMAIN:-}" ] && [ "${WIDGET_DOMAIN:-}" != "null" ]; then
