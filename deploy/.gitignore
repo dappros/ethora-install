@@ -1,6 +1,11 @@
 # Sensitive configuration files
 config/deploy.yml
 .deploy.env
+# Its backups and in-flight rewrites carry the same secrets.
+.deploy.env.*
+
+# Per-install run state (hashes, migrations, the install/update lock)
+.deploy-state/
 
 # Log files
 *.log

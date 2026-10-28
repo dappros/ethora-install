@@ -346,6 +346,21 @@ without the flag, to drop the accumulated rooms; a long list made the agent
 miss new conversations after a restart once it passed ejabberd's
 `max_user_conferences`.
 
+**One install or update at a time.** `install.sh` and `update.sh` now refuse
+to start while another one runs on the same install (lock in
+`deploy/.deploy-state/deploy.lock`, the message names the running one). Two
+updates started from different SSH sessions used to race: both recreated the
+same containers (`Conflict. The container name ... is already in use`) and
+both rewrote `deploy/.deploy.env`, which could come out truncated, without
+secrets, data paths or `ROOT_DIR`. If `.deploy.env` looks much shorter than
+before after such a run, do not run `update.sh` again until it is restored:
+the next run would generate new secrets and point at the default data
+directories. Restore database passwords from the value the database was
+created with (an older `.deploy.env` backup), not from rendered service env
+files: those may already carry a regenerated one, and Postgres and MySQL keep
+the password of their first start. `.deploy.env` is now rewritten by rename,
+never in place.
+
 **AI agents: room cap while running.** A busy agent no longer piles up widget
 rooms between restarts: it silently leaves a widget room after
 `AI_BOT_ROOM_IDLE_SEC` (default 1800) without messages, never holds more than

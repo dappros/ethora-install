@@ -184,10 +184,11 @@ write_env_var() {
   local key="$1"
   local value="$2"
   local tmp
-  tmp="$(mktemp)"
+  tmp="$(mktemp "$ENV_FILE.tmp.XXXXXX")"
   grep -v -E "^(export[[:space:]]+)?${key}=" "$ENV_FILE" >"$tmp" 2>/dev/null || true
   echo "export ${key}=\"${value}\"" >>"$tmp"
-  mv "$tmp" "$ENV_FILE"
+  chown --reference="$ENV_FILE" "$tmp" 2>/dev/null || true
+  mv -f "$tmp" "$ENV_FILE"
   chmod 644 "$ENV_FILE" 2>/dev/null || true
 }
 

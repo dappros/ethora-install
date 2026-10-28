@@ -131,13 +131,13 @@ setup_uptime_basic_auth() {
         pass="$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-24)"
         if [ -f "$ENV_FILE" ]; then
             local tmp
-            tmp="$(mktemp)"
+            tmp="$(mktemp "$ENV_FILE.tmp.XXXXXX")"
             grep -v '^export UPTIME_AUTH_USER=' "$ENV_FILE" 2>/dev/null | grep -v '^export UPTIME_AUTH_PASSWORD=' > "$tmp" || true
             printf 'export UPTIME_AUTH_USER="%s"\n' "$user" >> "$tmp"
             printf 'export UPTIME_AUTH_PASSWORD="%s"\n' "$pass" >> "$tmp"
-            cat "$tmp" > "$ENV_FILE"
-            rm -f "$tmp"
-            chmod 600 "$ENV_FILE" 2>/dev/null || true
+            chmod 600 "$tmp" 2>/dev/null || true
+            chown --reference="$ENV_FILE" "$tmp" 2>/dev/null || true
+            mv -f "$tmp" "$ENV_FILE"
         fi
         log "Generated uptime basic-auth (user: $user). Retrieve password: grep UPTIME_AUTH_PASSWORD $ENV_FILE"
     fi

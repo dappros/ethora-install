@@ -58,13 +58,16 @@ force_update_env_var() {
     return 0
   fi
 
+  # Written next to the file and renamed over it: a reader never sees it
+  # truncated (a concurrent run used to read it mid-rewrite and write back a
+  # copy that had lost most keys).
   local tmp
-  tmp="$(mktemp)"
+  tmp="$(mktemp "$ENV_FILE.tmp.XXXXXX")"
   grep -v -E "^(export )?${key}=" "$ENV_FILE" > "$tmp" 2>/dev/null || true
   printf 'export %s="%s"\n' "$key" "$(escape_env_value "$value")" >> "$tmp"
-  cat "$tmp" > "$ENV_FILE"
-  rm -f "$tmp"
-  chmod 600 "$ENV_FILE" 2>/dev/null || true
+  chmod 600 "$tmp" 2>/dev/null || true
+  chown --reference="$ENV_FILE" "$tmp" 2>/dev/null || true
+  mv -f "$tmp" "$ENV_FILE"
   if [ -n "${SUDO_USER:-}" ] && [ "${EUID:-$(id -u)}" -eq 0 ] && [ "$SUDO_USER" != "root" ] && id "$SUDO_USER" >/dev/null 2>&1; then
     chown "$SUDO_USER":"$SUDO_USER" "$ENV_FILE" 2>/dev/null || chown "$SUDO_USER" "$ENV_FILE" 2>/dev/null || true
   fi
@@ -275,12 +278,12 @@ email_tld_allowlist="$(read_config '.services.backend.email_tld_allowlist // ""'
 update_env_var "EMAIL_TLD_VALIDATION" "$email_tld_validation"
 # Force-write the allowlist (incl. empty) so the .env always reflects deploy.yml.
 {
-    tmp_email_env="$(mktemp)"
+    tmp_email_env="$(mktemp "$ENV_FILE.tmp.XXXXXX")"
     grep -v "^export EMAIL_TLD_ALLOWLIST=" "$ENV_FILE" > "$tmp_email_env" 2>/dev/null || true
     printf 'export EMAIL_TLD_ALLOWLIST="%s"\n' "$(escape_env_value "$email_tld_allowlist")" >> "$tmp_email_env"
-    cat "$tmp_email_env" > "$ENV_FILE"
-    rm -f "$tmp_email_env"
-    chmod 600 "$ENV_FILE" 2>/dev/null || true
+    chmod 600 "$tmp_email_env" 2>/dev/null || true
+    chown --reference="$ENV_FILE" "$tmp_email_env" 2>/dev/null || true
+    mv -f "$tmp_email_env" "$ENV_FILE"
     if [ -n "${SUDO_USER:-}" ] && [ "${EUID:-$(id -u)}" -eq 0 ] && [ "$SUDO_USER" != "root" ] && id "$SUDO_USER" >/dev/null 2>&1; then
         chown "$SUDO_USER":"$SUDO_USER" "$ENV_FILE" 2>/dev/null || chown "$SUDO_USER" "$ENV_FILE" 2>/dev/null || true
     fi

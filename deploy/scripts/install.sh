@@ -2584,6 +2584,13 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
+# One install.sh / update.sh at a time (scripts/deploy-lock.sh).
+if [ -f "$SCRIPT_DIR/deploy-lock.sh" ]; then
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/deploy-lock.sh"
+    acquire_deploy_lock "$DEPLOY_DIR/.deploy-state" install.sh
+fi
+
 if [ "$RESET_DB" == "true" ]; then
     log "Reset mode enabled - will clean MongoDB and MySQL databases"
 fi

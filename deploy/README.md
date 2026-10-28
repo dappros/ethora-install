@@ -393,6 +393,14 @@ and `deploy/<cloud>/README.md`.
 Things `update.sh` does that are worth knowing when something looks slow
 or unexpected:
 
+- **One run at a time.** `install.sh` and `update.sh` take a lock
+  (`deploy/.deploy-state/deploy.lock`, holding the owner's PID) and a
+  second run exits with `Another install.sh or update.sh is already
+  running`, naming the first. Two runs at once raced on container
+  recreates and on `deploy/.deploy.env`, which could lose secrets, data
+  paths and `ROOT_DIR`. A lock left by a run that no longer exists (killed,
+  host rebooted) is taken over with a warning. `.deploy.env` is rewritten
+  by rename, so no script reads it half written.
 - **Self re-exec.** After checking out the requested ref it compares the
   running script with the checked-out copy and, if they differ, hands over
   to the new one with the same arguments. `--no-reexec` disables this.

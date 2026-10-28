@@ -164,6 +164,13 @@ need_cmd docker
 
 mkdir -p "$STATE_DIR"
 
+# One install.sh / update.sh at a time (scripts/deploy-lock.sh).
+if [ -f "$SCRIPT_DIR/deploy-lock.sh" ]; then
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/deploy-lock.sh"
+  acquire_deploy_lock "$STATE_DIR" update.sh
+fi
+
 if [ -f "$ENV_FILE" ]; then
   # shellcheck disable=SC1090
   source "$ENV_FILE" || true

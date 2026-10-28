@@ -72,7 +72,9 @@ persist_env_var() {
     fi
     local escaped="${value//\"/\\\"}"
     local tmp
-    tmp="$(mktemp 2>/dev/null || echo "$DEPLOY_DIR/.deploy.env.tmp.$$")"
+    # Next to the file, so the mv below is an atomic rename (from /tmp it can
+    # be a copy across filesystems that a concurrent reader sees half done).
+    tmp="$(mktemp "$ENV_FILE.tmp.XXXXXX" 2>/dev/null || echo "$ENV_FILE.tmp.$$")"
 
     # Preserve existing file contents (and comments), but replace any existing assignment.
     # Support both: KEY=... and export KEY=...
@@ -81,7 +83,9 @@ persist_env_var() {
     fi
     echo "export ${key}=\"${escaped}\"" >>"$tmp"
 
-    mv "$tmp" "$ENV_FILE"
+    chmod 600 "$tmp" 2>/dev/null || true
+    [ -f "$ENV_FILE" ] && chown --reference="$ENV_FILE" "$tmp" 2>/dev/null || true
+    mv -f "$tmp" "$ENV_FILE"
     chmod 600 "$ENV_FILE" 2>/dev/null || true
     if [ -n "${SUDO_USER:-}" ] && [ "${EUID:-$(id -u)}" -eq 0 ] && [ "$SUDO_USER" != "root" ] && id "$SUDO_USER" >/dev/null 2>&1; then
         chown "$SUDO_USER":"$SUDO_USER" "$ENV_FILE" 2>/dev/null || chown "$SUDO_USER" "$ENV_FILE" 2>/dev/null || true
