@@ -50,7 +50,11 @@ README, "Enterprise modules") add a sixth host, `widget.chat.example.com`,
 routed to `widget:8080`; the other modules need `playground.` to
 `playground:3020`, `mcp.` to `mcp:3030`, `uptime.` to `uptime:8099` behind a
 basic-auth middleware, and `api.<root>/push/` to `push:8098` with the
-prefix stripped.
+prefix stripped. The `calls` module (LiveKit and coturn) publishes host
+ports, which a Dokploy template cannot declare, so it is not part of the
+template (Way 2); with Way 1 it runs as in the bundle, with
+`livekit.<root>` routed to `livekit:7880` and the media ports opened in the
+host firewall (the bundle's README, "Enterprise modules").
 
 ## Way 1: Compose service from git (supported)
 

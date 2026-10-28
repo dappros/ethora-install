@@ -18,7 +18,7 @@ XMPP_IMAGE="$(sed -n 's/^ETHORA_XMPP_IMAGE=//p' "$BUNDLE/.env.example")"
 
 echo "# bundle is in sync with the installer"
 for t in backend.env.template frontend.env.template centrifugo-config.json.template ai-service.env.template docs-parse.env.template widget.env.template \
-         push.env.template mcp.env.template uptime.env.template uptime-config.yml.template; do
+         push.env.template mcp.env.template uptime.env.template uptime-config.yml.template livekit.yaml.template coturn.conf.template; do
   cmp -s "$BUNDLE/templates/$t" "$DEPLOY/templates/$t" && ok "templates/$t identical to deploy/templates" \
     || fail "templates/$t differs from deploy/templates/$t" "cp deploy/templates/$t deploy/compose/templates/"
 done
@@ -83,7 +83,7 @@ for m in c["mounts"]:
     assert m["content"] == open(bundle + m["filePath"]).read(), m["filePath"]
 env = dict(l.split("=", 1) for l in c["env"])
 example = [l.split("=", 1)[0] for l in open(bundle + "/.env.example") if re.match(r"^[A-Z0-9_]+=", l)]
-skipped = {"API_DOMAIN", "WEB_DOMAIN", "XMPP_DOMAIN", "FILES_DOMAIN", "SECURE_FILES_DOMAIN", "WIDGET_DOMAIN", "PLAYGROUND_DOMAIN", "MCP_DOMAIN", "UPTIME_DOMAIN", "ACME_EMAIL", "CADDY_GLOBAL_OPTIONS", "HTTP_PORT", "HTTPS_PORT",
+skipped = {"API_DOMAIN", "WEB_DOMAIN", "XMPP_DOMAIN", "FILES_DOMAIN", "SECURE_FILES_DOMAIN", "WIDGET_DOMAIN", "PLAYGROUND_DOMAIN", "MCP_DOMAIN", "UPTIME_DOMAIN", "TURN_DOMAIN", "LIVEKIT_DOMAIN", "ACME_EMAIL", "CADDY_GLOBAL_OPTIONS", "HTTP_PORT", "HTTPS_PORT",
            "PUBLIC_URL", "ETHORA_COMPOSE_INIT_IMAGE"}  # hosts routed by Traefik; the dev form renders with the xmpp image
 assert [k for k in example if k not in skipped] == list(env), list(env)
 assert env["COMPOSE_PROFILES"] == "" and env["ROOT_DOMAIN"] == "${root_domain}"
@@ -165,6 +165,18 @@ rm -f "$E"
 cfg --public-url https://chat.example.com --admin-email a@b.co --modules mcp --yes && fail "mcp on one origin refused" || ok "playground/mcp/uptime refused on a one-origin install"
 cfg --public-url https://chat.example.com --admin-email a@b.co --modules ai,push --yes && ok "ai and push allowed on one origin" || fail "ai,push on one origin" "$(cat "$T/err")"
 rm -f "$E"
+cfg --public-url https://chat.example.com --admin-email a@b.co --modules calls --yes && fail "calls on one origin refused" || { grep -q 'calls module needs a host of its own' "$T/err" && ok "calls refused on a one-origin install (needs a host of its own)" || fail "calls on one origin message" "$(cat "$T/err")"; }
+cfg --domain chat.example.com --admin-email ops@example.com --modules calls --yes
+[ "$(envval COMPOSE_PROFILES "$E")" = "caddy,calls" ] && ok "--modules calls adds the profile" || fail "--modules calls" "$(envval COMPOSE_PROFILES "$E")"
+grep -qE '^LIVEKIT_API_KEY=API[A-Za-z0-9]{16}$' "$E" && ok "LiveKit API key generated (API + 16)" || fail "LIVEKIT_API_KEY" "$(grep '^LIVEKIT_API_KEY' "$E")"
+for k in LIVEKIT_API_SECRET TURN_SECRET; do v="$(envval "$k" "$E")"; [ ${#v} -ge 48 ] || fail "$k generated"; done; ok "LiveKit secret and TURN secret generated"
+grep -q 'calls: wss://livekit.chat.example.com and turn.chat.example.com:3478' "$T/out" && grep -q '3478 udp+tcp, 49160-49200/udp, 7881/tcp, 50000-50100/udp' "$T/out" && ok "report names the calls hosts and the ports to open" || fail "calls in the report" "$(grep calls "$T/out")"
+cp "$E" "$T/calls.env"; cfg --display-name Acme --yes
+[ "$(envval TURN_SECRET "$E")" = "$(envval TURN_SECRET "$T/calls.env")" ] && [ "$(envval LIVEKIT_API_KEY "$E")" = "$(envval LIVEKIT_API_KEY "$T/calls.env")" ] && [ "$(envval COMPOSE_PROFILES "$E")" = "caddy,calls" ] \
+  && ok "re-run keeps the calls module and its secrets" || fail "calls re-run"
+cfg --modules ai,calls --yes
+[ "$(envval COMPOSE_PROFILES "$E")" = "caddy,ai,calls" ] && ok "calls alongside another module" || fail "ai,calls" "$(envval COMPOSE_PROFILES "$E")"
+rm -f "$E"
 
 echo "# configure.sh: registry"
 SB="$T/stub"; mkdir -p "$SB"; SL="$T/stub.log"
@@ -213,6 +225,8 @@ rcf --modules none; rc=$?
 [ "$rc" = 0 ] && [ ! -s "$SL" ] && ok "no modules: no registry step" || fail "no modules" "rc=$rc $(cat "$SL" 2>/dev/null)"
 rcf --modules push --no-registry-check; rc=$?
 [ "$rc" = 0 ] && [ ! -s "$SL" ] && ok "--no-registry-check skips it" || fail "--no-registry-check" "rc=$rc"
+rcf STUB_CURL_BODY="$REGBODY" --modules calls --license-key ETHORA1.abc.def; rc=$?
+[ "$rc" = 0 ] && ! grep -q '^docker login\|^curl\|^docker manifest' "$SL" && ok "calls alone: public images, no registry login or check" || fail "calls alone, registry" "rc=$rc $(cat "$SL" 2>/dev/null)"
 rcf --registry-token x --modules push && fail "--registry-token without --registry-user refused" || ok "--registry-token without --registry-user refused"
 rm -f "$E"
 
@@ -299,8 +313,10 @@ else
   # Secrets left out are generated once into the secrets volume and reused.
   R3="$T/r3"; mkdir -p "$R3"
   rcfg "$R3" ROOT_DOMAIN=chat.example.com ADMIN_EMAIL=ops@example.com >"$T/out3" 2>&1 && ok "renders with only ROOT_DOMAIN and ADMIN_EMAIL" || fail "minimal render" "$(cat "$T/out3")"
-  [ "$(grep -c '=' "$R3/secrets/secrets.env")" = "24" ] && [ "$(stat -c %a "$R3/secrets/secrets.env")" = "600" ] \
-    && ok "24 secrets generated into the secrets volume (600)" || fail "generated secrets" "$(cut -d= -f1 "$R3/secrets/secrets.env" | tr '\n' ' ')"
+  [ "$(grep -c '=' "$R3/secrets/secrets.env")" = "27" ] && [ "$(stat -c %a "$R3/secrets/secrets.env")" = "600" ] \
+    && ok "27 secrets generated into the secrets volume (600)" || fail "generated secrets" "$(cut -d= -f1 "$R3/secrets/secrets.env" | tr '\n' ' ')"
+  grep -qE '^LIVEKIT_API_KEY=API[A-Za-z0-9]{16}$' "$R3/secrets/secrets.env" && [ "$(sed -n 's/^LIVEKIT_API_SECRET=//p;s/^TURN_SECRET=//p' "$R3/secrets/secrets.env" | awk '{ if (length($0) != 48) bad = 1 } END { print bad + 0 }')" = 0 ] \
+    && ok "LiveKit key pair and TURN secret generated at the first start" || fail "calls secrets" "$(grep -E 'LIVEKIT|TURN' "$R3/secrets/secrets.env" | cut -c1-12)"
   grep -qE '^WIDGET_SCRIPT_VERSION=[0-9]{4}$' "$R3/secrets/secrets.env" && ok "widget script version fixed at the first start (YYMM)" || fail "WIDGET_SCRIPT_VERSION" "$(grep WIDGET "$R3/secrets/secrets.env")"
   pw="$(sed -n 's/^ADMIN_PASSWORD=//p' "$R3/secrets/secrets.env")"
   grep -q "admin password (generated, shown once): $pw" "$T/out3" && ok "generated admin password printed" || fail "admin password printed"
@@ -345,7 +361,7 @@ else
     ETHORA_MINIO_HOST=s3.internal ETHORA_MINIO_PORT=9900 ETHORA_CENTRIFUGO_URL=http://rt.internal:8000 \
     ETHORA_XMPP_URL=http://x.internal:5280 ETHORA_API_URL=http://a.internal:8080 \
     ETHORA_MYSQL_DATABASE=ejdb ETHORA_FRONTEND_URL=http://web.internal:8081 ETHORA_WIDGET_URL=http://wg.internal:8082 \
-    ETHORA_MCP_URL=http://m.internal:3031 ETHORA_PLAYGROUND_URL=http://pg.internal:3021 >/dev/null 2>&1
+    ETHORA_MCP_URL=http://m.internal:3031 ETHORA_PLAYGROUND_URL=http://pg.internal:3021 ETHORA_LIVEKIT_URL=http://lk.internal:7880 >/dev/null 2>&1
   be9="$R9/config/api/backend.env"; ej9="$R9/config/xmpp/ejabberd.yml"
   for kv in 'MONGO_URI=mongodb://u:p@db.internal:27017/ethora?tls=true' 'CHAT_DATABASE=mongodb://db.internal/chat_archive' REDIS_HOST=cache.internal REDIS_PORT=6380 \
             MAM_MYSQL_HOST=sql.internal MAM_MYSQL_PORT=3307 MAM_MYSQL_USER=ejabberd MINIO_HOST=s3.internal MINIO_PORT=9900 \
@@ -457,10 +473,54 @@ else
   RM3="$T/rm3"; mkdir -p "$RM3"
   rcfg "$RM3" PUBLIC_URL=https://chat.example.com ADMIN_EMAIL=ops@example.com COMPOSE_PROFILES=push >/dev/null 2>&1 && grep -q 'handle /push/\* {' "$RM3/config/caddy/Caddyfile" \
     && grep -qxF 'PUSH_ENABLED=true' "$RM3/config/api/backend.env" && ok "push on one origin: /push/ routed" || fail "push on one origin"
+  # calls module (LiveKit and coturn): off by default, on with the profile.
+  ! grep -qE '^(WEBRTC_PUBLIC_URL|CALLS_P2P_ENABLED|TURN_[A-Z_]+)=' "$be" && grep -qxF 'WEBRTC_HOST=' "$be" && grep -qxF 'WEBRTC_API_KEY=' "$be" \
+    && grep -qxF 'VITE_VIDEO_CALLS_ENABLED=false' "$fe" && grep -qxF 'VITE_LIVEKIT_URL=' "$fe" && ! grep -qE '^(turn|livekit)\.' "$R/config/caddy/Caddyfile" \
+    && [ ! -f "$R/config/livekit/livekit.yaml" ] && [ ! -f "$R/config/coturn/turnserver.conf" ] \
+    && ok "calls off: no call settings in backend.env (CALLS_P2P_ENABLED unset), calls flag false, no hosts, no config files" || fail "calls module off" "$(grep -nE 'WEBRTC|TURN|CALLS' "$be")"
+  RC="$T/rc"; mkdir -p "$RC"
+  rcfg "$RC" "${renv[@]}" COMPOSE_PROFILES=caddy,calls LIVEKIT_API_KEY=APIkey123 LIVEKIT_API_SECRET=lksecret TURN_SECRET=turnsecret >"$T/outc" 2>&1 \
+    && ok "renders with the calls profile" || fail "calls render" "$(cat "$T/outc")"
+  bec="$RC/config/api/backend.env"; lk="$RC/config/livekit/livekit.yaml"; tc="$RC/config/coturn/turnserver.conf"
+  for kv in WEBRTC_HOST=http://livekit:7880 WEBRTC_PUBLIC_URL=wss://livekit.chat.example.com WEBRTC_API_KEY=APIkey123 WEBRTC_API_SECRET=lksecret CALLS_P2P_ENABLED=true \
+            'TURN_URLS=turn:turn.chat.example.com:3478?transport=udp,turn:turn.chat.example.com:3478?transport=tcp' 'TURN_STUN_URLS=stun:turn.chat.example.com:3478' \
+            TURN_SECRET=turnsecret TURN_CREDENTIAL_TTL_SECONDS=86400 ETHORA_MODULES=calls; do
+    grep -qxF "$kv" "$bec" && ok "calls, backend.env: ${kv%%=*}" || fail "calls, backend.env: $kv" "$(grep "^${kv%%=*}=" "$bec")"
+  done
+  dups="$(grep -oE '^(WEBRTC_[A-Z_]+|CALLS_P2P_ENABLED|TURN_[A-Z_]+|ETHORA_MODULES)=' "$bec" | sort | uniq -d | tr '\n' ' ')"
+  [ -z "$dups" ] && ok "calls, backend.env: each key once" || fail "calls, backend.env: duplicate keys" "$dups"
+  grep -qxF 'VITE_VIDEO_CALLS_ENABLED=true' "$RC/config/frontend/frontend.env" && grep -qxF 'VITE_LIVEKIT_URL=wss://livekit.chat.example.com' "$RC/config/frontend/frontend.env" \
+    && ok "calls, frontend.env: calls switch and LiveKit URL" || fail "calls, frontend.env" "$(grep -E 'VIDEO_CALLS|LIVEKIT' "$RC/config/frontend/frontend.env")"
+  for kv in 'port: 7880' '  tcp_port: 7881' '  port_range_start: 50000' '  port_range_end: 50100' '  use_external_ip: true' '  # node_ip: not set' '  "APIkey123": "lksecret"' \
+            '  api_key: "APIkey123"' '    - http://api:8080/v1/chats/call/webhook'; do
+    grep -qxF "$kv" "$lk" && ok "calls, livekit.yaml: ${kv# }" || fail "calls, livekit.yaml: $kv" "$(cat "$lk")"
+  done
+  for kv in listening-port=3478 realm=chat.example.com server-name=turn.chat.example.com lt-cred-mech use-auth-secret static-auth-secret=turnsecret '# external-ip: not set' \
+            min-port=49160 max-port=49200 fingerprint no-cli no-tls denied-peer-ip=10.0.0.0-10.255.255.255 denied-peer-ip=172.16.0.0-172.31.255.255 \
+            denied-peer-ip=192.168.0.0-192.168.255.255 denied-peer-ip=127.0.0.0-127.255.255.255 denied-peer-ip=169.254.0.0-169.254.255.255 denied-peer-ip=::1; do
+    grep -qxF "$kv" "$tc" && ok "calls, turnserver.conf: $kv" || fail "calls, turnserver.conf: $kv" "$(grep -v '^#' "$tc" | head -20)"
+  done
+  ! grep -nE '\{\{|_PLACEHOLDER' "$lk" "$tc" >/dev/null && ok "calls config files have no unrendered placeholders" || fail "calls files: unrendered placeholders"
+  [ "$(stat -c %a "$RC/config/livekit")" = 700 ] && [ "$(stat -c %a "$lk")" = 600 ] && [ "$(stat -c %a "$RC/config/coturn")" = 700 ] && [ "$(stat -c %a "$tc")" = 600 ] \
+    && ok "calls, rendered modes (secrets 600 in 700 dirs)" || fail "calls modes"
+  cfc="$RC/config/caddy/Caddyfile"
+  grep -q '^livekit.chat.example.com {$' "$cfc" && grep -q '^	import livekit$' "$cfc" && grep -q 'reverse_proxy livekit:7880' "$cfc" && ! grep -q '^turn\.' "$cfc" \
+    && ok "calls, Caddyfile: livekit host proxied, turn host left to DNS only" || fail "calls Caddyfile" "$(grep -n -E 'livekit|turn' "$cfc")"
+  RC2="$T/rc2"; mkdir -p "$RC2"
+  rcfg "$RC2" "${renv[@]}" COMPOSE_PROFILES=calls LIVEKIT_API_KEY=k LIVEKIT_API_SECRET=s TURN_SECRET=t TURN_EXTERNAL_IP=203.0.113.7 LIVEKIT_NODE_IP=203.0.113.8 \
+    TURN_DOMAIN=t.example.com LIVEKIT_DOMAIN=lk.example.com VIDEO_CALLS_ENABLED=false >/dev/null 2>&1
+  grep -qxF 'external-ip=203.0.113.7' "$RC2/config/coturn/turnserver.conf" && grep -qxF '  use_external_ip: false' "$RC2/config/livekit/livekit.yaml" && grep -qxF '  node_ip: 203.0.113.8' "$RC2/config/livekit/livekit.yaml" \
+    && ok "calls: TURN_EXTERNAL_IP and LIVEKIT_NODE_IP reach the configs" || fail "calls external IPs" "$(grep -E 'external|node_ip' "$RC2/config/coturn/turnserver.conf" "$RC2/config/livekit/livekit.yaml")"
+  grep -qxF 'WEBRTC_PUBLIC_URL=wss://lk.example.com' "$RC2/config/api/backend.env" && grep -qxF 'TURN_STUN_URLS=stun:t.example.com:3478' "$RC2/config/api/backend.env" \
+    && grep -q '^lk.example.com {$' "$RC2/config/caddy/Caddyfile" && grep -qxF 'server-name=t.example.com' "$RC2/config/coturn/turnserver.conf" \
+    && ok "calls: TURN_DOMAIN and LIVEKIT_DOMAIN override the hosts" || fail "calls host overrides"
+  grep -qxF 'VITE_VIDEO_CALLS_ENABLED=false' "$RC2/config/frontend/frontend.env" && ok "calls: VIDEO_CALLS_ENABLED=false in .env wins" || fail "VIDEO_CALLS_ENABLED override"
+  rcfg "$T/rc3" PUBLIC_URL=https://chat.example.com ADMIN_EMAIL=ops@example.com COMPOSE_PROFILES=calls >"$T/outc3" 2>&1 && fail "calls on one origin refused by the renderer" \
+    || { grep -q 'hosts of their own' "$T/outc3" && ok "calls on one origin refused by the renderer"; }
   proxies() { grep -o 'reverse_proxy [^ ]*' "$1" | sort -u | tr '\n' ' '; }
-  [ "$(proxies "$R/config/caddy/Caddyfile")" = "reverse_proxy api:8080 reverse_proxy centrifugo:8000 reverse_proxy frontend:8080 reverse_proxy mcp:3030 reverse_proxy minio:9000 reverse_proxy playground:3020 reverse_proxy widget:8080 reverse_proxy xmpp:5280 " ] \
+  [ "$(proxies "$R/config/caddy/Caddyfile")" = "reverse_proxy api:8080 reverse_proxy centrifugo:8000 reverse_proxy frontend:8080 reverse_proxy livekit:7880 reverse_proxy mcp:3030 reverse_proxy minio:9000 reverse_proxy playground:3020 reverse_proxy widget:8080 reverse_proxy xmpp:5280 " ] \
     && ok "Caddyfile upstreams default to the compose services" || fail "default Caddyfile upstreams" "$(proxies "$R/config/caddy/Caddyfile")"
-  [ "$(proxies "$R9/config/caddy/Caddyfile")" = "reverse_proxy a.internal:8080 reverse_proxy m.internal:3031 reverse_proxy pg.internal:3021 reverse_proxy rt.internal:8000 reverse_proxy s3.internal:9900 reverse_proxy web.internal:8081 reverse_proxy wg.internal:8082 reverse_proxy x.internal:5280 " ] \
+  [ "$(proxies "$R9/config/caddy/Caddyfile")" = "reverse_proxy a.internal:8080 reverse_proxy lk.internal:7880 reverse_proxy m.internal:3031 reverse_proxy pg.internal:3021 reverse_proxy rt.internal:8000 reverse_proxy s3.internal:9900 reverse_proxy web.internal:8081 reverse_proxy wg.internal:8082 reverse_proxy x.internal:5280 " ] \
     && ok "endpoint override, Caddyfile upstreams follow the internal URLs" || fail "Caddyfile upstream overrides" "$(proxies "$R9/config/caddy/Caddyfile")"
   # A host that is not compose (the Cloudron package): its own site address
   # behind a TLS-terminating proxy, and an extra site of its own.
@@ -550,7 +610,11 @@ if have_docker; then
   svcs="$(cd "$B2" && COMPOSE_PROFILES=caddy,push,playground,mcp,uptime docker compose config --services 2>/dev/null | sort | tr '\n' ' ')"
   for sv in push push-worker playground mcp uptime-db uptime; do case " $svcs " in *" $sv "*) ;; *) fail "module profiles start $sv" ;; esac; done; ok "push, playground, mcp and uptime profiles add their services"
   (cd "$B2" && COMPOSE_PROFILES=caddy,ai,push,playground,mcp,uptime docker compose config 2>/dev/null) | grep -cE '^\s+published: ' | grep -qx 3 && ok "module profiles publish no port" || fail "module ports"
-  (cd "$B2" && docker compose config --images 2>/dev/null) | grep -qE 'ethora-(push|playground|mcp|uptime)' && fail "a module image is referenced without its profile" || ok "no module image without its profile"
+  (cd "$B2" && docker compose config --images 2>/dev/null) | grep -qE 'ethora-(push|playground|mcp|uptime)|coturn|livekit' && fail "a module image is referenced without its profile" || ok "no module image without its profile"
+  (cd "$B2" && COMPOSE_PROFILES=caddy,calls docker compose config --quiet) 2>"$T/err" && ok "docker compose config with the calls profile" || fail "docker compose config (calls)" "$(cat "$T/err")"
+  (cd "$B2" && COMPOSE_PROFILES=caddy,calls docker compose config --services 2>/dev/null) | grep -cxE 'coturn|livekit' | grep -qx 2 && ok "calls profile adds coturn and livekit" || fail "calls profile services"
+  (cd "$B2" && COMPOSE_PROFILES=caddy,calls docker compose config 2>/dev/null) > "$T/calls.yml"
+  [ "$(grep -cE '^\s+published: ' "$T/calls.yml")" = "148" ] && grep -qE '^\s+target: 7881$' "$T/calls.yml" && ok "calls publishes 3478 (udp, tcp), 49160-49200/udp, 7881/tcp and 50000-50100/udp besides caddy's ports" || fail "calls published ports" "$(grep -cE '^\s+published: ' "$T/calls.yml")"
   (cd "$B2" && COMPOSE_PROFILES=caddy,ai docker compose config 2>/dev/null) | grep -cE '^\s+published: ' | grep -qx 3 && ok "ai profile publishes no port" || fail "ai profile ports"
   S="$T/single"; mkdir -p "$S"; cp "$BUNDLE/single/docker-compose.yml" "$S/"
   printf 'ROOT_DOMAIN=chat.example.com\nADMIN_EMAIL=ops@example.com\n' > "$S/.env"
@@ -559,7 +623,7 @@ if have_docker; then
   (cd "$S" && rm .env && ROOT_DOMAIN=chat.example.com ADMIN_EMAIL=ops@example.com docker compose config 2>/dev/null) | grep -q 'ADMIN_EMAIL: ops@example.com' \
     && ok "single file takes the settings from the environment too (no .env)" || fail "single file without .env"
   if docker image inspect caddy:2.10-alpine >/dev/null 2>&1 || docker pull -q caddy:2.10-alpine >/dev/null 2>&1; then
-    for r in r r6 r7 r9 r10 ra ra2 ra3 rm rm3; do
+    for r in r r6 r7 r9 r10 ra ra2 ra3 rm rm3 rc rc2; do
       [ -f "$T/$r/config/caddy/Caddyfile" ] || { skip "Caddyfile $r (not rendered)"; continue; }
       # UPTIME_AUTH_HASH is what the caddy service computes at start.
       docker run --rm -e UPTIME_AUTH_HASH='$2a$14$R7YCCVuwXR.7QaaaaaaaaOaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' -v "$T/$r/config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.10-alpine \

@@ -22,6 +22,9 @@ domains:
                                               # "mcp.<root-of-web>" when services.mcp.enabled = true
                                               # and this is left blank/unset (same rule as widget).
   uptime: uptime.messenger-dev.example.com    # Optional Uptime domain
+  # turn: turn.chat.example.com               # Optional. STUN/TURN host for peer-to-peer
+                                              # calls (services.coturn). Defaults to
+                                              # "turn.<root-of-web>" when left blank/unset.
 
 # Optional legacy host compatibility during domain migration.
 # Useful when canonical production moves from *.example.com to *.chat.example.com.
@@ -221,6 +224,17 @@ services:
     # - "ethora": reference checks for the shared ethora.com platform API
     public_enabled: true
     ethora_enabled: false
+  # STUN/TURN relay for peer-to-peer 1:1 calls (features.calls_p2p), run as a
+  # container next to the stack (coturn). Off by default. Callers reach it
+  # directly and nothing proxies it: open 3478/udp, 3478/tcp and 49160-49200/udp
+  # in the firewall and the cloud security group, and give domains.turn (or
+  # turn.<root-of-web>) a DNS record. The API mints the callers' credentials
+  # from a secret the installer generates (integrations.turn.secret overrides it).
+  coturn:
+    enabled: false
+    # This server's public IP address, the one the relay hands out. Needed when
+    # the host is behind NAT (cloud VMs); blank = looked up at container start.
+    external_ip: ""
   # Observability stack for load testing (Prometheus + Grafana + cAdvisor +
   # node-exporter). OFF by default — it adds host overhead and is only useful on
   # QA/load boxes. When true, update.sh brings the stack up automatically, and
@@ -354,6 +368,11 @@ features:
   # a browser with insertable streams; unsupported clients fall back to a plain
   # call.
   video_calls: false
+  # Peer-to-peer 1:1 calls: the two browsers connect directly (their own
+  # WebRTC) with STUN/TURN from services.coturn or integrations.turn; group
+  # calls stay on LiveKit. Needs video_calls on and a relay configured,
+  # otherwise 1:1 calls stay on LiveKit too (the deploy warns). Off by default.
+  calls_p2p: false
   # Pushes about emoji reactions to a user's messages. false = the push
   # service drops them (chat message pushes are not affected). On by default.
   reaction_pushes: true
@@ -486,6 +505,15 @@ integrations:
     url: ""          # e.g. https://livekit.example.com
     api_key: ""
     api_secret: ""
+
+  # STUN/TURN for peer-to-peer calls (features.calls_p2p). With
+  # services.coturn.enabled the installer fills these in itself (URLs from
+  # domains.turn, a generated secret); set them for a TURN server of your own.
+  turn:
+    urls: ""                       # comma separated, e.g. turn:turn.example.com:3478?transport=udp,turn:turn.example.com:3478?transport=tcp
+    stun_urls: ""                  # optional, comma separated stun: URLs
+    secret: ""                     # coturn static-auth-secret (TURN REST API credentials)
+    credential_ttl_seconds: 86400  # lifetime of the credentials the API hands to callers
 
   # Stripe (optional)
   stripe:

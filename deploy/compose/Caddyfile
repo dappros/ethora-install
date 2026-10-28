@@ -105,6 +105,15 @@
 	reverse_proxy {$UPSTREAM_MCP}
 }
 
+# LiveKit signalling (calls module): the client's WebSocket (wss) and the HTTP
+# API on one port; WebSocket upgrades pass through the proxy. Media (7881/tcp
+# and the UDP ranges) and the TURN server (3478) are published on the host by
+# their own services and never go through this proxy.
+(livekit) {
+	import security_headers
+	reverse_proxy {$UPSTREAM_LIVEKIT}
+}
+
 # The uptime dashboard's site block is generated (render-config.sh): its
 # basic_auth line carries the bcrypt hash the caddy service computes from
 # the rendered password at start.

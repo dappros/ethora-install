@@ -107,6 +107,13 @@ services:
       PLAYGROUND_DOMAIN: ${PLAYGROUND_DOMAIN:-}
       MCP_DOMAIN: ${MCP_DOMAIN:-}
       UPTIME_DOMAIN: ${UPTIME_DOMAIN:-}
+      TURN_DOMAIN: ${TURN_DOMAIN:-}
+      LIVEKIT_DOMAIN: ${LIVEKIT_DOMAIN:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      TURN_SECRET: ${TURN_SECRET:-}
+      TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP:-}
+      LIVEKIT_NODE_IP: ${LIVEKIT_NODE_IP:-}
       MCP_ENABLE_DANGEROUS_TOOLS: ${MCP_ENABLE_DANGEROUS_TOOLS:-true}
       UPTIME_AUTH_USER: ${UPTIME_AUTH_USER:-admin}
     volumes:
@@ -583,6 +590,63 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+    <<: *logging
+
+  # ----------------------------------------------------- calls module (calls) --
+  # Profile `calls`: real-time calls. Peer-to-peer calls (1:1 chats) use coturn
+  # for STUN/TURN with the API's short-lived credentials (TURN REST API, the
+  # shared TURN_SECRET); group calls use LiveKit (SFU), whose signalling is
+  # proxied at livekit.<root> and whose webhook goes to the API. Neither
+  # service's media ports go through caddy: they are published on the host
+  # (open them in the firewall, see README.md). turn.<root> needs a DNS record
+  # but no proxy site. TLS for TURN (5349) is not enabled.
+  coturn:
+    image: ${COTURN_IMAGE:-docker.io/coturn/coturn:4.18.0}
+    profiles: ["calls"]
+    # The image's own entrypoint is skipped to choose the external address:
+    # TURN_EXTERNAL_IP when set (rendered into the config), else the one the
+    # image's detect-external-ip finds.
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        conf=/ethora/config/coturn/turnserver.conf
+        set -- -c "$$conf"
+        if ! grep -q '^external-ip=' "$$conf"; then
+          ip="$$(detect-external-ip 2>/dev/null || true)"
+          [ -z "$$ip" ] || set -- "$$@" "--external-ip=$$ip"
+        fi
+        exec turnserver "$$@"
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "49160-49200:49160-49200/udp"
+    volumes:
+      - config:/ethora/config:ro
+    depends_on:
+      config:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    <<: *logging
+
+  livekit:
+    image: ${LIVEKIT_IMAGE:-docker.io/livekit/livekit-server:v1.13.10}
+    profiles: ["calls"]
+    command: ["--config", "/ethora/config/livekit/livekit.yaml"]
+    ports:
+      - "7881:7881/tcp"
+      - "50000-50100:50000-50100/udp"
+    volumes:
+      - config:/ethora/config:ro
+    depends_on:
+      config:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:7880/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     <<: *logging
 
   # ----------------------------------------------------------------- caddy --

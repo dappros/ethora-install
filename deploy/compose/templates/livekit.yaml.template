@@ -1,0 +1,28 @@
+# LiveKit server config (compose bundle, calls module): group calls (SFU).
+# Rendered by the config service on every 'docker compose up'. Edit .env, not
+# this file. Signalling (7880) sits behind the proxy at livekit.<root>; the
+# media ports below are published on the host and are not proxied.
+
+port: 7880
+logging:
+  level: info
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  # true: the public address is found with STUN. LIVEKIT_NODE_IP in .env sets
+  # it explicitly instead (then this is false).
+  use_external_ip: {{LIVEKIT_USE_EXTERNAL_IP}}
+  {{LIVEKIT_NODE_IP_LINE}}
+
+# The API issues call tokens and talks to RoomService with this pair.
+keys:
+  "{{LIVEKIT_API_KEY}}": "{{LIVEKIT_API_SECRET}}"
+
+# Room and participant events go to the API (POST /v1/chats/call/webhook),
+# signed with the same pair.
+webhook:
+  api_key: "{{LIVEKIT_API_KEY}}"
+  urls:
+    - {{LIVEKIT_WEBHOOK_URL}}

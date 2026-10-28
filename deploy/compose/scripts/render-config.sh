@@ -20,14 +20,16 @@
 #   /out/config/widget/widget.env          <- templates/widget.env.template
 #   /out/config/widget/Caddyfile           the static server of the widget bundle
 #   /out/config/ai-postgres/password       the bundled Postgres' password
-# and likewise for the push, playground, mcp and uptime modules (profiles of the
-# same names, or PUSH_ENABLED / PLAYGROUND_ENABLED / MCP_ENABLED / UPTIME_ENABLED):
+# and likewise for the push, playground, mcp, uptime and calls modules (profiles of the
+# same names, or PUSH_ENABLED / PLAYGROUND_ENABLED / MCP_ENABLED / UPTIME_ENABLED / CALLS_ENABLED):
 #   /out/config/push/push.env              <- templates/push.env.template
 #   /out/config/playground/playground.env  the SDK playground's public URLs and its sandbox app
 #   /out/config/mcp/mcp.env                <- templates/mcp.env.template
 #   /out/config/uptime/uptime.env, uptime.yml, auth-password
 #                                          <- templates/uptime.env.template, uptime-config.yml.template
 #   /out/config/uptime-db/password         the uptime Postgres' password
+#   /out/config/livekit/livekit.yaml       <- templates/livekit.yaml.template
+#   /out/config/coturn/turnserver.conf     <- templates/coturn.conf.template
 # (init.sh adds /out/config/base-app/credentials.env, the base app's API
 # credentials the uptime module signs in with.)
 #
@@ -69,16 +71,17 @@
 #                                                http://widget:8080
 #   ETHORA_AI_POSTGRES_HOST, ETHORA_AI_POSTGRES_PORT   the bundled pgvector Postgres
 #                                                (ai-postgres, 5432) unless AI_PG_URL is set
-#   ETHORA_PUSH_URL, ETHORA_PLAYGROUND_URL, ETHORA_MCP_URL, ETHORA_UPTIME_URL
-#                                                http://push:8098, http://playground:3020,
-#                                                http://mcp:3030, http://uptime:8099
+#   ETHORA_PUSH_URL, ETHORA_PLAYGROUND_URL, ETHORA_MCP_URL, ETHORA_UPTIME_URL,
+#   ETHORA_LIVEKIT_URL                           http://push:8098, http://playground:3020,
+#                                                http://mcp:3030, http://uptime:8099,
+#                                                http://livekit:7880
 #   ETHORA_UPTIME_POSTGRES_HOST, ETHORA_UPTIME_POSTGRES_PORT   uptime-db, 5432
 # and, for a host that is not compose (the Cloudron package):
 #   ETHORA_SITE_ADDRESS    the one-origin site's Caddy address, e.g. :3000
 #                          behind a proxy that terminates TLS itself
 #   ETHORA_EXTRA_SITES     more Caddy site blocks, appended as they are
 #   API_UID, XMPP_UID, CENTRIFUGO_UID, MYSQL_UID, MINIO_UID, FRONTEND_UID,
-#   AI_UID, AI_POSTGRES_UID, MODULE_UID, UPTIME_POSTGRES_UID
+#   AI_UID, AI_POSTGRES_UID, MODULE_UID, UPTIME_POSTGRES_UID, COTURN_UID
 #                          owners of the rendered files (the images' users)
 #
 # Differences from the host installer, all because the services talk over the
@@ -111,6 +114,7 @@ AI_UID="${AI_UID:-1000}"            # ethora-ai: node
 AI_POSTGRES_UID="${AI_POSTGRES_UID:-999}"   # pgvector/pgvector: postgres
 MODULE_UID="${MODULE_UID:-1000}"            # ethora-push, ethora-playground, ethora-mcp: node
 UPTIME_POSTGRES_UID="${UPTIME_POSTGRES_UID:-70}"   # postgres:alpine: postgres
+COTURN_UID="${COTURN_UID:-65534}"           # coturn/coturn: nobody
 
 log() { echo "[config] $*"; }
 die() { echo "[config] ERROR: $*" >&2; exit 1; }
@@ -170,6 +174,11 @@ secret WIDGET_SCRIPT_VERSION yymm
 secret B2B_PUSH_SECRET 32
 secret UPTIME_POSTGRES_PASSWORD 32
 secret UPTIME_AUTH_PASSWORD 24
+# The calls module's: the LiveKit key pair (also the webhook signing pair) and
+# the TURN REST API secret shared by the API and coturn.
+secret LIVEKIT_API_KEY 16 API
+secret LIVEKIT_API_SECRET 48
+secret TURN_SECRET 48
 [ -z "$missing" ] || die "missing:$missing (set them in .env, or mount the secrets volume at $SECRETS_DIR so they are generated)"
 [ -z "$generated" ] || log "generated and stored in the secrets volume:$generated"
 case " $generated " in
@@ -246,6 +255,7 @@ ETHORA_PUSH_URL="${ETHORA_PUSH_URL:-http://push:8098}"
 ETHORA_PLAYGROUND_URL="${ETHORA_PLAYGROUND_URL:-http://playground:3020}"
 ETHORA_MCP_URL="${ETHORA_MCP_URL:-http://mcp:3030}"
 ETHORA_UPTIME_URL="${ETHORA_UPTIME_URL:-http://uptime:8099}"
+ETHORA_LIVEKIT_URL="${ETHORA_LIVEKIT_URL:-http://livekit:7880}"
 export REDIS_PORT="${ETHORA_REDIS_PORT:-6379}"
 export MYSQL_PORT="${ETHORA_MYSQL_PORT:-3306}"
 MINIO_PORT="${ETHORA_MINIO_PORT:-9000}"
@@ -269,12 +279,13 @@ def PUSH_ENABLED "$(flag_of push)"
 def PLAYGROUND_ENABLED "$(flag_of playground)"
 def MCP_ENABLED "$(flag_of mcp)"
 def UPTIME_ENABLED "$(flag_of uptime)"
+def CALLS_ENABLED "$(flag_of calls)"
 AI_MODULE="$AI_SERVICE_ENABLED"; PUSH_MODULE="$PUSH_ENABLED"; PLAYGROUND_MODULE="$PLAYGROUND_ENABLED"
-MCP_MODULE="$MCP_ENABLED"; UPTIME_MODULE="$UPTIME_ENABLED"
+MCP_MODULE="$MCP_ENABLED"; UPTIME_MODULE="$UPTIME_ENABLED"; CALLS_MODULE="$CALLS_ENABLED"
 # For the admin panel's module cards (backend.env ETHORA_MODULES and the
 # internal URLs of the modules the API has no other address for).
 ETHORA_MODULES=""
-for _m in ai:$AI_MODULE push:$PUSH_MODULE playground:$PLAYGROUND_MODULE mcp:$MCP_MODULE uptime:$UPTIME_MODULE; do
+for _m in ai:$AI_MODULE push:$PUSH_MODULE playground:$PLAYGROUND_MODULE mcp:$MCP_MODULE uptime:$UPTIME_MODULE calls:$CALLS_MODULE; do
   [ "${_m#*:}" != true ] || ETHORA_MODULES="$ETHORA_MODULES${ETHORA_MODULES:+,}${_m%%:*}"
 done
 export ETHORA_MODULES
@@ -282,8 +293,8 @@ export MCP_INTERNAL_URL=""; [ "$MCP_MODULE" != true ] || MCP_INTERNAL_URL="${ETH
 export PLAYGROUND_INTERNAL_URL=""; [ "$PLAYGROUND_MODULE" != true ] || PLAYGROUND_INTERNAL_URL="${ETHORA_PLAYGROUND_URL:-http://playground:3020}"
 export UPTIME_INTERNAL_URL=""; [ "$UPTIME_MODULE" != true ] || UPTIME_INTERNAL_URL="${ETHORA_UPTIME_URL:-http://uptime:8099}"
 export TRANSLATE_URL="${TRANSLATE_URL:-}"
-if [ -n "$PUBLIC_URL" ] && { [ "$PLAYGROUND_MODULE" = true ] || [ "$MCP_MODULE" = true ] || [ "$UPTIME_MODULE" = true ]; }; then
-  die "the playground, mcp and uptime modules need hosts of their own (ROOT_DOMAIN), not a one-origin install (PUBLIC_URL)"
+if [ -n "$PUBLIC_URL" ] && { [ "$PLAYGROUND_MODULE" = true ] || [ "$MCP_MODULE" = true ] || [ "$UPTIME_MODULE" = true ] || [ "$CALLS_MODULE" = true ]; }; then
+  die "the playground, mcp, uptime and calls modules need hosts of their own (ROOT_DOMAIN), not a one-origin install (PUBLIC_URL)"
 fi
 def MCP_ENABLE_DANGEROUS_TOOLS true
 def MCP_OPENAI_APPS_CHALLENGE ""
@@ -333,7 +344,7 @@ def HUBSPOT_ENABLED false
 def HUBSPOT_REGION na1
 def IMMUTABLE_LOGS_ENABLED false
 def ETHORA_LICENSE_CALL_HOME true
-def VIDEO_CALLS_ENABLED false
+def VIDEO_CALLS_ENABLED "$CALLS_MODULE"
 def E2EE_ENABLED false
 def DISABLE_FIREBASE false
 def DISABLE_GA true
@@ -408,7 +419,7 @@ export WIDGET_XMPP_CONFERENCE="conference.$XMPP_DOMAIN" WIDGET_QR_URL="$web_url/
 export AI_SERVICE_XMPP_SERVICE_PLACEHOLDER="XMPP_SERVICE=ws://$(hostport_of "$ETHORA_XMPP_URL")/ws"
 export PLATFORM_API_URL="$ETHORA_API_URL"
 
-# Hosts of the playground, mcp and uptime modules (five-host layout only).
+# Hosts of the playground, mcp, uptime and calls modules (five-host layout only).
 module_host() { # module_host VAR default-prefix on|off
   eval "v=\${$1:-}"
   if [ "$3" != true ]; then v=""; else
@@ -419,8 +430,31 @@ module_host() { # module_host VAR default-prefix on|off
 module_host PLAYGROUND_DOMAIN playground "$PLAYGROUND_MODULE"
 module_host MCP_DOMAIN mcp "$MCP_MODULE"
 module_host UPTIME_DOMAIN uptime "$UPTIME_MODULE"
+module_host TURN_DOMAIN turn "$CALLS_MODULE"
+module_host LIVEKIT_DOMAIN livekit "$CALLS_MODULE"
 playground_url="${PLAYGROUND_DOMAIN:+https://$PLAYGROUND_DOMAIN}"
 uptime_url="${UPTIME_DOMAIN:+https://$UPTIME_DOMAIN}"
+# Calls module: LiveKit (group calls) and coturn (peer-to-peer calls). The API
+# reaches LiveKit over the compose network and hands clients the public URL;
+# WEBRTC_HOST / WEBRTC_API_KEY / WEBRTC_API_SECRET are lines of backend.env.template,
+# the rest is appended to backend.env below. The key pair is LiveKit's and also
+# signs its webhooks to the API.
+if [ "$CALLS_MODULE" = true ]; then
+  export WEBRTC_HOST="$ETHORA_LIVEKIT_URL" WEBRTC_API_KEY="$LIVEKIT_API_KEY" WEBRTC_API_SECRET="$LIVEKIT_API_SECRET"
+  WEBRTC_PUBLIC_URL="wss://$LIVEKIT_DOMAIN"
+  # The web app's LiveKit address (the calls switch itself is VIDEO_CALLS_ENABLED).
+  def LIVEKIT_URL "$WEBRTC_PUBLIC_URL"
+  export TURN_REALM="$ROOT_DOMAIN"
+  TURN_URLS="turn:$TURN_DOMAIN:3478?transport=udp,turn:$TURN_DOMAIN:3478?transport=tcp"
+  TURN_STUN_URLS="stun:$TURN_DOMAIN:3478"
+  # The renderer's template lines: a set address is used as given, an unset one
+  # leaves a comment (coturn looks its address up at start, LiveKit asks STUN).
+  export TURN_EXTERNAL_IP_LINE="# external-ip: not set"
+  [ -z "${TURN_EXTERNAL_IP:-}" ] || TURN_EXTERNAL_IP_LINE="external-ip=$TURN_EXTERNAL_IP"
+  export LIVEKIT_USE_EXTERNAL_IP=true LIVEKIT_NODE_IP_LINE="# node_ip: not set"
+  if [ -n "${LIVEKIT_NODE_IP:-}" ]; then LIVEKIT_USE_EXTERNAL_IP=false; LIVEKIT_NODE_IP_LINE="node_ip: $LIVEKIT_NODE_IP"; fi
+  export LIVEKIT_WEBHOOK_URL="$ETHORA_API_URL/v1/chats/call/webhook"
+fi
 # Hosted MCP server: its public URL for the web app's "AI assistants" page,
 # and the API's OAuth authorization server (issuer = the API's public URL),
 # with the login and sign-up rate limits the host installer raises for it.
@@ -520,10 +554,20 @@ push_internal_url=""; [ "$PUSH_MODULE" != true ] || push_internal_url="$ETHORA_P
   echo "PUSH_INTERNAL_URL=$push_internal_url"
   echo "UPTIME_AUTH_USER=$UPTIME_AUTH_USER"
   echo "UPTIME_AUTH_PASSWORD=$UPTIME_AUTH_PASSWORD"
+  if [ "$CALLS_MODULE" = true ]; then
+    echo "# Calls module: LiveKit for group calls (WEBRTC_HOST, WEBRTC_API_KEY and WEBRTC_API_SECRET are above)"
+    echo "# and coturn for peer-to-peer calls. Absent without the module."
+    echo "WEBRTC_PUBLIC_URL=$WEBRTC_PUBLIC_URL"
+    echo "CALLS_P2P_ENABLED=true"
+    echo "TURN_URLS=$TURN_URLS"
+    echo "TURN_STUN_URLS=$TURN_STUN_URLS"
+    echo "TURN_SECRET=$TURN_SECRET"
+    echo "TURN_CREDENTIAL_TTL_SECONDS=86400"
+  fi
 } > "$stage/api/backend.env.tmp" && mv "$stage/api/backend.env.tmp" "$stage/api/backend.env"
 
-# push, playground, mcp and uptime modules.
-mkdir -p "$stage/push" "$stage/playground" "$stage/mcp" "$stage/uptime" "$stage/uptime-db"
+# push, playground, mcp, uptime and calls modules.
+mkdir -p "$stage/push" "$stage/playground" "$stage/mcp" "$stage/uptime" "$stage/uptime-db" "$stage/livekit" "$stage/coturn"
 if [ "$PUSH_MODULE" = true ]; then
   [ -f "$TEMPLATES/push.env.template" ] || die "template not found: $TEMPLATES/push.env.template (push module)"
   export PUSH_UPLOADS_DIR=/app/push/uploads
@@ -573,6 +617,14 @@ if [ "$UPTIME_MODULE" = true ]; then
          -e "s|host.docker.internal:$MCP_PORT|$(hostport_of "$ETHORA_MCP_URL")|g" "$stage/uptime/uptime.yml"
   printf '%s' "$UPTIME_AUTH_PASSWORD" > "$stage/uptime/auth-password"
   printf '%s' "$UPTIME_POSTGRES_PASSWORD" > "$stage/uptime-db/password"
+fi
+
+if [ "$CALLS_MODULE" = true ]; then
+  for t in livekit.yaml.template coturn.conf.template; do
+    [ -f "$TEMPLATES/$t" ] || die "template not found: $TEMPLATES/$t (calls module)"
+  done
+  render "$TEMPLATES/livekit.yaml.template" "$stage/livekit/livekit.yaml"
+  render "$TEMPLATES/coturn.conf.template" "$stage/coturn/turnserver.conf"
 fi
 
 # ai module: ai-service.env, docs-parse.env, widget.env, the bundled
@@ -740,6 +792,9 @@ if [ -z "$PUBLIC_URL" ]; then
   if [ -n "$MCP_DOMAIN" ]; then
     ETHORA_SITES="$ETHORA_SITES$(printf '\n%s {\n\timport mcp\n}' "$MCP_DOMAIN")"
   fi
+  if [ -n "$LIVEKIT_DOMAIN" ]; then
+    ETHORA_SITES="$ETHORA_SITES$(printf '\n%s {\n\timport livekit\n}' "$LIVEKIT_DOMAIN")"
+  fi
   if [ -n "$UPTIME_DOMAIN" ]; then
     # The bcrypt hash is computed by the caddy service at start from
     # uptime/auth-password and arrives as its environment variable.
@@ -761,6 +816,7 @@ export UPSTREAM_API="$(hostport_of "$ETHORA_API_URL")"
 export UPSTREAM_WIDGET="$(hostport_of "$ETHORA_WIDGET_URL")"
 export UPSTREAM_PLAYGROUND="$(hostport_of "$ETHORA_PLAYGROUND_URL")"
 export UPSTREAM_MCP="$(hostport_of "$ETHORA_MCP_URL")"
+export UPSTREAM_LIVEKIT="$(hostport_of "$ETHORA_LIVEKIT_URL")"
 # Mobile apps reach the push service at api.<root>/push/ (the one-origin
 # install's /push/ too); nothing is routed without the module.
 ETHORA_PUSH_ROUTE=""
@@ -804,9 +860,9 @@ cp "$SCRIPTS_SRC"/*.sh "$SCRIPTS_SRC"/*.js "$stage/scripts/"
 # Hand each directory to the one container user that reads it; secrets stay
 # unreadable to the others. Then swap the whole tree in.
 chmod 700 "$stage/api" "$stage/frontend" "$stage/centrifugo" "$stage/xmpp" "$stage/mysql" "$stage/minio" "$stage/ai" "$stage/ai-postgres" \
-  "$stage/push" "$stage/playground" "$stage/mcp" "$stage/uptime" "$stage/uptime-db"
+  "$stage/push" "$stage/playground" "$stage/mcp" "$stage/uptime" "$stage/uptime-db" "$stage/livekit" "$stage/coturn"
 chmod 600 "$stage"/api/* "$stage"/frontend/* "$stage"/centrifugo/* "$stage"/xmpp/* "$stage"/mysql/* "$stage"/minio/*
-for f in "$stage"/ai/* "$stage"/ai-postgres/* "$stage"/push/* "$stage"/playground/* "$stage"/mcp/* "$stage"/uptime/* "$stage"/uptime-db/*; do [ -f "$f" ] && chmod 600 "$f"; done
+for f in "$stage"/ai/* "$stage"/ai-postgres/* "$stage"/push/* "$stage"/playground/* "$stage"/mcp/* "$stage"/uptime/* "$stage"/uptime-db/* "$stage"/livekit/* "$stage"/coturn/*; do [ -f "$f" ] && chmod 600 "$f"; done
 # Neither secret nor per-service: readable by every container (the widget's
 # env names public URLs only).
 chmod 755 "$stage/caddy" "$stage/scripts" "$stage/widget"
@@ -830,13 +886,15 @@ own "$MODULE_UID:$MODULE_UID" "$stage/playground"
 own "$MODULE_UID:$MODULE_UID" "$stage/mcp"
 own 0:0 "$stage/uptime"                    # the uptime image and caddy run as root
 own "$UPTIME_POSTGRES_UID:$UPTIME_POSTGRES_UID" "$stage/uptime-db"
+own 0:0 "$stage/livekit"                   # livekit-server runs as root
+own "$COTURN_UID:$COTURN_UID" "$stage/coturn"
 mkdir -p "$OUT"
 # base-app/ is written by init.sh (the API image's user) after the first
 # boot and kept across renders: created here once, owned by that user.
 if [ ! -d "$OUT/base-app" ]; then
   mkdir -p "$OUT/base-app" && chmod 700 "$OUT/base-app" && own "$API_UID:$API_UID" "$OUT/base-app"
 fi
-for d in api frontend centrifugo xmpp mysql minio caddy scripts ai ai-postgres widget push playground mcp uptime uptime-db; do
+for d in api frontend centrifugo xmpp mysql minio caddy scripts ai ai-postgres widget push playground mcp uptime uptime-db livekit coturn; do
   rm -rf "$OUT/$d.new"
   cp -a "$stage/$d" "$OUT/$d.new"
   rm -rf "$OUT/$d"
@@ -859,4 +917,5 @@ fi
 [ "$PLAYGROUND_MODULE" != true ] || log "playground module on: $playground_url"
 [ "$MCP_MODULE" != true ] || log "mcp module on: $MCP_PUBLIC_URL (OAuth issuer $OAUTH_ISSUER)"
 [ "$UPTIME_MODULE" != true ] || log "uptime module on: $uptime_url (user $UPTIME_AUTH_USER), postgres ${UPTIME_DATABASE_URL#*@}"
+[ "$CALLS_MODULE" != true ] || log "calls module on: livekit $WEBRTC_PUBLIC_URL, turn $TURN_DOMAIN:3478 (media ports 7881/tcp, 50000-50100/udp, 49160-49200/udp; not proxied)"
 

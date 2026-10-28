@@ -684,6 +684,12 @@ replace_template() {
     replace_literal "{{WEBRTC_HOST}}" "${WEBRTC_HOST:-}"
     replace_literal "{{WEBRTC_API_KEY}}" "${WEBRTC_API_KEY:-}"
     replace_literal "{{WEBRTC_API_SECRET}}" "${WEBRTC_API_SECRET:-}"
+    # coturn.conf.template (the bundled TURN relay); the API's own TURN lines
+    # are appended to its .env after the render, see "Peer-to-peer calls" below.
+    replace_literal "{{TURN_REALM}}" "${TURN_REALM:-}"
+    replace_literal "{{TURN_DOMAIN}}" "${TURN_DOMAIN:-}"
+    replace_literal "{{TURN_SECRET}}" "${TURN_SECRET:-}"
+    replace_literal "{{TURN_EXTERNAL_IP_LINE}}" "${TURN_EXTERNAL_IP_LINE:-# external-ip: not set}"
     # Immutable audit logs: gated on features.immutable_logs. Everything is
     # rendered empty when the flag is off so no service can reach S3.
     replace_literal "{{IMMUTABLE_LOGS_ENABLED}}" "${IMMUTABLE_LOGS_ENABLED:-false}"
@@ -1087,6 +1093,17 @@ if command -v yq >/dev/null 2>&1 && [ -f "$CONFIG_FILE" ]; then
     # don't accidentally re-enable AI for customers whose contract excludes it.
     export AI_FEATURE_ENABLED="$(yq eval '.features.ai_service // "false"' "$CONFIG_FILE" 2>/dev/null || echo "false")"
     export VIDEO_CALLS_ENABLED="$(yq eval '.features.video_calls // "false"' "$CONFIG_FILE" 2>/dev/null || echo "false")"
+    # Peer-to-peer calls (features.calls_p2p): STUN/TURN from the bundled coturn
+    # (services.coturn) or a TURN server of the operator's (integrations.turn).
+    # The effective values are worked out further down, once the hosts are known.
+    export CALLS_P2P_REQUESTED="$(yq eval '.features.calls_p2p // "false"' "$CONFIG_FILE" 2>/dev/null || echo "false")"
+    export COTURN_ENABLED="$(yq eval '.services.coturn.enabled // "false"' "$CONFIG_FILE" 2>/dev/null || echo "false")"
+    export COTURN_EXTERNAL_IP="$(yq eval '.services.coturn.external_ip // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
+    TURN_DOMAIN_CONFIG="$(yq eval '.domains.turn // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
+    TURN_URLS_CONFIG="$(yq eval '.integrations.turn.urls // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
+    TURN_STUN_URLS_CONFIG="$(yq eval '.integrations.turn.stun_urls // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
+    TURN_SECRET_CONFIG="$(yq eval '.integrations.turn.secret // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
+    export TURN_CREDENTIAL_TTL_SECONDS="$(yq eval '.integrations.turn.credential_ttl_seconds // 86400' "$CONFIG_FILE" 2>/dev/null || echo "86400")"
     export REACTION_PUSHES_ENABLED="$(yq eval '.features.reaction_pushes // "true"' "$CONFIG_FILE" 2>/dev/null || echo "true")"
     # End-to-end encryption (OMEMO 2) in the chat client. Frontend-only
     # switch: the server holds no keys either way.
@@ -1417,6 +1434,64 @@ ensure_encryption_secret CRYPTOPAIR_SECRET passphrase
 ensure_encryption_secret SECRET_FOR_DB_ENCRYPTION keyiv
 ensure_encryption_secret SECRET_FOR_FILES_ENCRYPTION keyiv
 
+# Peer-to-peer calls: the STUN/TURN settings behind the API's ICE server list.
+# The bundled coturn (services.coturn) gets turn.<root-of-web> unless
+# domains.turn is set, turn:/stun: URLs on 3478 and a secret generated once and
+# kept in .deploy.env; integrations.turn.* override each of them (a TURN server
+# of your own). CALLS_P2P_ENABLED is true only when features.calls_p2p and
+# features.video_calls are on and a relay is configured.
+TURN_DOMAIN="${TURN_DOMAIN_CONFIG:-}"
+[ "$TURN_DOMAIN" == "null" ] && TURN_DOMAIN=""
+if [ -z "$TURN_DOMAIN" ] && [ "${COTURN_ENABLED:-false}" == "true" ]; then
+    if [ -z "${WEB_DOMAIN:-}" ] || [ "${WEB_DOMAIN:-}" == "localhost" ]; then
+        TURN_DOMAIN="localhost"
+    elif [[ "$WEB_DOMAIN" == *.* ]]; then
+        TURN_DOMAIN="turn.$(echo "$WEB_DOMAIN" | sed 's|^[^.]*\.||')"
+    else
+        TURN_DOMAIN="$WEB_DOMAIN"
+    fi
+fi
+export TURN_DOMAIN
+[ "${COTURN_EXTERNAL_IP:-}" == "null" ] && COTURN_EXTERNAL_IP=""
+export COTURN_EXTERNAL_IP
+TURN_URLS="${TURN_URLS_CONFIG:-}"; [ "$TURN_URLS" == "null" ] && TURN_URLS=""
+TURN_STUN_URLS="${TURN_STUN_URLS_CONFIG:-}"; [ "$TURN_STUN_URLS" == "null" ] && TURN_STUN_URLS=""
+if [ "${COTURN_ENABLED:-false}" == "true" ]; then
+    [ -n "$TURN_URLS" ] || TURN_URLS="turn:${TURN_DOMAIN}:3478?transport=udp,turn:${TURN_DOMAIN}:3478?transport=tcp"
+    [ -n "$TURN_STUN_URLS" ] || TURN_STUN_URLS="stun:${TURN_DOMAIN}:3478"
+fi
+export TURN_URLS TURN_STUN_URLS
+if [ -n "${TURN_SECRET_CONFIG:-}" ] && [ "${TURN_SECRET_CONFIG:-}" != "null" ]; then
+    export TURN_SECRET="$TURN_SECRET_CONFIG"
+elif [ "${COTURN_ENABLED:-false}" == "true" ]; then
+    if [ -z "${TURN_SECRET:-}" ] || [ "${TURN_SECRET:-}" == "null" ]; then
+        export TURN_SECRET="$(openssl rand -hex 32)"
+    fi
+else
+    export TURN_SECRET=""
+fi
+case "${TURN_CREDENTIAL_TTL_SECONDS:-}" in
+    ''|null|*[!0-9]*) export TURN_CREDENTIAL_TTL_SECONDS="86400" ;;
+esac
+export CALLS_P2P_ENABLED="false"
+if [ "${CALLS_P2P_REQUESTED:-false}" == "true" ]; then
+    if [ "${VIDEO_CALLS_ENABLED:-false}" != "true" ]; then
+        warn "features.calls_p2p is true but features.video_calls is false: calls are off, so peer-to-peer calls stay off too"
+    elif [ -z "$TURN_URLS" ] || [ -z "${TURN_SECRET:-}" ]; then
+        warn "features.calls_p2p is true but no TURN relay is configured (services.coturn.enabled, or integrations.turn.urls and secret): 1:1 calls stay on LiveKit"
+    else
+        export CALLS_P2P_ENABLED="true"
+    fi
+fi
+persist_env_var "COTURN_ENABLED" "${COTURN_ENABLED:-false}"
+persist_env_var "COTURN_EXTERNAL_IP" "${COTURN_EXTERNAL_IP:-}"
+persist_env_var "TURN_DOMAIN" "$TURN_DOMAIN"
+persist_env_var "CALLS_P2P_ENABLED" "$CALLS_P2P_ENABLED"
+persist_env_var "TURN_URLS" "$TURN_URLS"
+persist_env_var "TURN_STUN_URLS" "$TURN_STUN_URLS"
+persist_env_var "TURN_SECRET" "${TURN_SECRET:-}"
+persist_env_var "TURN_CREDENTIAL_TTL_SECONDS" "$TURN_CREDENTIAL_TTL_SECONDS"
+
 # Generate backend .env
 replace_template \
     "$DEPLOY_DIR/templates/backend.env.template" \
@@ -1426,6 +1501,20 @@ replace_template \
 # override it through env_file, so drop them.
 if [ "${BACKEND_MODE:-source}" = "image" ]; then
     sed -i '/^ETHORA_BUILD_\(VERSION\|COMMIT\|TIME\|BRANCH\)=/d' "$BACKEND_API_DIR/.env"
+fi
+# Peer-to-peer calls: appended rather than templated, so the API sees the
+# switch and the relay only when they are on (absent = off), the same shape
+# as the compose bundle's backend.env.
+if [ "${CALLS_P2P_ENABLED:-false}" == "true" ]; then
+    {
+        echo ""
+        echo "# Peer-to-peer 1:1 calls (features.calls_p2p): STUN/TURN from services.coturn or integrations.turn."
+        echo "CALLS_P2P_ENABLED=true"
+        echo "TURN_URLS=${TURN_URLS}"
+        echo "TURN_STUN_URLS=${TURN_STUN_URLS}"
+        echo "TURN_SECRET=${TURN_SECRET}"
+        echo "TURN_CREDENTIAL_TTL_SECONDS=${TURN_CREDENTIAL_TTL_SECONDS}"
+    } >> "$BACKEND_API_DIR/.env"
 fi
 
 # Generate centrifugo container config (mounted by docker-compose.enterprise.yml).
@@ -1491,6 +1580,27 @@ if [ "${UPTIME_ENABLED:-false}" == "true" ]; then
     replace_template \
         "$DEPLOY_DIR/templates/uptime-config.yml.template" \
         "$DEPLOY_DIR/generated/uptime/uptime.yml"
+fi
+
+# coturn config for the bundled STUN/TURN relay (docker-compose.coturn.yml).
+# Read inside the container by coturn's own user (nobody, uid 65534); the file
+# holds the shared secret, so it is theirs and mode 600 when chown is possible.
+if [ "${COTURN_ENABLED:-false}" == "true" ]; then
+    export TURN_REALM="${TURN_DOMAIN#turn.}"
+    if [ -n "${COTURN_EXTERNAL_IP:-}" ]; then
+        export TURN_EXTERNAL_IP_LINE="external-ip=${COTURN_EXTERNAL_IP}"
+    else
+        export TURN_EXTERNAL_IP_LINE="# external-ip: not set, looked up at start"
+    fi
+    mkdir -p "$DEPLOY_DIR/generated/coturn" 2>/dev/null || true
+    replace_template \
+        "$DEPLOY_DIR/templates/coturn.conf.template" \
+        "$DEPLOY_DIR/generated/coturn/turnserver.conf"
+    if chown 65534:65534 "$DEPLOY_DIR/generated/coturn/turnserver.conf" 2>/dev/null; then
+        chmod 600 "$DEPLOY_DIR/generated/coturn/turnserver.conf" 2>/dev/null || true
+    else
+        chmod 644 "$DEPLOY_DIR/generated/coturn/turnserver.conf" 2>/dev/null || true
+    fi
 fi
 
 # Generate the immutable audit logs env (S3 export job).

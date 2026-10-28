@@ -34,6 +34,9 @@ ai_postgres_password = "${password:32}"
 b2b_push_secret = "${password:32}"
 uptime_postgres_password = "${password:32}"
 uptime_auth_password = "${password:24}"
+livekit_api_key = "API${password:16}"
+livekit_api_secret = "${password:48}"
+turn_secret = "${password:48}"
 # At-rest encryption: a passphrase for wallet keys, and "<64 hex>:<32 hex>" AES key and IV pairs.
 cryptopair_secret = "${password:48}"
 secret_for_db_encryption = "${hash:64}:${hash:32}"
@@ -47,7 +50,8 @@ secret_for_files_encryption = "${hash:64}:${hash:32}"
 # routed by Traefik like the five below: widget.<root> to widget:8080,
 # playground.<root> to playground:3020, mcp.<root> to mcp:3030, uptime.<root>
 # to uptime:8099 behind a basic-auth middleware, and api.<root>/push/ to
-# push:8098 with the prefix stripped). ADMIN_EMAIL
+# push:8098 with the prefix stripped; the calls module is not part of this
+# template, since it publishes host ports, which Dokploy templates cannot). ADMIN_EMAIL
 # is the admin login; ADMIN_PASSWORD its initial password. MYSQL_ROOT_PASSWORD
 # and MINIO_ROOT_* are written into the databases on the first start and must
 # not change after it.
@@ -81,6 +85,9 @@ env = [
   "B2B_PUSH_SECRET=${b2b_push_secret}",
   "UPTIME_POSTGRES_PASSWORD=${uptime_postgres_password}",
   "UPTIME_AUTH_PASSWORD=${uptime_auth_password}",
+  "LIVEKIT_API_KEY=${livekit_api_key}",
+  "LIVEKIT_API_SECRET=${livekit_api_secret}",
+  "TURN_SECRET=${turn_secret}",
   "AI_API_URL=https://api.openai.com/v1",
   "AI_API_KEY=",
   "AI_CHAT_MODEL=gpt-5.6-luna",
@@ -94,6 +101,8 @@ env = [
   "PLAYGROUND_APP_SECRET=",
   "MCP_ENABLE_DANGEROUS_TOOLS=true",
   "UPTIME_AUTH_USER=admin",
+  "TURN_EXTERNAL_IP=",
+  "LIVEKIT_NODE_IP=",
   "ETHORA_API_IMAGE=docker.io/dappros/ethora-api:2610",
   "ETHORA_FRONTEND_IMAGE=docker.io/dappros/ethora-frontend:2610",
   "ETHORA_XMPP_IMAGE=docker.io/dappros/ethora-xmpp:2610",

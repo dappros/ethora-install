@@ -1,0 +1,37 @@
+# coturn (optional): STUN/TURN relay for peer-to-peer calls, started by
+# install.sh / update.sh when services.coturn.enabled is true in deploy.yml.
+# Config: deploy/generated/coturn/turnserver.conf (rendered by setup-env.sh).
+# Its ports are public on purpose: callers reach the relay directly and nothing
+# proxies them, so open 3478/udp, 3478/tcp and 49160-49200/udp in the firewall
+# and the cloud security group. Joins the main stack's network like uptime.
+services:
+  coturn:
+    image: ${COTURN_IMAGE:-docker.io/coturn/coturn:4.18.0}
+    container_name: coturn
+    restart: always
+    # The image's own entrypoint is skipped to choose the external address:
+    # services.coturn.external_ip when set (rendered into the config), else
+    # the one the image's detect-external-ip finds at start.
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        conf=/ethora/config/coturn/turnserver.conf
+        set -- -c "$$conf"
+        if ! grep -q '^external-ip=' "$$conf"; then
+          ip="$$(detect-external-ip 2>/dev/null || true)"
+          [ -z "$$ip" ] || set -- "$$@" "--external-ip=$$ip"
+        fi
+        exec turnserver "$$@"
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "49160-49200:49160-49200/udp"
+    volumes:
+      - ./generated/coturn/turnserver.conf:/ethora/config/coturn/turnserver.conf:ro
+    networks:
+      - ethora-network
+
+networks:
+  ethora-network:
+    external: true
+    name: ${COMPOSE_PROJECT_NAME:-deploy}_ethora-network

@@ -1580,6 +1580,27 @@ if [ "${UPTIME_ENABLED:-false}" == "true" ] && [ -f "$RUNTIME_DEPLOY_DIR/docker-
   compose -f "$RUNTIME_DEPLOY_DIR/docker-compose.uptime.yml" up -d --force-recreate uptime
 fi
 
+# coturn (STUN/TURN for peer-to-peer calls): up when services.coturn.enabled,
+# recreated when its rendered config changed (a bind-mounted file, which
+# compose does not notice), removed when it was switched off.
+if [ -f "$RUNTIME_DEPLOY_DIR/docker-compose.coturn.yml" ]; then
+  if [ "${COTURN_ENABLED:-false}" == "true" ]; then
+    coturn_stamp="$STATE_DIR/coturn-config.sha256"
+    coturn_hash="$(sha256sum "$RUNTIME_DEPLOY_DIR/generated/coturn/turnserver.conf" 2>/dev/null | awk '{print $1}')"
+    if [ -n "$coturn_hash" ] && [ "$(cat "$coturn_stamp" 2>/dev/null || echo '')" != "$coturn_hash" ]; then
+      log "Starting/refreshing coturn (config changed)..."
+      compose -f "$RUNTIME_DEPLOY_DIR/docker-compose.coturn.yml" up -d --force-recreate
+      echo "$coturn_hash" >"$coturn_stamp" 2>/dev/null || true
+    else
+      log "Starting/refreshing coturn..."
+      compose -f "$RUNTIME_DEPLOY_DIR/docker-compose.coturn.yml" up -d
+    fi
+  elif [ -n "$(docker ps -aq --filter "name=^coturn$" 2>/dev/null)" ]; then
+    log "coturn is off in deploy.yml; removing its container..."
+    compose -f "$RUNTIME_DEPLOY_DIR/docker-compose.coturn.yml" down || log "[WARN] could not remove coturn (non-fatal)"
+  fi
+fi
+
 # Data migrations. Deliberately after the restart, not before: every migration in
 # the registry is required to leave the database in a state the new code already
 # handles, so the app is correct while one is still in flight. Running them first

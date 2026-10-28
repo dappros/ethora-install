@@ -14,6 +14,22 @@ default is not what you want.
 
 ## 2610 (development line, September 2026)
 
+**Peer-to-peer 1:1 calls with a bundled STUN/TURN relay.** `features.calls_p2p: true`
+(with `features.video_calls`) runs 1:1 calls directly between the two
+browsers instead of through LiveKit; the API hands callers short-lived TURN
+credentials minted from a shared secret, group calls stay on LiveKit.
+`services.coturn.enabled: true` starts coturn next to the stack
+(`deploy/docker-compose.coturn.yml`; host `domains.turn` or
+`turn.<root-of-web>`, secret generated into `.deploy.env`; set
+`services.coturn.external_ip` behind NAT), or `integrations.turn.urls` /
+`secret` point the API at a relay of your own. The relay's ports are public
+on purpose: open 3478/udp, 3478/tcp and 49160-49200/udp in the firewall and
+the security group, and give the host a DNS record. Compose bundle: the
+`calls` profile (`./configure.sh --modules calls`) runs LiveKit for group
+calls and coturn, with ports 3478 udp+tcp, 49160-49200/udp, 7881/tcp and
+50000-50100/udp. Off by default everywhere; with `calls_p2p` on but no relay
+the deploy warns and 1:1 calls stay on LiveKit.
+
 **The SDK playground is off by default and runs as a sandbox app.** The
 playground (`playground.<root>`) is a public demo whose server routes mint
 tokens of the app it runs as for anonymous visitors; until now the installer

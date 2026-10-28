@@ -4,7 +4,9 @@
 #
 #   docker-compose.yml  the bundle's deploy/compose/docker-compose.yml without
 #                       the bundled proxy (Dokploy's Traefik routes the five
-#                       hosts, see template.toml) and with ./scripts and
+#                       hosts, see template.toml), without the calls module
+#                       (its services publish host ports, which the templates
+#                       repository rejects) and with ./scripts and
 #                       ./templates read from ../files/, where Dokploy writes
 #                       a template's mounts.
 #   template.toml       template.in.toml with every line
@@ -40,7 +42,7 @@ render_compose() {
 
 HDR
   sed -n '/^x-logging:/,$p' "$BUNDLE/docker-compose.yml" \
-    | sed -e '/^  # -* caddy --$/,/^volumes:$/{/^volumes:$/!d}' \
+    | sed -e '/^  # -* calls module (calls) --$/,/^volumes:$/{/^volumes:$/!d}' \
           -e '/^  caddy-data:/d' -e '/^  caddy-config:/d' -e '/^      - \.\/Caddyfile:/d' \
           -e 's#\./scripts:#../files/scripts:#g; s#\./templates:#../files/templates:#g'
 }

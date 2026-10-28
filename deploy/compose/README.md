@@ -129,6 +129,7 @@ message sent over `wss://xmpp.<root>/ws`, a file uploaded and read back from
 | `config`, `mongo-init`, `init` | the images above | one-shot steps, run on every `up`, then exit (0) |
 | `ai-service`, `docs-parse`, `widget`, `ai-postgres` | `dappros/ethora-ai`, `pgvector`, `caddy` | the `ai` module (profile `ai`; see Enterprise modules) |
 | `push`, `push-worker`, `playground`, `mcp`, `uptime`, `uptime-db` | `dappros/ethora-push`, `-playground`, `-mcp`, `-uptime`, `postgres` | the other modules, each behind its profile |
+| `livekit`, `coturn` | `livekit/livekit-server`, `coturn/coturn` | the `calls` module (profile `calls`): group calls and peer-to-peer call relay |
 
 `config` renders every service's configuration from `.env` with the same
 templates the host installer uses (and generates the secrets `.env` leaves
@@ -136,8 +137,9 @@ out), `mongo-init` makes MongoDB a replica set,
 and `init` creates the base app and admin account and provisions their XMPP
 accounts. All three are idempotent; running them again changes nothing.
 
-Only Caddy publishes ports. Native XMPP clients on port 5222 are not exposed;
-web, mobile and SDK clients use `wss://xmpp.<root>/ws`.
+Only Caddy publishes ports, plus the `calls` module's media ports when that
+module is on (see Enterprise modules). Native XMPP clients on port 5222 are
+not exposed; web, mobile and SDK clients use `wss://xmpp.<root>/ws`.
 
 ## Update
 
@@ -263,11 +265,12 @@ values in `.env` by hand (see `.env.example`, "modules").
 | SDK playground | `playground` | `playground` from `dappros/ethora-playground` (builds on its first start, about 1.5 GB of RAM for a few minutes); runs as the app in `PLAYGROUND_APP_ID` / `PLAYGROUND_APP_SECRET` (`.env`) | `playground.<root>` |
 | Hosted MCP server | `mcp` | `mcp` from `dappros/ethora-mcp`; the API serves OAuth on `api.<root>` | `mcp.<root>` (`/mcp`) |
 | Uptime | `uptime` | `uptime`, `uptime-db` (Postgres) from `dappros/ethora-uptime` | `uptime.<root>`, basic auth (`UPTIME_AUTH_USER`, `UPTIME_AUTH_PASSWORD` in `.env`) |
+| Calls | `calls` | `livekit` (group calls), `coturn` (STUN/TURN for peer-to-peer calls); public images, no licence feature | `livekit.<root>` (wss, through Caddy) and `turn.<root>` (3478, not proxied) |
 
-`./configure.sh --modules ai,push,playground,mcp,uptime` takes any subset.
-The playground, mcp and uptime modules need the five-host layout (a host
-each, covered by a wildcard record); on a one-origin install only `ai` and
-`push` run. The playground runs as the app named in `.env`
+`./configure.sh --modules ai,push,playground,mcp,uptime,calls` takes any
+subset. The playground, mcp, uptime and calls modules need the five-host
+layout (a host each, covered by a wildcard record); on a one-origin install
+only `ai` and `push` run. The playground runs as the app named in `.env`
 (`PLAYGROUND_APP_ID`, `PLAYGROUND_APP_SECRET`); it hands that app's tokens to
 anonymous visitors, so create a sandbox app for it in the admin panel rather
 than using the base app. The module does not start without the two values.
@@ -291,6 +294,42 @@ so pages that embed it keep working across updates. `docker compose
 --profile verify run --rm verify` checks the module too: the widget script
 on its public URL, ai-service and docs-parse answering, the licence
 feature.
+
+The `calls` module carries real-time calls: 1:1 chats use peer-to-peer
+WebRTC, with `coturn` as the STUN/TURN server for clients that cannot reach
+each other directly, and group chats use LiveKit. Run
+`./configure.sh --modules calls` (or add `calls` to `COMPOSE_PROFILES`); the
+LiveKit key pair and the TURN secret are generated into `.env`
+(`LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `TURN_SECRET`), and the API
+receives its side of them: `WEBRTC_HOST=http://livekit:7880`,
+`WEBRTC_PUBLIC_URL=wss://livekit.<root>`, `WEBRTC_API_KEY`, `WEBRTC_API_SECRET`,
+`CALLS_P2P_ENABLED=true`, `TURN_URLS`, `TURN_STUN_URLS`, `TURN_SECRET` and
+`TURN_CREDENTIAL_TTL_SECONDS=86400` (TURN credentials are minted per call by
+the API, TURN REST API style; nothing static is handed to clients). The
+web app's `VIDEO_CALLS_ENABLED` follows the module (set it in `.env` to
+override). Two more DNS records are needed, `livekit.<root>` and
+`turn.<root>`, plain `A` records without a proxy (a wildcard covers them).
+
+Unlike the other modules, `calls` publishes ports on the host: coturn and
+LiveKit carry media, which Caddy cannot proxy. Open these in the server's
+firewall and in any cloud security group:
+
+| Port | Protocol | Service | Used for |
+|---|---|---|---|
+| 3478 | udp and tcp | `coturn` | STUN and TURN (`turn:` and `stun:` URLs; `turns:` on 5349 is not enabled) |
+| 49160-49200 | udp | `coturn` | TURN relay ports (about 20 relayed calls at once) |
+| 7881 | tcp | `livekit` | WebRTC over TCP, when UDP is blocked |
+| 50000-50100 | udp | `livekit` | WebRTC media |
+
+LiveKit signalling is the only part behind Caddy (`wss://livekit.<root>`,
+port 443). Behind NAT (a cloud VM with a private address, a home server) set
+`TURN_EXTERNAL_IP` and `LIVEKIT_NODE_IP` in `.env` to the server's public IP;
+left empty, coturn looks its address up at start and LiveKit asks a STUN
+server. coturn refuses to relay to loopback and private address ranges, so a
+TURN allocation cannot be used to reach other services of the host or its
+network. The port ranges are fixed in `docker-compose.yml` and
+`templates/coturn.conf.template` / `templates/livekit.yaml.template`; change
+them in both places together.
 
 Switching a module off: remove its profile from `COMPOSE_PROFILES` and run
 `docker compose up -d --remove-orphans`; its volumes stay until
@@ -316,6 +355,7 @@ WebSocket upgrades allowed:
 | `widget.<root>` (ai module) | `widget:8080` | all |
 | `api.<root>/push/` (push module) | `push:8098`, with `/push` stripped | mobile apps' push registration |
 | `playground.<root>` (playground module) | `playground:3020` | all |
+| `livekit.<root>` (calls module) | `livekit:7880` | all, WebSocket upgrades allowed (the media ports and coturn are published on the host, not proxied) |
 | `mcp.<root>` (mcp module) | `mcp:3030` | all |
 | `uptime.<root>` (uptime module) | `uptime:8099` | all, behind basic auth of your proxy |
 

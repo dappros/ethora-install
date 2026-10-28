@@ -1114,6 +1114,8 @@ parse_config() {
         fi
     fi
     export UPTIME_PORT=$(yq eval '.services.uptime.port // 8099' "$CONFIG_FILE")
+    # coturn (STUN/TURN for peer-to-peer calls); its settings are derived by setup-env.sh.
+    export COTURN_ENABLED="$(yq eval '.services.coturn.enabled // "false"' "$CONFIG_FILE")"
     export UPTIME_POSTGRES_PORT=$(yq eval '.services.uptime.postgres_port // 5433' "$CONFIG_FILE")
     # Uptime dashboard tiles (instances)
     export UPTIME_PUBLIC_ENABLED="$(yq eval '.services.uptime.public_enabled | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; export UPTIME_PUBLIC_ENABLED="${UPTIME_PUBLIC_ENABLED:-true}"
@@ -1594,6 +1596,7 @@ export FIREBASE_WEB_MESSAGING_SENDER_ID="${FIREBASE_WEB_MESSAGING_SENDER_ID:-}"
 export FIREBASE_WEB_APP_ID="${FIREBASE_WEB_APP_ID:-}"
 export FIREBASE_WEB_MEASUREMENT_ID="${FIREBASE_WEB_MEASUREMENT_ID:-}"
 export UPTIME_ENABLED="${UPTIME_ENABLED:-false}"
+export COTURN_ENABLED="${COTURN_ENABLED:-false}"
 export UPTIME_PORT="${UPTIME_PORT:-8099}"
 export UPTIME_POSTGRES_PORT="${UPTIME_POSTGRES_PORT:-5433}"
 export UPTIME_DATABASE_URL="${UPTIME_DATABASE_URL:-}"
@@ -2125,6 +2128,12 @@ EOF
     ensure_runtime_tree_owned_by_deploy_user
     "$SCRIPT_DIR/setup-env.sh" || error "Environment setup failed after init-services"
 
+    # coturn (STUN/TURN for peer-to-peer calls): its config was rendered by setup-env.sh above.
+    if [ "${COTURN_ENABLED:-false}" == "true" ] && [ -f "$DEPLOY_DIR/docker-compose.coturn.yml" ]; then
+        log "Starting coturn (STUN/TURN for peer-to-peer calls)..."
+        docker-compose -f "$DEPLOY_DIR/docker-compose.coturn.yml" up -d --force-recreate || warn "Failed to start coturn"
+    fi
+
     if [ "${UPTIME_ENABLED:-false}" == "true" ] && [ -f "$DEPLOY_DIR/docker-compose.uptime.yml" ]; then
         log "Refreshing Ethora Uptime docker services after env regeneration..."
         # Changes inside generated uptime env/config files do not reliably trigger recreation,
@@ -2330,6 +2339,11 @@ perform_cleanup() {
     if [ -f "$DEPLOY_DIR/docker-compose.uptime.yml" ]; then
         log "Stopping Ethora Uptime Docker stack..."
         docker-compose -f "$DEPLOY_DIR/docker-compose.uptime.yml" down -v >/dev/null 2>&1 || warn "Failed to stop uptime containers (may not exist)"
+    fi
+
+    if [ -f "$DEPLOY_DIR/docker-compose.coturn.yml" ]; then
+        log "Stopping coturn..."
+        docker-compose -f "$DEPLOY_DIR/docker-compose.coturn.yml" down >/dev/null 2>&1 || warn "Failed to stop coturn (may not exist)"
     fi
 
     if [ -f "$DEPLOY_DIR/docker-compose.ai.yml" ]; then

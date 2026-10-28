@@ -27,6 +27,7 @@ Reference:
 - [Quick QA checks](#quick-qa-checks)
 - [Hosted MCP server (optional)](#hosted-mcp-server-optional)
 - [SDK playground (optional)](#sdk-playground-optional)
+- [Peer-to-peer calls: STUN/TURN (optional)](#peer-to-peer-calls-stunturn-optional)
 - [Feedback channel](#feedback-channel)
 - [Uptime monitoring (ethora-uptime)](#uptime-monitoring-ethora-uptime)
 - [Backend jobs / cron runner (PM2)](#backend-jobs--cron-runner-pm2)
@@ -634,6 +635,42 @@ and whoever points the playground at the base app hands out that app's tokens.
 The compose bundle takes the same two values as `PLAYGROUND_APP_ID` /
 `PLAYGROUND_APP_SECRET` in `.env` (see its README).
 
+## Peer-to-peer calls: STUN/TURN (optional)
+
+With `features.video_calls` on, calls run through LiveKit
+(`integrations.livekit`). `features.calls_p2p: true` takes 1:1 calls off the
+SFU: the two browsers connect directly with their own WebRTC, and the API
+hands each caller a short-lived STUN/TURN credential (coturn's REST API
+scheme: the username carries its expiry, the password is an HMAC of it under
+a shared secret, nothing is stored). Group calls stay on LiveKit. Two ways
+to get a relay:
+
+- `services.coturn.enabled: true` runs coturn next to the stack
+  (`deploy/docker-compose.coturn.yml`). The installer derives the host
+  (`domains.turn`, default `turn.<root-of-web>`), the URLs
+  (`turn:<host>:3478?transport=udp,turn:<host>:3478?transport=tcp` and
+  `stun:<host>:3478`) and generates the secret once into `.deploy.env`. The
+  host needs a DNS record, and the relay's ports must be open in the host
+  firewall and the cloud security group: 3478/udp, 3478/tcp and
+  49160-49200/udp (the relay range). They are public on purpose: callers
+  reach the relay directly, nothing proxies it and it is not bound to
+  loopback. On a cloud VM behind NAT set `services.coturn.external_ip` to the
+  instance's public address; left blank, the container looks it up at start.
+- `integrations.turn.urls` and `integrations.turn.secret` (plus the optional
+  `stun_urls` and `credential_ttl_seconds`) point the API at a TURN server of
+  your own; set, they override the derived values even with coturn bundled.
+
+`setup-env.sh` renders `CALLS_P2P_ENABLED`, `TURN_URLS`, `TURN_STUN_URLS`,
+`TURN_SECRET` and `TURN_CREDENTIAL_TTL_SECONDS` into the API env and
+`deploy/generated/coturn/turnserver.conf` for the container. `update.sh`
+starts coturn, recreates it when that config changed and removes the
+container when `services.coturn.enabled` goes back to `false`. With
+`calls_p2p` on but calls off, or no relay configured, the deploy prints a
+warning and 1:1 calls stay on LiveKit. To check a running relay:
+`docker logs coturn` shows its listeners and the external address it picked,
+and a call started from the web app carries `iceServers` with a `turn:` entry
+in the API's response once p2p is on.
+
 ## Feedback channel
 
 The backend exposes `POST /v2/feedback` so users, and the AI agents acting for
@@ -827,6 +864,7 @@ Before deployment, ensure DNS A records are configured for:
 - Optional widget host: `widget.chat.yourdomain.com` → Your server IP
 - Optional hosted-app root: `chat.yourdomain.com` → Your server IP
 - Optional hosted-app wildcard: `*.chat.yourdomain.com` → Your server IP
+- Optional TURN host (`services.coturn.enabled`): `turn.chat.yourdomain.com` → Your server IP
 
 ## Configuration
 
@@ -1065,6 +1103,10 @@ The deployment system sets up:
   - Published by nginx at `https://<domains.mcp>/mcp`; proxies to the local API over loopback
   - See [Hosted MCP server (optional)](#hosted-mcp-server-optional)
 
+- **coturn** (optional, `services.coturn.enabled: true`)
+  - STUN/TURN relay for peer-to-peer 1:1 calls (`features.calls_p2p`), `deploy/docker-compose.coturn.yml`
+  - Public ports 3478/udp, 3478/tcp and 49160-49200/udp; see [Peer-to-peer calls: STUN/TURN (optional)](#peer-to-peer-calls-stunturn-optional)
+
 - **Frontend** (React/Vite)
   - Production build
   - Served via Nginx
@@ -1108,6 +1150,16 @@ sudo ufw allow 22/tcp
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 sudo ufw enable
+```
+
+With `services.coturn.enabled: true` (peer-to-peer calls) the relay's ports
+are published on all interfaces on purpose; allow them here and in the cloud
+security group:
+
+```bash
+sudo ufw allow 3478/udp
+sudo ufw allow 3478/tcp
+sudo ufw allow 49160:49200/udp
 ```
 
 To reach a datastore from your machine (Compass, redis-cli), use an SSH

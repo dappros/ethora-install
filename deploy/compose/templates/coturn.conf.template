@@ -1,0 +1,45 @@
+# coturn config: STUN/TURN for peer-to-peer calls. Rendered by the deployment
+# (setup-env.sh into deploy/generated/coturn/turnserver.conf on a host install,
+# settings from deploy.yml; the config service on every 'docker compose up' in
+# the compose bundle, settings from .env). Edit those, not this file. Clients
+# get short-lived credentials from the API (TURN REST API: username = expiry
+# timestamp, password = HMAC of it with the shared secret).
+
+listening-port=3478
+realm={{TURN_REALM}}
+server-name={{TURN_DOMAIN}}
+
+# Credentials derived from the shared secret; no user database.
+lt-cred-mech
+use-auth-secret
+static-auth-secret={{TURN_SECRET}}
+
+# The address the relay hands out when the host is behind NAT
+# (services.coturn.external_ip in deploy.yml, TURN_EXTERNAL_IP in .env);
+# without it the container looks the public address up at start.
+{{TURN_EXTERNAL_IP_LINE}}
+
+# Relay ports, published on the host (UDP).
+min-port=49160
+max-port=49200
+
+# No TLS: turns: (5349) is not enabled, clients use turn:/stun: on 3478.
+no-tls
+no-dtls
+fingerprint
+no-cli
+no-multicast-peers
+stale-nonce=600
+log-file=stdout
+simple-log
+
+# A relay must never reach the host's own or private networks.
+denied-peer-ip=0.0.0.0-0.255.255.255
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255
+denied-peer-ip=169.254.0.0-169.254.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+denied-peer-ip=::1
+denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff

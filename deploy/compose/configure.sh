@@ -20,12 +20,13 @@
 #   --display-name NAME      base app display name (default: Ethora)
 #   --license-key KEY        ETHORA1.<payload>.<signature>; empty = Ethora Core
 #   --no-call-home           air-gapped install (needs an offline key)
-#   --modules LIST           Enterprise modules to run, comma-separated (ai, push,
-#                            playground, mcp, uptime), or `none`; each one is a
-#                            compose profile. Their images are private: with a
-#                            licence key, configure.sh fetches the licence's
+#   --modules LIST           modules to run, comma-separated (ai, push, playground,
+#                            mcp, uptime, calls), or `none`; each one is a compose
+#                            profile. The Enterprise modules' images are private:
+#                            with a licence key, configure.sh fetches the licence's
 #                            registry credential, runs `docker login` and checks
-#                            that every module image can be pulled.
+#                            that every module image can be pulled. (calls uses
+#                            public images and opens media ports on the host.)
 #   --registry-user USER     log in with this Docker Hub account instead of the
 #   --registry-token TOKEN   licence's credential (a dappros org member's token)
 #   --no-registry-check      skip the registry login and the image access check
@@ -228,7 +229,7 @@ A_CALL_HOME="${A_CALL_HOME:-true}"
 
 # Profiles: the bundled proxy (caddy) and the Enterprise modules. The
 # modules answered replace the previous ones; the proxy choice is kept.
-KNOWN_MODULES=" ai push playground mcp uptime "
+KNOWN_MODULES=" ai push playground mcp uptime calls "
 old_profiles="$(old COMPOSE_PROFILES)"; has_old COMPOSE_PROFILES || old_profiles="caddy"
 CADDY_ON=false; case ",$old_profiles," in *,caddy,*) CADDY_ON=true ;; esac
 [ "$A_CADDY" = "off" ] && CADDY_ON=false
@@ -256,7 +257,7 @@ if [ "$AI_ON" = true ]; then
   [ -n "$A_AI_API_KEY" ] || warn "WARNING: no AI provider key (--ai-api-key); agents cannot answer until AI_API_KEY is set in .env"
 fi
 if [ -n "$A_PUBLIC_URL" ]; then
-  for m in playground mcp uptime; do
+  for m in playground mcp uptime calls; do
     case " $MODULES " in *" $m "*) die "the $m module needs a host of its own (api./app./... under a root domain); it cannot run on a one-origin install" ;; esac
   done
 fi
@@ -288,6 +289,7 @@ if [ -n "$MODULES" ]; then
   for m in playground mcp uptime; do
     case " $MODULES " in *" $m "*) echo "                   $m: https://$m.$A_DOMAIN$([ "$m" = mcp ] && echo /mcp)$([ "$m" = uptime ] && echo ' (basic auth, password in .env as UPTIME_AUTH_PASSWORD)')" ;; esac
   done
+  case " $MODULES " in *" calls "*) echo "                   calls: wss://livekit.$A_DOMAIN and turn.$A_DOMAIN:3478 (DNS records for both; open 3478 udp+tcp, 49160-49200/udp, 7881/tcp, 50000-50100/udp)" ;; esac
   case " $MODULES " in *" push "*) echo "                   push: api.$A_DOMAIN/push/ for mobile apps; platform keys uploaded in the admin panel" ;; esac
 else
   echo "  Modules:         none (Ethora Core)"
@@ -350,6 +352,11 @@ secret AI_POSTGRES_PASSWORD 32
 secret B2B_PUSH_SECRET 32
 secret UPTIME_POSTGRES_PASSWORD 32
 secret UPTIME_AUTH_PASSWORD 24
+# The calls module's: LiveKit's key pair (also its webhook signing pair) and
+# the secret the API and coturn share for TURN credentials.
+secret LIVEKIT_API_KEY 16 API
+secret LIVEKIT_API_SECRET 48
+secret TURN_SECRET 48
 v="$(old WIDGET_SCRIPT_VERSION)"; set_new WIDGET_SCRIPT_VERSION "${v:-$(date -u +%y%m)}"
 
 quote() { # plain when safe, else single-quoted (compose takes it literally)
@@ -470,13 +477,15 @@ registry_step() {
     warn "You ran this with sudo: Docker keeps root's login separate from $SUDO_USER's, so run docker compose with sudo too."
   fi
 }
-if [ -n "$MODULES" ] && [ "$REGISTRY_CHECK" = true ]; then registry_step; fi
+# (calls runs public images: nothing to log in to.)
+PRIVATE_MODULES=" $MODULES "; PRIVATE_MODULES="${PRIVATE_MODULES// calls / }"
+if [ -n "${PRIVATE_MODULES// /}" ] && [ "$REGISTRY_CHECK" = true ]; then registry_step; fi
 
 echo
 if [ "$REG_FAILED" = true ]; then
   echo "Next, once the registry problem above is fixed (re-run configure.sh to check again):"
 else
-  echo "Next$([ -n "$MODULES" ] && echo " (as $(id -un 2>/dev/null || echo "the same user"), the user whose registry login docker uses)"):"
+  echo "Next$([ -n "${PRIVATE_MODULES// /}" ] && echo " (as $(id -un 2>/dev/null || echo "the same user"), the user whose registry login docker uses)"):"
 fi
 echo "  docker compose pull         # about 10 GB on disk with every module; any access problem shows here"
 echo "  docker compose up -d        # first start takes a few minutes"
