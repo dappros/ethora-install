@@ -346,6 +346,22 @@ without the flag, to drop the accumulated rooms; a long list made the agent
 miss new conversations after a restart once it passed ejabberd's
 `max_user_conferences`.
 
+**AI agents: room cap while running.** A busy agent no longer piles up widget
+rooms between restarts: it silently leaves a widget room after
+`AI_BOT_ROOM_IDLE_SEC` (default 1800) without messages, never holds more than
+`AI_BOT_MAX_ACTIVE_ROOMS` (default 1500; keep it under
+`max_user_conferences`) by leaving the quietest ones first, and on a
+`resource-constraint` refusal lets a tenth of its quiet rooms go and retries
+once. A returning visitor's session call puts the agent back in the same room
+without a join line or a second opening flow, and the agent answers a visitor
+message it missed while away when it is at most `AI_BOT_CATCHUP_MAX_AGE_SEC`
+(default 3600) old; the conversation and its context are unchanged. The
+legacy app AI bot now joins widget rooms the same way (MUC invite only as a
+fallback). The ai-service removes widget rooms from persisted room lists at
+start, in both `botinstances` and the legacy `aiservice.bots`, so the prune
+script above is no longer required. `GET /bot-instances/:xmppUsername/status`
+shows `roomCount` against `maxActiveRooms`.
+
 **Web Index refresh and the crawler.** Crawled sites are re-crawled on a
 schedule (Server settings: `SITE_REFRESH_ENABLED`, `SITE_REFRESH_DEFAULT_SCHEDULE`,
 `SITE_REFRESH_INACTIVE_DAYS`). Sites crawled before this release are watched
