@@ -358,8 +358,12 @@ the next run would generate new secrets and point at the default data
 directories. Restore database passwords from the value the database was
 created with (an older `.deploy.env` backup), not from rendered service env
 files: those may already carry a regenerated one, and Postgres and MySQL keep
-the password of their first start. `.deploy.env` is now rewritten by rename,
-never in place.
+the password of their first start. Installs from before mid-2026 can have a
+`JWT_SECRET` / `REFRESH_SECRET` value that spans two lines (base64 wrapped at
+64 characters); copy the whole quoted value, or every key after it is read as
+part of it. Check with
+`env -i bash -c 'source deploy/.deploy.env; echo ${#MINIO_ROOT_PASSWORD} ${#MYSQL_ROOT_PASSWORD}'`
+(both non-zero). `.deploy.env` is now rewritten by rename, never in place.
 
 **AI agents: room cap while running.** A busy agent no longer piles up widget
 rooms between restarts: it silently leaves a widget room after
