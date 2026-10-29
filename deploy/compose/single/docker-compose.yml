@@ -605,7 +605,10 @@ services:
     profiles: ["calls"]
     # The image's own entrypoint is skipped to choose the external address:
     # TURN_EXTERNAL_IP when set (rendered into the config), else the one the
-    # image's detect-external-ip finds.
+    # image's detect-external-ip finds. The container's own address is
+    # allowed as a peer: two callers relayed by this server reach each other
+    # through its public address, which coturn maps back to that address
+    # before the denied-peer-ip rules of the config apply.
     entrypoint: ["sh", "-c"]
     command:
       - |
@@ -615,6 +618,9 @@ services:
           ip="$$(detect-external-ip 2>/dev/null || true)"
           [ -z "$$ip" ] || set -- "$$@" "--external-ip=$$ip"
         fi
+        own="$$(hostname -i 2>/dev/null | cut -d' ' -f1)"
+        [ -n "$$own" ] || own="$$(tail -n 1 /etc/hosts | cut -f1)"
+        [ -z "$$own" ] || set -- "$$@" "--allowed-peer-ip=$$own"
         exec turnserver "$$@"
     ports:
       - "3478:3478/udp"

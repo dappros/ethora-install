@@ -613,6 +613,10 @@ if have_docker; then
   (cd "$B2" && docker compose config --images 2>/dev/null) | grep -qE 'ethora-(push|playground|mcp|uptime)|coturn|livekit' && fail "a module image is referenced without its profile" || ok "no module image without its profile"
   (cd "$B2" && COMPOSE_PROFILES=caddy,calls docker compose config --quiet) 2>"$T/err" && ok "docker compose config with the calls profile" || fail "docker compose config (calls)" "$(cat "$T/err")"
   (cd "$B2" && COMPOSE_PROFILES=caddy,calls docker compose config --services 2>/dev/null) | grep -cxE 'coturn|livekit' | grep -qx 2 && ok "calls profile adds coturn and livekit" || fail "calls profile services"
+  for cf in "$BUNDLE/docker-compose.yml" "$BUNDLE/../docker-compose.coturn.yml"; do
+    grep -qF -- '--allowed-peer-ip=$$own' "$cf" && grep -qF -- '--external-ip=$$ip' "$cf" && ok "coturn start command allows its own address as a peer: ${cf#$BUNDLE/}" \
+      || fail "coturn start command: ${cf#$BUNDLE/}" "$(grep -n 'allowed-peer-ip\|external-ip' "$cf")"
+  done
   (cd "$B2" && COMPOSE_PROFILES=caddy,calls docker compose config 2>/dev/null) > "$T/calls.yml"
   [ "$(grep -cE '^\s+published: ' "$T/calls.yml")" = "148" ] && grep -qE '^\s+target: 7881$' "$T/calls.yml" && ok "calls publishes 3478 (udp, tcp), 49160-49200/udp, 7881/tcp and 50000-50100/udp besides caddy's ports" || fail "calls published ports" "$(grep -cE '^\s+published: ' "$T/calls.yml")"
   (cd "$B2" && COMPOSE_PROFILES=caddy,ai docker compose config 2>/dev/null) | grep -cE '^\s+published: ' | grep -qx 3 && ok "ai profile publishes no port" || fail "ai profile ports"

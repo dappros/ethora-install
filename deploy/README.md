@@ -664,6 +664,9 @@ to get a relay:
   reach the relay directly, nothing proxies it and it is not bound to
   loopback. On a cloud VM behind NAT set `services.coturn.external_ip` to the
   instance's public address; left blank, the container looks it up at start.
+  The relay refuses loopback and private peers (a TURN allocation cannot
+  reach the host's other services), except the container's own address, so
+  that two callers relayed by the same server can reach each other.
 - `integrations.turn.urls` and `integrations.turn.secret` (plus the optional
   `stun_urls` and `credential_ttl_seconds`) point the API at a TURN server of
   your own; set, they override the derived values even with coturn bundled.

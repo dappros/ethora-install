@@ -33,7 +33,10 @@ stale-nonce=600
 log-file=stdout
 simple-log
 
-# A relay must never reach the host's own or private networks.
+# A relay must never reach the host's own or private networks. The start
+# command adds allowed-peer-ip for the container's own address only, so two
+# callers relayed by this server can reach each other (coturn maps the public
+# address back to it before these rules apply).
 denied-peer-ip=0.0.0.0-0.255.255.255
 denied-peer-ip=10.0.0.0-10.255.255.255
 denied-peer-ip=127.0.0.0-127.255.255.255

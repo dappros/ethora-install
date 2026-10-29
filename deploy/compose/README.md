@@ -327,7 +327,9 @@ port 443). Behind NAT (a cloud VM with a private address, a home server) set
 left empty, coturn looks its address up at start and LiveKit asks a STUN
 server. coturn refuses to relay to loopback and private address ranges, so a
 TURN allocation cannot be used to reach other services of the host or its
-network. The port ranges are fixed in `docker-compose.yml` and
+network; the one exception is the container's own address, which two callers
+relayed by the same server need to reach each other (coturn maps the public
+address back to it). The port ranges are fixed in `docker-compose.yml` and
 `templates/coturn.conf.template` / `templates/livekit.yaml.template`; change
 them in both places together.
 
