@@ -86,6 +86,7 @@ x-file-init: &file-init
     #      app owner and system account     register / change_password over ejabberd's HTTP API
     #   3. data migrations                  scripts/migrateSourceAgentId.js (re-runnable by design),
     #      and the standard agent templates scripts/seedAgentTemplates.js (creates what is missing)
+    #      MUC rooms hidden from discovery  get_room_options / change_room_option over ejabberd's HTTP API
     #   4. translation server languages     src/utils/scripts/syncTranslateLanguages.js
     #
     # The environment is backend.env, loaded by api-entrypoint.sh. The ejabberd
@@ -195,6 +196,47 @@ x-file-init: &file-init
       log "agent templates"
       step scripts/seedAgentTemplates.js || warn "agent template seeding failed (non-fatal)"
     fi
+
+    # ejabberd.yml makes new rooms public:false / public_list:false (hidden from
+    # the MUC service's disco#items), but that default only reaches rooms created
+    # after it: older rooms keep public:true and stay listed with their name and
+    # occupants. Turn both off wherever either is still on. Host installs do the
+    # same in deploy/scripts/migrate-muc-room-visibility.sh (update.sh). Once every
+    # room is hidden a run only reads, so no stamp is kept.
+    muc_hide_room() { # muc_hide_room <room jid>: prints hidden, already or failed
+      local name="${1%%@*}" svc="${1#*@}" opts p l rc=hidden
+      name="${name//\\/\\\\}"; name="${name//\"/\\\"}"
+      opts="$(xmpp_api get_room_options "{\"name\":\"$name\",\"service\":\"$svc\"}" 2>/dev/null)"
+      p="$(printf '%s' "$opts" | sed -n 's/.*"public":"\([a-z]*\)".*/\1/p')"
+      l="$(printf '%s' "$opts" | sed -n 's/.*"public_list":"\([a-z]*\)".*/\1/p')"
+      if [ "$p" = false ] && [ "$l" = false ]; then echo already; return 0; fi
+      if [ "$p" != false ] && [ "$(xmpp_api change_room_option "{\"name\":\"$name\",\"service\":\"$svc\",\"option\":\"public\",\"value\":\"false\"}" 2>/dev/null)" != 0 ]; then rc=failed; fi
+      if [ "$l" != false ] && [ "$(xmpp_api change_room_option "{\"name\":\"$name\",\"service\":\"$svc\",\"option\":\"public_list\",\"value\":\"false\"}" 2>/dev/null)" != 0 ]; then rc=failed; fi
+      echo "$rc"
+    }
+    muc_service="conference.${XMPP_HOST}"
+    rooms="$(xmpp_api muc_online_rooms "{\"service\":\"$muc_service\"}" 2>/dev/null)"
+    case "$rooms" in
+      \[*)
+        rooms="$(printf '%s' "$rooms" | tr -d '[]" \n' | tr ',' '\n' | sed '/^$/d')"
+        total="$(printf '%s' "$rooms" | grep -c . || true)"
+        if [ "$total" = 0 ]; then
+          log "MUC rooms: none on $muc_service"
+        else
+          # Parallel workers: one HTTP call is ~25 ms, so tens of thousands of
+          # rooms take a minute or two instead of an hour one at a time.
+          export -f xmpp_api muc_hide_room
+          export XMPP_HOST XMPP_PASS XMPP_API
+          out="$(printf '%s\n' "$rooms" | xargs -d '\n' -n 1 -P "${MUC_MIGRATION_JOBS:-8}" bash -c 'muc_hide_room "$1"' _)"
+          hidden="$(printf '%s\n' "$out" | grep -cx hidden || true)"
+          already="$(printf '%s\n' "$out" | grep -cx already || true)"
+          log "MUC rooms hidden from discovery: $total on $muc_service, $hidden newly hidden, $already already hidden"
+          failed=$((total - hidden - already))
+          [ "$failed" = 0 ] || warn "MUC room visibility: $failed rooms not updated (non-fatal; retried on the next start)"
+        fi
+        ;;
+      *) warn "MUC room visibility: could not list the rooms of $muc_service (non-fatal): $(printf '%s' "$rooms" | head -c 200)" ;;
+    esac
 
     # ---------------------------------------------------- 4. translate languages --
     if out="$(script src/utils/scripts/syncTranslateLanguages.js "${TRANSLATE_LANGUAGES:-}" 2>&1 | tidy)"; then
