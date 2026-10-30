@@ -1571,6 +1571,27 @@ bash "$RUNTIME_DEPLOY_DIR/scripts/setup-node-services.sh"
 log "Running init-services (idempotent)..."
 bash "$RUNTIME_DEPLOY_DIR/scripts/init-services.sh" || true
 
+# One-time migration: hide pre-existing MUC rooms from Service Discovery.
+# New rooms already default to public:false / public_list:false via ejabberd.yml
+# default_room_options, but rooms created before that change keep public:true and
+# stay listed in disco#items. Runs here because init-services has just confirmed
+# ejabberd is up. Guarded by a stamp so a large room set is only walked once;
+# re-run by hand with: sudo bash $RUNTIME_DEPLOY_DIR/scripts/migrate-muc-room-visibility.sh
+muc_visibility_stamp="$STATE_DIR/muc-room-visibility-migrated"
+if [ "${SKIP_MUC_VISIBILITY_MIGRATION:-false}" == "true" ]; then
+  log "Skipping MUC room visibility migration (SKIP_MUC_VISIBILITY_MIGRATION=true)"
+elif [ -f "$muc_visibility_stamp" ]; then
+  log "MUC room visibility migration already applied; skipping"
+elif [ -f "$RUNTIME_DEPLOY_DIR/scripts/migrate-muc-room-visibility.sh" ]; then
+  if bash "$RUNTIME_DEPLOY_DIR/scripts/migrate-muc-room-visibility.sh"; then
+    mkdir -p "$STATE_DIR" 2>/dev/null || true
+    touch "$muc_visibility_stamp" 2>/dev/null || true
+  else
+    warn "MUC room visibility migration did not fully complete; it will retry on the next update."
+    warn "Re-run manually: sudo bash $RUNTIME_DEPLOY_DIR/scripts/migrate-muc-room-visibility.sh"
+  fi
+fi
+
 log "Regenerating .env files after init-services..."
 bash "$RUNTIME_DEPLOY_DIR/scripts/setup-env.sh"
 
