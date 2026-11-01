@@ -24,6 +24,9 @@ reports: watch the ejabberd log for `cross-app stanza`, then set
 config, is `enforce`. Also dropped for the same reason: the MQTT listener on
 port 1883 with `mod_mqtt`, and `jabber:iq:search` (`mod_vcard: search: false`);
 standalone pubsub (`pubsub.<host>`) is closed to users, PEP is unchanged.
+Federation is off as well: the s2s listener on port 5269 and
+`mod_s2s_dialback` are gone, and `s2s_access: none` refuses outbound
+connections, so a stanza to another server gets `forbidden`.
 
 **Peer-to-peer 1:1 calls with a bundled STUN/TURN relay.** `features.calls_p2p: true`
 (with `features.video_calls`) runs 1:1 calls directly between the two
