@@ -14,6 +14,17 @@ default is not what you want.
 
 ## 2610 (development line, September 2026)
 
+**XMPP app isolation.** `mod_ethora` now refuses any stanza that crosses from
+one app to another: messages of every type, presence and iq, to users and to
+rooms (so also MucSub and room history), plus anything a room or
+`/api/send_stanza` would deliver across apps. Anonymous sessions reach no JID
+but their own. `ejabberd-prod.yml` ships with `isolation_mode: log`, which only
+reports: watch the ejabberd log for `cross-app stanza`, then set
+`mod_ethora: isolation_mode: enforce`. The module default, used by the local
+config, is `enforce`. Also dropped for the same reason: the MQTT listener on
+port 1883 with `mod_mqtt`, and `jabber:iq:search` (`mod_vcard: search: false`);
+standalone pubsub (`pubsub.<host>`) is closed to users, PEP is unchanged.
+
 **Peer-to-peer 1:1 calls with a bundled STUN/TURN relay.** `features.calls_p2p: true`
 (with `features.video_calls`) runs 1:1 calls directly between the two
 browsers instead of through LiveKit; the API hands callers short-lived TURN
