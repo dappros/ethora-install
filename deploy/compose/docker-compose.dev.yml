@@ -1,0 +1,60 @@
+# Development overlay for a monoserver checkout: every image is built from the
+# submodules instead of pulled, and the site crawler, which has no published
+# image, joins the ai profile. It only works next to the submodules, so it is
+# of no use on an install made from this directory alone.
+#
+# dev-setup.sh writes the .env this file needs and turns it on through
+# COMPOSE_FILE; see "Develop from source" in README.md.
+
+services:
+  api:
+    build:
+      context: ../../ethora-backend/services/api
+  frontend:
+    build:
+      context: ../../ethora-app-reactjs
+  xmpp:
+    build:
+      context: ../../ejabberd-docker
+      dockerfile: docker/Dockerfile
+  ai-service:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/ai.Dockerfile
+  push:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/push.Dockerfile
+  playground:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/playground.Dockerfile
+  mcp:
+    build:
+      context: ../../ethora-mcp-server
+  uptime:
+    build:
+      context: ../../ethora-uptime
+
+  crawler:
+    profiles: ["ai"]
+    image: ethora-crawler:local
+    build:
+      context: ../../ethora-backend/services/ai/crawler
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      CRAWLER_CALLBACK_SECRET: ${CRAWLER_CALLBACK_SECRET:-}
+      DAPPROS_URL: http://api:8080/v1/sources/site-crawl/internal-for-crawler
+      PYTHONUNBUFFERED: "1"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 -O /dev/null http://127.0.0.1:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    volumes:
+      # Picks up crawler changes on a restart, without an image rebuild.
+      - ../../ethora-backend/services/ai/crawler/main.py:/app/main.py:ro

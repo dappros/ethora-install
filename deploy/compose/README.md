@@ -401,6 +401,44 @@ on one address over the LAN (`PUBLIC_URL`, port 8456):
 [platforms/casaos/](platforms/casaos/) (CasaOS and ZimaOS). Each README has
 the store's submission steps.
 
+## Develop from source
+
+In a monoserver checkout, `docker-compose.dev.yml` builds every image from the
+submodules instead of pulling it, and adds the site crawler to the `ai`
+profile. No registry login is needed.
+
+```bash
+git submodule update --init --recursive
+cd deploy/compose
+./dev-setup.sh                 # writes .env with your own secrets; prints the admin password
+docker compose up -d --build
+```
+
+Sign in at `https://app.ethora.localhost` as `admin@example.test`; the password
+is `ADMIN_PASSWORD` in `.env`. The first build takes a while and needs about
+10 GB of disk; plan for 16 GB of RAM with every module on.
+
+`.env` is yours and is not committed. Flags of `dev-setup.sh` go to
+`configure.sh`, and re-running it keeps the secrets:
+
+```bash
+./dev-setup.sh --license-key ETHORA1.... --ai-api-key sk-...
+./dev-setup.sh --modules ai,push        # fewer modules
+```
+
+- **Ports:** 80 and 443, and with the `calls` module 3478, 7881 and two UDP
+  ranges. Stop anything else that holds them first.
+- **Certificates:** Caddy issues self-signed ones. Accept the browser warning
+  once for each of the `app`, `api` and `xmpp` hosts, or sign-in and chat fail.
+- **Licence:** the modules' containers start without a key, but their features
+  stay off in the API until a key that carries them is set. AI also needs
+  `--ai-api-key`.
+- **Playground:** off by default. Create an app for it in the admin panel, add
+  `PLAYGROUND_APP_ID` and `PLAYGROUND_APP_SECRET` to `.env`, and re-run
+  `dev-setup.sh --modules ai,push,playground,mcp,uptime,calls`.
+- **Crawler:** `main.py` is mounted from the checkout, so a change needs only
+  `docker compose restart crawler`.
+
 ## Common questions
 
 - **Certificate failed.** DNS does not point at this server yet, or port 80

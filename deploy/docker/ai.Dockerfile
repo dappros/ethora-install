@@ -54,7 +54,8 @@ COPY ethora-chat-component/package.json ethora-chat-component/package-lock.json 
 RUN cd ethora-chat-component && npm ci --no-audit --no-fund --ignore-scripts
 COPY ethora-chat-component/ ./ethora-chat-component/
 COPY ethora-ai-chat-widget/package.json ethora-ai-chat-widget/package-lock.json ./ethora-ai-chat-widget/
-RUN cd ethora-ai-chat-widget && npm ci --no-audit --no-fund
+# --ignore-scripts: prepare only installs git hooks, and scripts/ is not copied yet.
+RUN cd ethora-ai-chat-widget && npm ci --no-audit --no-fund --ignore-scripts
 COPY ethora-ai-chat-widget/ ./ethora-ai-chat-widget/
 RUN cd ethora-ai-chat-widget \
  && printf 'VITE_WIDGET_API_URL=__ETHORA_WIDGET_API_URL__\nVITE_WIDGET_XMPP_DOMAIN=__ETHORA_WIDGET_XMPP_DOMAIN__\nVITE_WIDGET_XMPP_WS_URL=__ETHORA_WIDGET_XMPP_WS_URL__\nVITE_WIDGET_XMPP_CONFERENCE=__ETHORA_WIDGET_XMPP_CONFERENCE__\nVITE_WIDGET_QR_URL=__ETHORA_WIDGET_QR_URL__\n' > .env.production.local \
