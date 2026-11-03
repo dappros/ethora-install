@@ -1364,6 +1364,7 @@ export TRACK_MEMBER_URL="${TRACK_MEMBER_URL:-$ETHORA_API_URL/v1/chats/track-memb
 export TRACK_LAST_MESSAGE_URL="${TRACK_LAST_MESSAGE_URL:-$ETHORA_API_URL/v1/chats/track-last-message}"
 export TRACK_MESSAGE_URL="${TRACK_MESSAGE_URL:-$ETHORA_API_URL/v1/chats/archive-message}"
 export HISTORY_ACCESS_URL="${HISTORY_ACCESS_URL:-$ETHORA_API_URL/v1/chats/history-access}"
+export TRACK_PRESENCE_URL="${TRACK_PRESENCE_URL:-$ETHORA_API_URL/v1/chats/track-presence}"
 export MESSAGE_AUDIT_URL="${MESSAGE_AUDIT_URL:-$ETHORA_API_URL/v1/chats/message-audit}"
 # ejabberd's offline pushes: the push service itself with the push module,
 # else the public URL the host installer uses (answers 404 without the module).
@@ -1384,6 +1385,7 @@ E_TRACK_MEMBER_URL="$(esc "$TRACK_MEMBER_URL")"
 E_TRACK_LAST_MESSAGE_URL="$(esc "$TRACK_LAST_MESSAGE_URL")"
 E_TRACK_MESSAGE_URL="$(esc "$TRACK_MESSAGE_URL")"
 E_HISTORY_ACCESS_URL="$(esc "$HISTORY_ACCESS_URL")"
+E_TRACK_PRESENCE_URL="$(esc "$TRACK_PRESENCE_URL")"
 E_MESSAGE_AUDIT_URL="$(esc "$MESSAGE_AUDIT_URL")"
 E_PUSH_COMMON_POST_URL="$(esc "$PUSH_COMMON_POST_URL")"
 E_PUSH_VOIP_POST_URL="$(esc "$PUSH_VOIP_POST_URL")"
@@ -1431,6 +1433,12 @@ if grep -q "^  mod_history_access:" "$cfg"; then
   sed -i \
     -e "/^  mod_history_access:/,/^  [a-z_]/ s|^[ ]*url:.*|    url: \"$E_HISTORY_ACCESS_URL\"|g" \
     -e "/^  mod_history_access:/,/^  [a-z_]/ s|^[ ]*secret:.*|    secret: \"$E_XMPP_SECRET\"|g" \
+    "$cfg"
+fi
+if grep -q "^  mod_track_presence:" "$cfg"; then
+  sed -i \
+    -e "/^  mod_track_presence:/,/^  [a-z_]/ s|^[ ]*url:.*|    url: \"$E_TRACK_PRESENCE_URL\"|g" \
+    -e "/^  mod_track_presence:/,/^  [a-z_]/ s|^[ ]*secret:.*|    secret: \"$E_XMPP_SECRET\"|g" \
     "$cfg"
 fi
 # mod_edit / mod_delete ship as bare `{}` blocks: expand them into url/secret

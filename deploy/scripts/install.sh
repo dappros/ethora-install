@@ -1163,6 +1163,8 @@ parse_config() {
     export TRACK_MESSAGE_URL=$(yq eval '.services.ejabberd.track_message_url // ""' "$CONFIG_FILE")
     # MAM history-read audit endpoint (mod_history_access).
     export HISTORY_ACCESS_URL=$(yq eval '.services.ejabberd.history_access_url // ""' "$CONFIG_FILE")
+    # Online / offline endpoint (mod_track_presence).
+    export TRACK_PRESENCE_URL=$(yq eval '.services.ejabberd.track_presence_url // ""' "$CONFIG_FILE")
     # Message edit/delete audit endpoint (mod_edit / mod_delete).
     export MESSAGE_AUDIT_URL=$(yq eval '.services.ejabberd.message_audit_url // ""' "$CONFIG_FILE")
 
@@ -1456,6 +1458,13 @@ parse_config() {
             export HISTORY_ACCESS_URL="https://${API_DOMAIN}/v1/chats/history-access"
         fi
     fi
+    if [ -z "$TRACK_PRESENCE_URL" ] || [ "$TRACK_PRESENCE_URL" == "null" ]; then
+        if [ "$API_DOMAIN" == "localhost" ]; then
+            export TRACK_PRESENCE_URL="http://host.docker.internal:${BACKEND_PORT}/v1/chats/track-presence"
+        else
+            export TRACK_PRESENCE_URL="https://${API_DOMAIN}/v1/chats/track-presence"
+        fi
+    fi
     if [ -z "$MESSAGE_AUDIT_URL" ] || [ "$MESSAGE_AUDIT_URL" == "null" ]; then
         if [ "$API_DOMAIN" == "localhost" ]; then
             export MESSAGE_AUDIT_URL="http://host.docker.internal:${BACKEND_PORT}/v1/chats/message-audit"
@@ -1581,6 +1590,7 @@ export TRACK_MEMBER_URL="$TRACK_MEMBER_URL"
 export TRACK_LAST_MESSAGE_URL="$TRACK_LAST_MESSAGE_URL"
 export TRACK_MESSAGE_URL="$TRACK_MESSAGE_URL"
 export HISTORY_ACCESS_URL="$HISTORY_ACCESS_URL"
+export TRACK_PRESENCE_URL="$TRACK_PRESENCE_URL"
 export MESSAGE_AUDIT_URL="$MESSAGE_AUDIT_URL"
 export MINIO_ROOT_USER="$MINIO_ROOT_USER"
 export MINIO_ROOT_PASSWORD="$MINIO_ROOT_PASSWORD"

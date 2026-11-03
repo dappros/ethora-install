@@ -487,6 +487,7 @@ track_member_url="$(read_config '.services.ejabberd.track_member_url // ""')"
 track_last_message_url="$(read_config '.services.ejabberd.track_last_message_url // ""')"
 track_message_url="$(read_config '.services.ejabberd.track_message_url // ""')"
 history_access_url="$(read_config '.services.ejabberd.history_access_url // ""')"
+track_presence_url="$(read_config '.services.ejabberd.track_presence_url // ""')"
 message_audit_url="$(read_config '.services.ejabberd.message_audit_url // ""')"
 # Optional mod_translate endpoint. Unlike the track URLs it is NOT derived from the
 # domain (translate service isn't present on every install); empty keeps the repo default.
@@ -523,6 +524,13 @@ if [ -z "$history_access_url" ] && [ -n "$api_domain" ]; then
     history_access_url="https://${api_domain}/v1/chats/history-access"
   fi
 fi
+if [ -z "$track_presence_url" ] && [ -n "$api_domain" ]; then
+  if [ "$api_domain" == "localhost" ]; then
+    track_presence_url="http://host.docker.internal:${backend_port:-8080}/v1/chats/track-presence"
+  else
+    track_presence_url="https://${api_domain}/v1/chats/track-presence"
+  fi
+fi
 if [ -z "$message_audit_url" ] && [ -n "$api_domain" ]; then
   if [ "$api_domain" == "localhost" ]; then
     message_audit_url="http://host.docker.internal:${backend_port:-8080}/v1/chats/message-audit"
@@ -534,6 +542,7 @@ update_env_var "TRACK_MEMBER_URL" "$track_member_url"
 update_env_var "TRACK_LAST_MESSAGE_URL" "$track_last_message_url"
 update_env_var "TRACK_MESSAGE_URL" "$track_message_url"
 update_env_var "HISTORY_ACCESS_URL" "$history_access_url"
+update_env_var "TRACK_PRESENCE_URL" "$track_presence_url"
 update_env_var "MESSAGE_AUDIT_URL" "$message_audit_url"
 update_env_var "TRANSLATE_URL" "$translate_url"
 

@@ -161,6 +161,15 @@ update_tracking_urls_and_secret() {
         "$cfg" || warn "Failed to update mod_history_access url/secret"
     fi
 
+    # mod_track_presence posts users coming online / going offline (the app
+    # webhooks user.online / user.offline). Same optional-block guard.
+    if [ -n "${TRACK_PRESENCE_URL:-}" ] && grep -q "^  mod_track_presence:" "$cfg"; then
+      sed_i \
+        -e "/^  mod_track_presence:/,/^  [a-z_]/ s|^[ ]*url:.*|    url: \"${TRACK_PRESENCE_URL}\"|g" \
+        -e "/^  mod_track_presence:/,/^  [a-z_]/ s|^[ ]*secret:.*|    secret: \"${XMPP_SECRET}\"|g" \
+        "$cfg" || warn "Failed to update mod_track_presence url/secret"
+    fi
+
     # mod_edit / mod_delete post message edit/delete audit events to the same
     # backend `logs` pipeline (POST /v1/chats/message-audit). Both share one
     # URL. The stock prod config ships them as bare `mod_edit: {}` /
@@ -191,6 +200,7 @@ update_tracking_urls_and_secret() {
     grep -n "mod_track_last_message:" -A3 "$cfg" 2>/dev/null || true
     grep -n "mod_track_message:" -A3 "$cfg" 2>/dev/null || true
     grep -n "mod_history_access:" -A3 "$cfg" 2>/dev/null || true
+    grep -n "mod_track_presence:" -A3 "$cfg" 2>/dev/null || true
     grep -n "mod_edit:" -A3 "$cfg" 2>/dev/null || true
     grep -n "mod_delete:" -A3 "$cfg" 2>/dev/null || true
 }

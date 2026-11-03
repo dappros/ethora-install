@@ -546,6 +546,7 @@ else
     export XMPP_DOMAIN=xmpp.chat.example.com API_DOMAIN=api.chat.example.com EJABBERD_DIR="$I"
     export TRACK_MEMBER_URL=http://api:8080/v1/chats/track-member TRACK_LAST_MESSAGE_URL=http://api:8080/v1/chats/track-last-message \
            TRACK_MESSAGE_URL=http://api:8080/v1/chats/archive-message HISTORY_ACCESS_URL=http://api:8080/v1/chats/history-access \
+           TRACK_PRESENCE_URL=http://api:8080/v1/chats/track-presence \
            MESSAGE_AUDIT_URL=http://api:8080/v1/chats/message-audit EJABBERD_REDIS_HOST=redis
     # shellcheck disable=SC1090
     source "$T/installer-fns.sh"

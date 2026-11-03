@@ -314,6 +314,10 @@ services:
     # scripts build it from domains.api + services.backend.port.
     # Example (prod): https://api.example.com/v1/chats/history-access
     history_access_url: ""
+    # Optional: users online / offline endpoint (mod_track_presence, the app
+    # webhooks user.online / user.offline). Same derivation rule.
+    # Example (prod): https://api.example.com/v1/chats/track-presence
+    track_presence_url: ""
     # Optional: message edit/delete audit endpoint (mod_edit / mod_delete,
     # one shared URL). Same derivation rule — leave empty and the deploy
     # scripts build it from domains.api + services.backend.port.

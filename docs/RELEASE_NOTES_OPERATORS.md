@@ -44,6 +44,18 @@ while Redis is unreachable, ejabberd sends the same events to the existing
 `/v1/chats/*` callbacks as before, so the URLs and `security.xmpp_secret`
 stay. The stream is capped at about 100,000 entries.
 
+**App webhooks.** App admins can add webhooks in the admin panel (app
+settings, Webhooks) for chat and account events: new, edited and deleted
+messages, accounts created, signed in, signed out, deleted, and users coming
+online and going offline. Deliveries run in backend-jobs with retries for
+about an hour. Webhooks to private network addresses are refused unless the
+API and jobs get `WEBHOOK_ALLOW_PRIVATE=1` in their environment; set it only
+where everyone who manages an app is trusted with the internal network. The
+online / offline events come from a new ejabberd module, `mod_track_presence`,
+rendered like the other tracking modules; on a host install its callback URL
+is derived from the API domain, override with
+`services.ejabberd.track_presence_url`.
+
 **XMPP app isolation.** `mod_ethora` now refuses any stanza that crosses from
 one app to another: messages of every type, presence and iq, to users and to
 rooms (so also MucSub and room history), plus anything a room or
