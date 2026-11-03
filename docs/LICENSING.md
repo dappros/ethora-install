@@ -227,6 +227,24 @@ Rotation: add the new public key to `TRUSTED_PUBLIC_KEYS` in
 then start signing with the new private key. Keys signed under the old one
 keep verifying until they expire.
 
+## Licences for the team
+
+- **Local development** (`deploy/compose/dev-setup.sh`, hosts under
+  `ethora.localhost`, `localhost`, `127.0.0.1` or `*.test.ethora.com`): those
+  hosts never fail the domain check, so any valid key works there. The team
+  shares one capped offline dev key (`DEV-2026-LOCAL`: enterprise, every
+  feature, 20 Apps, 200 users, 12 months, domain `test.ethora.com`) through
+  the team password manager. Never commit it: everything under `deploy/` is
+  published to the public `ethora-install` repository, and a leaked key works
+  for anyone who sets `ETHORA_LICENSED_HOSTS` to a local name.
+- **Test servers**: issue your own with `tools/test-license.sh --domain
+  203-0-113-10.sslip.io` (your personal team token from an admin, in
+  `ETHORA_TEAM_TOKEN` or `~/.ethora/team-token`). Enterprise, every feature,
+  online, up to 90 days, `*.ethora.com` or an IP-style `sslip.io` / `nip.io`
+  domain, Docker Hub access for the module images included; each one is
+  announced on the licence server's channel. Anything else (a customer, a
+  longer term, an offline key) goes through an admin and the admin API.
+
 ## Engineering reference
 
 - Module: `ethora-backend/services/api/src/modules/license/`
