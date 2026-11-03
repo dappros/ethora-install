@@ -321,20 +321,6 @@ services:
     message_audit_url: ""
     # Optional: mod_translate endpoint. Set per-install; empty keeps the repo default.
     translate_url: ""
-  # Centrifugo (real-time stats counters for the admin dashboard).
-  # NON-CRITICAL: backend stats publishing fails fast (CENTRIFUGO_TIMEOUT_MS) and silently when this
-  # service is unreachable; user logins and API requests are never blocked by it.
-  # Each instance runs its own local Centrifugo container; the API runs on host port `port`.
-  centrifugo:
-    enabled: true
-    port: 8001
-    # Bind/timeout settings exposed to the backend (axios) — keep small, this is non-critical.
-    timeout_ms: 2000
-    # Auto-generated per install if empty (persisted in .deploy.env across updates).
-    api_key: ""         # X-API-KEY header used by backend -> centrifugo HTTP API
-    hmac_secret: ""     # Used to sign the wsToken returned to the frontend (must match centrifugo)
-    admin_password: ""  # Centrifugo admin UI password
-    admin_secret: ""    # Centrifugo admin UI session secret
 
 # Feature Flags (for future modularity)
 features:

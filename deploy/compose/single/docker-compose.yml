@@ -78,10 +78,6 @@ services:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
-      CENTRIFUGO_API_KEY: ${CENTRIFUGO_API_KEY:-}
-      CENTRIFUGO_HMAC_SECRET: ${CENTRIFUGO_HMAC_SECRET:-}
-      CENTRIFUGO_ADMIN_PASSWORD: ${CENTRIFUGO_ADMIN_PASSWORD:-}
-      CENTRIFUGO_ADMIN_SECRET: ${CENTRIFUGO_ADMIN_SECRET:-}
       ACME_EMAIL: ${ACME_EMAIL:-}
       CADDY_GLOBAL_OPTIONS: ${CADDY_GLOBAL_OPTIONS:-}
       # The profiles double as the module switches (ai -> AI_SERVICE_ENABLED...).
@@ -207,27 +203,6 @@ services:
       interval: 15s
       timeout: 5s
       retries: 10
-    <<: *logging
-
-  centrifugo:
-    image: centrifugo/centrifugo:v6
-    command: ["centrifugo", "-c", "/ethora/config/centrifugo/config.json"]
-    volumes:
-      - config:/ethora/config:ro
-    depends_on:
-      config:
-        condition: service_completed_successfully
-    ulimits:
-      nofile:
-        soft: 65535
-        hard: 65535
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8000/health || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
     <<: *logging
 
   # ------------------------------------------------------------------ xmpp --
@@ -685,8 +660,6 @@ services:
       xmpp:
         condition: service_started
       minio:
-        condition: service_started
-      centrifugo:
         condition: service_started
     restart: unless-stopped
     <<: *logging

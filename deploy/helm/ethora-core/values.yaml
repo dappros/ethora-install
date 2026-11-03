@@ -61,10 +61,6 @@ secrets:
   mysqlRootPassword: ""
   minioRootUser: ""
   minioRootPassword: ""
-  centrifugoApiKey: ""
-  centrifugoHmacSecret: ""
-  centrifugoAdminPassword: ""
-  centrifugoAdminSecret: ""
   # At-rest encryption: wallet private keys (passphrase), object fields and the
   # legacy encrypted upload path ("<64 hex>:<32 hex>"). Rotation needs the
   # re-encrypt tool; a changed value alone makes existing data unreadable.
@@ -83,7 +79,6 @@ images:
   mysql: { repository: docker.io/library/mysql, tag: "8.1.0" }
   redis: { repository: docker.io/library/redis, tag: "7.4-alpine" }
   minio: { repository: docker.io/dappros/minio, tag: "RELEASE.2025-09-07T16-13-09Z" }
-  centrifugo: { repository: docker.io/centrifugo/centrifugo, tag: "v6.9.7" }
 imagePullPolicy: IfNotPresent
 imagePullSecrets: []
 
@@ -97,7 +92,7 @@ ingress:
   tls: true
   # Added to every ingress.
   annotations: {}
-  # Added to the ingresses that carry WebSockets (app: Centrifugo, xmpp: /ws).
+  # Added to the ingresses that carry WebSockets (xmpp: /ws and /bosh).
   websocketAnnotations:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
@@ -156,10 +151,6 @@ external:
     port: 9000
 
 # ------------------------------------------------------------- services --
-centrifugo:
-  resources:
-    requests: { cpu: 20m, memory: 32Mi }
-    limits: { memory: 256Mi }
 xmpp:
   resources:
     requests: { cpu: 100m, memory: 256Mi }

@@ -23,7 +23,6 @@ render() { # render <Dockerfile> <CloudronManifest.json> <out dir>
     /^ARG FRONTEND_IMAGE=/   { print "ARG FRONTEND_IMAGE=" ENVIRON["ETHORA_FRONTEND_IMAGE"]; next }
     /^ARG INIT_IMAGE=/       { print "ARG INIT_IMAGE=" ENVIRON["ETHORA_COMPOSE_INIT_IMAGE"]; next }
     /^ARG MINIO_IMAGE=/      { print "ARG MINIO_IMAGE=" ENVIRON["MINIO_IMAGE"]; next }
-    /^ARG CENTRIFUGO_IMAGE=/ { print "ARG CENTRIFUGO_IMAGE=" ENVIRON["CENTRIFUGO_IMAGE"]; next }
     /^ARG CADDY_IMAGE=/      { print "ARG CADDY_IMAGE=" ENVIRON["CADDY_IMAGE"]; next }
     { print }' "$1" > "$3/Dockerfile"
   sed -E "s/^(  \"upstreamVersion\": )\"[^\"]*\"/\1\"$ETHORA_BUILD\"/" "$2" > "$3/CloudronManifest.json"

@@ -32,7 +32,7 @@ render() {
   export T_INIT="$(tag "$ETHORA_COMPOSE_INIT_IMAGE")" T_API="$(tag "$ETHORA_API_IMAGE")" \
          T_FRONTEND="$(tag "$ETHORA_FRONTEND_IMAGE")" T_XMPP="$(tag "$ETHORA_XMPP_IMAGE")" \
          T_MONGO="$(tag "$MONGO_IMAGE")" T_MYSQL="$(tag "$MYSQL_IMAGE")" T_REDIS="$(tag "$REDIS_IMAGE")" \
-         T_MINIO="$(tag "$MINIO_IMAGE")" T_CENTRIFUGO="$(tag "$CENTRIFUGO_IMAGE")" T_CADDY="$(tag "$CADDY_IMAGE")" \
+         T_MINIO="$(tag "$MINIO_IMAGE")" T_CADDY="$(tag "$CADDY_IMAGE")" \
          PORT VERSION="${ETHORA_BUILD:0:2}.$((10#${ETHORA_BUILD:2:2})).${ETHORA_BUILD#*.}"
   echo '# Ethora Core for CasaOS / ZimaOS. GENERATED from deploy/compose/single/docker-compose.yml'
   echo '# by deploy/compose/platforms/casaos/build.sh; edit those, not this.'
@@ -56,7 +56,6 @@ render() {
     | .services.mysql.image = strenv(T_MYSQL)
     | .services.redis.image = strenv(T_REDIS)
     | .services.minio.image = strenv(T_MINIO)
-    | .services.centrifugo.image = strenv(T_CENTRIFUGO)
     | .services.caddy.image = strenv(T_CADDY)
     | .services.config.environment = {
         "PUBLIC_URL": "http://casaos.local:" + strenv(PORT),

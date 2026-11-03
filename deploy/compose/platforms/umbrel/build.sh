@@ -60,7 +60,6 @@ render_into() { # render_into <dir>
       | .services.mysql.image = strenv(MYSQL_IMAGE)
       | .services.redis.image = strenv(REDIS_IMAGE)
       | .services.minio.image = strenv(MINIO_IMAGE)
-      | .services.centrifugo.image = strenv(CENTRIFUGO_IMAGE)
       | .services.caddy.image = strenv(CADDY_IMAGE)
       | .services.config.environment = {
           "PUBLIC_URL": "http://${DEVICE_DOMAIN_NAME}:" + strenv(PORT),
@@ -79,11 +78,7 @@ render_into() { # render_into <dir>
           "INTERNAL_REQUESTS_SECRET": "${APP_ETHORA_INTERNAL_REQUESTS_SECRET}",
           "MYSQL_ROOT_PASSWORD": "${APP_ETHORA_MYSQL_ROOT_PASSWORD}",
           "MINIO_ROOT_USER": "${APP_ETHORA_MINIO_ROOT_USER}",
-          "MINIO_ROOT_PASSWORD": "${APP_ETHORA_MINIO_ROOT_PASSWORD}",
-          "CENTRIFUGO_API_KEY": "${APP_ETHORA_CENTRIFUGO_API_KEY}",
-          "CENTRIFUGO_HMAC_SECRET": "${APP_ETHORA_CENTRIFUGO_HMAC_SECRET}",
-          "CENTRIFUGO_ADMIN_PASSWORD": "${APP_ETHORA_CENTRIFUGO_ADMIN_PASSWORD}",
-          "CENTRIFUGO_ADMIN_SECRET": "${APP_ETHORA_CENTRIFUGO_ADMIN_SECRET}"
+          "MINIO_ROOT_PASSWORD": "${APP_ETHORA_MINIO_ROOT_PASSWORD}"
         }
       | .services = ({"app_proxy": {"environment": {
           "APP_HOST": "ethora_caddy_1",

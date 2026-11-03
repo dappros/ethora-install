@@ -6,7 +6,7 @@
 {{- /*
 One ingress per public host, routed like the compose bundle's Caddyfile:
   api.   -> api (/metrics goes to the web app, so the API's metrics stay internal)
-  app.   -> frontend, /connection/websocket -> centrifugo
+  app.   -> frontend
   xmpp.  -> xmpp, /ws and /bosh only (never ejabberd's /api or /admin)
   files. -> minio
   secure-files. -> api (chat attachments; the API serves the host itself,
@@ -17,8 +17,7 @@ With publicUrl, one ingress routes all of them by path.
   (dict "role" "api" "extra" $ing.uploadAnnotations "paths" (list
     (dict "path" "/metrics" "type" "Exact" "svc" "frontend")
     (dict "path" "/" "type" "Prefix" "svc" "api")))
-  (dict "role" "web" "extra" $ing.websocketAnnotations "paths" (list
-    (dict "path" "/connection/websocket" "type" "Exact" "svc" "centrifugo" "port" 8000)
+  (dict "role" "web" "extra" (dict) "paths" (list
     (dict "path" "/" "type" "Prefix" "svc" "frontend")))
   (dict "role" "xmpp" "extra" $ing.websocketAnnotations "paths" (list
     (dict "path" "/ws" "type" "Prefix" "svc" "xmpp" "port" 5280)
@@ -38,7 +37,6 @@ With publicUrl, one ingress routes all of them by path.
     (dict "path" "/api-docs" "type" "Prefix" "svc" "api")
     (dict "path" "/ws" "type" "Prefix" "svc" "xmpp" "port" 5280)
     (dict "path" "/bosh" "type" "Prefix" "svc" "xmpp" "port" 5280)
-    (dict "path" "/connection/websocket" "type" "Exact" "svc" "centrifugo" "port" 8000)
     (dict "path" "/files" "type" "Prefix" "svc" "minio" "port" 9000)
     (dict "path" "/" "type" "Prefix" "svc" "frontend"))) -}}
 {{- end -}}

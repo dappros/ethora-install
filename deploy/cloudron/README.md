@@ -10,7 +10,6 @@ Cloudron's own databases.
 | api, jobs  | `ethora-api` (Node and `/app`)      | `127.0.0.1:8080` (api) |
 | init       | `ethora-api`, first-boot steps, then exits | -               |
 | xmpp       | `ethora-xmpp` via `ethora-compose-init` (ejabberd, musl runtime in `/opt/musl`) | `5280` and ejabberd's other ports, inside the container |
-| centrifugo | `centrifugo` (static binary)        | `8000`                 |
 | minio      | `dappros/minio` (static binary)     | `127.0.0.1:9000`       |
 
 Nothing is compiled here: the Dockerfile copies each payload out of the
@@ -28,7 +27,6 @@ same way as the compose bundle's one-origin mode (`PUBLIC_URL`):
 |------------------------------------|---------------------------|
 | `/v1`, `/v2`, `/api-docs`          | API                       |
 | `/ws`, `/bosh`                     | ejabberd (XMPP over WebSocket / BOSH) |
-| `/connection/websocket`            | Centrifugo                |
 | `/files/...`                       | MinIO (the `files` bucket) |
 | anything else                      | web app and admin panel   |
 

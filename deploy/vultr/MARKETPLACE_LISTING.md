@@ -48,4 +48,4 @@
 **Support URL**: https://ethora.com/legal/support-policy/
 **Documentation**: https://github.com/dappros/ethora-install
 **Licence**: https://ethora.com/legal/ethora-core-license/
-**Software included**: Ethora Core 2610.5 (Ethora Core Software License), ejabberd (GPL-2.0), MongoDB 6.0.8 (SSPL-1.0), MySQL 8.1.0 (GPL-2.0), Redis (RSALv2/SSPLv1), MinIO (AGPL-3.0), Centrifugo (Apache-2.0), Docker Engine (Apache-2.0), Caddy (Apache-2.0), Node.js 24 (MIT).
+**Software included**: Ethora Core 2610.5 (Ethora Core Software License), ejabberd (GPL-2.0), MongoDB 6.0.8 (SSPL-1.0), MySQL 8.1.0 (GPL-2.0), Redis (RSALv2/SSPLv1), MinIO (AGPL-3.0), Docker Engine (Apache-2.0), Caddy (Apache-2.0), Node.js 24 (MIT).

@@ -118,30 +118,6 @@ services:
       options:
         max-size: "20m"
         max-file: "5"
-  centrifugo:
-    image: docker.io/centrifugo/centrifugo:v6.9.7
-    command: ["centrifugo", "-c", "/ethora/config/centrifugo/config.json"]
-    volumes:
-      - /DATA/AppData/$AppID/config:/ethora/config:ro
-    depends_on:
-      config:
-        condition: service_completed_successfully
-    ulimits:
-      nofile:
-        soft: 65535
-        hard: 65535
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8000/health || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "5"
   xmpp:
     image: docker.io/dappros/ethora-xmpp:2610.16
     entrypoint: ["/bin/sh", "/ethora/config/scripts/xmpp-start.sh"]
@@ -270,8 +246,6 @@ services:
       xmpp:
         condition: service_started
       minio:
-        condition: service_started
-      centrifugo:
         condition: service_started
     restart: unless-stopped
     logging:

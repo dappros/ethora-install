@@ -81,8 +81,8 @@ of date.
 
 Set `PUBLIC_URL` instead of `ROOT_DOMAIN` (`./configure.sh --public-url ...`)
 to put everything on one address, routed by path: the web app at `/`, the
-API at `/v1`, `/v2` and `/api-docs`, XMPP at `/ws` and `/bosh`, Centrifugo at
-`/connection/websocket`, files at `/files/`. Chat attachments then go to the
+API at `/v1`, `/v2` and `/api-docs`, XMPP at `/ws` and `/bosh`, files at
+`/files/`. Chat attachments then go to the
 public files bucket (the membership-gated `secure-files.` host needs a host
 of its own).
 
@@ -125,7 +125,7 @@ message sent over `wss://xmpp.<root>/ws`, a file uploaded and read back from
 | `api`, `jobs` | `dappros/ethora-api` | HTTP API (`api.<root>`, Swagger at `/api-docs/`), cron and queue workers |
 | `xmpp` | `dappros/ethora-xmpp` | ejabberd with the Ethora modules (`xmpp.<root>`, WebSocket at `/ws`) |
 | `minio` | `dappros/minio` | file storage (`files.<root>`) |
-| `mongo`, `mysql`, `redis`, `centrifugo` | stock images | internal only |
+| `mongo`, `mysql`, `redis` | stock images | internal only |
 | `config`, `mongo-init`, `init` | the images above | one-shot steps, run on every `up`, then exit (0) |
 | `ai-service`, `docs-parse`, `widget`, `ai-postgres` | `dappros/ethora-ai`, `pgvector`, `caddy` | the `ai` module (profile `ai`; see Enterprise modules) |
 | `push`, `push-worker`, `playground`, `mcp`, `uptime`, `uptime-db` | `dappros/ethora-push`, `-playground`, `-mcp`, `-uptime`, `postgres` | the other modules, each behind its profile |
@@ -350,7 +350,7 @@ WebSocket upgrades allowed:
 | Host | Container and port | Paths |
 |---|---|---|
 | `api.<root>` | `api:8080` | all (block `/metrics`) |
-| `app.<root>` | `frontend:8080`; `centrifugo:8000` for `/connection/websocket` | all |
+| `app.<root>` | `frontend:8080` | all |
 | `xmpp.<root>` | `xmpp:5280` | `/ws` and `/bosh` only; never `/api` or `/admin` |
 | `files.<root>` | `minio:9000` | all, with the original `Host` header |
 | `secure-files.<root>` | `api:8080` | all, with the original `Host` header (the API serves this host itself) |

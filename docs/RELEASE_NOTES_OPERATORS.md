@@ -14,6 +14,22 @@ default is not what you want.
 
 ## 2610 (development line, September 2026)
 
+**Centrifugo is gone.** The admin panel's live updates (app statistics, site
+crawl progress) now arrive as XMPP events on the web app's existing chat
+connection, so the Centrifugo container, its config and the
+`/connection/websocket` route are removed from every deploy form: host
+installer, compose bundle, Helm chart, Cloudron and the platform templates.
+`update.sh` removes the old `centrifugo` container once; host port 8001 is
+free afterwards. `services.centrifugo` in `deploy.yml` and the
+`CENTRIFUGO_*` values in `.deploy.env` or the compose `.env` are ignored and
+can be deleted. Login, refresh and `/users/me` responses no longer carry
+`wsToken`; a client of your own that read it can drop it. Backend and web app
+must be on this line together, an older web app loses live counters (pages
+still show correct numbers after a reload). On a compose install, run
+`docker compose restart caddy` after the update: `up -d` does not restart
+Caddy when only its rendered Caddyfile changed, and until then the old
+route answers 502.
+
 **XMPP app isolation.** `mod_ethora` now refuses any stanza that crosses from
 one app to another: messages of every type, presence and iq, to users and to
 rooms (so also MucSub and room history), plus anything a room or
@@ -64,7 +80,7 @@ render without them. The uptime B2B journey keeps signing in as the base app
 users and rooms in it.
 
 **Docker-published ports are bound to loopback.** MongoDB, Redis, MySQL,
-MinIO (9000/9001), Centrifugo, the crawler, ejabberd's HTTP listeners
+MinIO (9000/9001), the crawler, ejabberd's HTTP listeners
 (5280/5443), the AI and uptime Postgres and the uptime service now listen on
 127.0.0.1 only; nginx keeps proxying them where they are public (the XMPP
 websocket, files, the uptime page). Nothing changes for clients. If you

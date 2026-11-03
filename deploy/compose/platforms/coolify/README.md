@@ -31,7 +31,7 @@ records (a wildcard `*.chat.example.com` covers them):
 | Host | Routed to |
 |---|---|
 | `api.chat.example.com` | `api:8080` |
-| `app.chat.example.com` | `frontend:8080`; `centrifugo:8000` for `/connection/websocket` |
+| `app.chat.example.com` | `frontend:8080` |
 | `xmpp.chat.example.com` | `xmpp:5280`, paths `/ws` and `/bosh` only |
 | `files.chat.example.com` | `minio:9000` |
 | `secure-files.chat.example.com` | `api:8080` (chat attachments, gated by chat membership; the API serves this host itself) |
@@ -53,14 +53,11 @@ In Coolify: project > environment > **+ New** > **Public Repository**.
    Coolify's proxy which container port to use):
    - `api`: `https://api.chat.example.com:8080,https://secure-files.chat.example.com:8080`
    - `frontend`: `https://app.chat.example.com:8080`
-   - `centrifugo`: `https://app.chat.example.com:8000/connection/websocket`
    - `xmpp`: `https://xmpp.chat.example.com:5280/ws,https://xmpp.chat.example.com:5280/bosh`
    - `minio`: `https://files.chat.example.com:9000`
-   Coolify warns that `app.` and `xmpp.` are used twice; confirm (in the API:
-   `force_domain_override: true`). Traefik gives the longer path rule
-   priority, so `/connection/websocket` reaches centrifugo and everything
-   else on `app.` reaches the frontend; on `xmpp.` only `/ws` and `/bosh`
-   are routed, which keeps ejabberd's `/api` and `/admin` internal.
+   Coolify warns that `xmpp.` is used twice; confirm (in the API:
+   `force_domain_override: true`). On `xmpp.` only `/ws` and `/bosh` are
+   routed, which keeps ejabberd's `/api` and `/admin` internal.
 3. **Advanced**: turn **Preserve Repository During Deployment** on and
    **Strip Prefix** off. The first keeps the checkout under
    `/data/coolify/applications/<uuid>/`, which is where the bundle's
@@ -68,8 +65,7 @@ In Coolify: project > environment > **+ New** > **Public Repository**.
    directories are created empty and `config` exits with 2
    (`can't open '/ethora/scripts/render-config.sh'`), `mongo-init` with
    127 (checked on a fresh application). The second keeps
-   `/ws`, `/bosh` and `/connection/websocket` on the request that reaches
-   the container.
+   `/ws` and `/bosh` on the request that reaches the container.
 4. **Environment variables**, developer view: paste `.env.example` from the
    bundle, then
    - set `ROOT_DOMAIN`, `ADMIN_EMAIL` and every empty secret (a random
@@ -109,7 +105,6 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
   \"docker_compose_domains\":[
     {\"name\":\"api\",\"domain\":\"https://api.$R:8080\"},
     {\"name\":\"frontend\",\"domain\":\"https://app.$R:8080\"},
-    {\"name\":\"centrifugo\",\"domain\":\"https://app.$R:8000/connection/websocket\"},
     {\"name\":\"xmpp\",\"domain\":\"https://xmpp.$R:5280/ws,https://xmpp.$R:5280/bosh\"},
     {\"name\":\"minio\",\"domain\":\"https://files.$R:9000\"}],
   \"is_preserve_repository_enabled\":true, \"is_stripprefix_enabled\":false,
@@ -173,19 +168,17 @@ deploy:
 
 1. Domains: `api` -> `https://api.<root>,https://secure-files.<root>`,
    `frontend` -> `https://app.<root>`, `xmpp` -> `https://xmpp.<root>/ws`,
-   `minio` -> `https://files.<root>`, `centrifugo` ->
-   `https://app.<root>/connection/websocket` (the ports and paths are
-   declared in the template, only the hosts are needed). The hosts must be
+   `minio` -> `https://files.<root>` (the ports and paths are declared in
+   the template, only the hosts are needed). The hosts must be
    these five: they derive from `ROOT_DOMAIN` inside the
    stack. Coolify's `SERVICE_FQDN_*` values are deliberately not used for
    them, because Coolify appends a route's path to them
    (`xmpp.example.com/ws` is not an XMPP host).
-2. On the `xmpp` and `centrifugo` services turn **Strip Prefix** off
+2. On the `xmpp` service turn **Strip Prefix** off
    (service > that application > Advanced). Coolify's default for a
    service application strips the route's path before the container sees
-   it, and ejabberd needs `/ws` (centrifugo `/connection/websocket`) on the
-   request; with the default, XMPP logins fail and the web app's real-time
-   channel falls back to the frontend.
+   it, and ejabberd needs `/ws` on the request; with the default, XMPP
+   logins fail.
 3. Environment variables: `ROOT_DOMAIN`, `ADMIN_EMAIL`. Everything else is
    generated; `SERVICE_PASSWORD_ADMIN` is the admin panel password.
 4. Deploy. The stack comes up in the bundle's order; `init` exits with 0
@@ -194,8 +187,7 @@ deploy:
 With the API: `POST /services` with `docker_compose_raw` (the file,
 base64), then `PATCH /services/<uuid>` with `urls` (as above,
 `force_domain_override: true`), `PATCH /services/<uuid>/applications/<app uuid>`
-with `{"is_stripprefix_enabled": false}` for `xmpp` and `centrifugo` (the
-application uuids come from `GET /services/<uuid>`),
+with `{"is_stripprefix_enabled": false}` for `xmpp` (the application uuids come from `GET /services/<uuid>`),
 `PATCH /services/<uuid>/envs/bulk` for the two inputs, and
 `POST /services/<uuid>/start`.
 

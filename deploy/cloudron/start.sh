@@ -69,12 +69,11 @@ mkdir -p /run/ethora /tmp/ethora-uploads \
   export ETHORA_REDIS_PORT="$CLOUDRON_REDIS_PORT"
   # In-app processes, on loopback.
   export ETHORA_MINIO_HOST=127.0.0.1 ETHORA_MINIO_PORT=9000
-  export ETHORA_CENTRIFUGO_URL=http://127.0.0.1:8000
   export ETHORA_XMPP_URL=http://127.0.0.1:5280
   export ETHORA_API_URL=http://127.0.0.1:8080
   export ETHORA_FRONTEND_URL=http://127.0.0.1:8081
   # Everything runs as the cloudron user.
-  export API_UID=1000 XMPP_UID=1000 CENTRIFUGO_UID=1000 MYSQL_UID=1000 MINIO_UID=1000 FRONTEND_UID=1000
+  export API_UID=1000 XMPP_UID=1000 MYSQL_UID=1000 MINIO_UID=1000 FRONTEND_UID=1000
   export CONFIG_OUT_DIR=/run/ethora/config SECRETS_DIR=/app/data/secrets MYSQL_INITDB_DIR=/run/ethora/mysql-initdb
 
   /bin/sh /ethora/scripts/render-config.sh

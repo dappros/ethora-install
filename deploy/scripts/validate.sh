@@ -329,7 +329,7 @@ log "Checking port availability..."
 #
 # IMPORTANT: don't rely on `docker-compose ps` here; depending on environment/paths it can error before showing status.
 is_ethora_stack_running=false
-if docker ps --format '{{.Names}}' 2>/dev/null | grep -Eq '^(deploy_mongo_1|deploy_mysql_1|deploy_redis-server_1|deploy_minio_1|deploy_xmpp_1|centrifugo)$'; then
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -Eq '^(deploy_mongo_1|deploy_mysql_1|deploy_redis-server_1|deploy_minio_1|deploy_xmpp_1)$'; then
     is_ethora_stack_running=true
 fi
 
@@ -355,7 +355,6 @@ PORTS=(
     "$BACKEND_PORT"
     "9000"  # MinIO API
     "9001"  # MinIO Console
-    "8001"  # Centrifugo
     "5280"  # Ejabberd HTTP
     "5443"  # Ejabberd HTTPS
 )

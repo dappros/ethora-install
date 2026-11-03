@@ -261,7 +261,7 @@ After an update:
 ```bash
 deploy/scripts/health-check.sh     # every service, the license state, external URLs
 pm2 list                           # backend, backend-jobs, backend-bc-worker, push, push-worker, ai-service, docs-parse, sdk-playground, mcp
-docker ps                          # mongo, redis, xmpp, mysql, minio, centrifugo, ai-postgres, uptime
+docker ps                          # mongo, redis, xmpp, mysql, minio, ai-postgres, uptime
 ```
 
 Changing configuration between releases is the same command: edit
@@ -1075,7 +1075,7 @@ The commands are in [Install](#install). What the installer does, in order:
 4. Validates `deploy.yml` (`validate.sh`), including the license block.
 5. Renders every `.env` and config file from `deploy.yml` (`setup-env.sh`, `setup-ejabberd-config.sh`).
 6. Obtains or installs TLS certificates and writes the nginx vhosts (`setup-nginx.sh`).
-7. Stops any previous Ethora stack, then starts the Docker services (MongoDB, Redis, MinIO, MySQL, ejabberd, Centrifugo, AI Postgres, uptime) and waits for them.
+7. Stops any previous Ethora stack, then starts the Docker services (MongoDB, Redis, MinIO, MySQL, ejabberd, AI Postgres, uptime) and waits for them.
 8. Seeds the base app and admin user (`init-services.sh`).
 9. Builds and starts the Node services under PM2, or their containers in image mode (`setup-node-services.sh`).
 10. Runs pending data migrations (`run-migrations.sh`).
@@ -1089,7 +1089,6 @@ The deployment system sets up:
   - MongoDB database
   - Redis cache
   - MinIO object storage
-  - Centrifugo real-time messaging
   - Crawler service (optional; enabled via `services.crawler.enabled` + `features.ai_service: true`)
 
 - **Ejabberd XMPP Server**
@@ -1147,8 +1146,8 @@ The deployment system sets up:
 
 The install needs three inbound ports: 22 (SSH), 80 and 443 (nginx, which
 also proxies the XMPP websocket on the `xmpp.` domain). Everything else the
-installer publishes from docker (MongoDB, Redis, MySQL, MinIO, Centrifugo,
-the crawler, ejabberd's 5280/5443, the AI and uptime Postgres, the uptime
+installer publishes from docker (MongoDB, Redis, MySQL, MinIO, the
+crawler, ejabberd's 5280/5443, the AI and uptime Postgres, the uptime
 service) is bound to 127.0.0.1 and is not reachable from other hosts. Note
 that a host firewall does not protect docker-published ports: docker inserts
 its own iptables rules ahead of `ufw`, so a port published on all interfaces
@@ -1265,7 +1264,7 @@ sudo crontab -e
 ```
 
 The maintenance script checks:
-- **Docker services**: MongoDB, MySQL, Redis, MinIO, Ejabberd, Centrifugo, Crawler
+- **Docker services**: MongoDB, MySQL, Redis, MinIO, Ejabberd, Crawler
 - **PM2 services**: Backend, Frontend (dev mode), AI Service, Docs Parse Service
 
 ## Support

@@ -39,7 +39,7 @@ images and the Ethora logo; keep copies with the listing text.
 - Plan ID: `core-2610`. Plan name: Ethora Core.
 - Plan listing summary: Ethora Core on Ubuntu 24.04 LTS, first-boot setup page.
 - Plan description: Complete Ethora Core server (API, web chat and admin panel,
-  XMPP, MongoDB, MySQL, Redis, MinIO, Centrifugo) with TLS from Let's Encrypt.
+  XMPP, MongoDB, MySQL, Redis, MinIO) with TLS from Let's Encrypt.
   Open http://<public ip>:8888 after deployment (user admin, password = the
   VM id from the VM's Properties), enter the domain and e-mail; five minutes
   later sign in at https://app.<your domain>. Free edition, no license key.

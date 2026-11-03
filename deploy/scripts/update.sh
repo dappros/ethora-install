@@ -1389,17 +1389,12 @@ if [ -f "$RUNTIME_DEPLOY_DIR/docker-compose.enterprise.yml" ]; then
     compose -f "$RUNTIME_DEPLOY_DIR/docker-compose.enterprise.yml" restart xmpp || true
   fi
 
-  # Restart centrifugo when its (bind-mounted) config has changed.
-  # Bind-mount changes don't trigger Docker to recreate the container; without an explicit
-  # restart, a freshly rotated HMAC secret in centrifugo-config.json would not be picked up
-  # by the running container, breaking the wsToken signed by the (already-restarted) backend.
-  CENTRIFUGO_RUNTIME_CONFIG="${BACKEND_DIR:-$ROOT_DIR/ethora-backend}/centrifugo-config.json"
-  centrifugo_stamp="$STATE_DIR/centrifugo-config.sha256"
-  centrifugo_hash="$(hash_file_sha256 "$CENTRIFUGO_RUNTIME_CONFIG")"
-  if [ -n "$centrifugo_hash" ] && [ "$(cat "$centrifugo_stamp" 2>/dev/null || echo '')" != "$centrifugo_hash" ]; then
-    log "Restarting centrifugo (config.json changed)..."
-    compose -f "$RUNTIME_DEPLOY_DIR/docker-compose.enterprise.yml" restart centrifugo || true
-    echo "$centrifugo_hash" >"$centrifugo_stamp" 2>/dev/null || true
+  # Centrifugo is gone: live admin updates travel over XMPP. An install updated
+  # from an earlier release still has its container, which `up -d` no longer
+  # manages, so remove it once.
+  if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx centrifugo; then
+    log "Removing the centrifugo container (no longer used)..."
+    docker rm -f centrifugo >/dev/null 2>&1 || true
   fi
 
   # The crawler runs main.py bind-mounted from the backend tree, and `up -d`

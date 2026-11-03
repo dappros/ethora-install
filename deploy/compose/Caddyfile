@@ -42,10 +42,6 @@
 (web) {
 	import security_headers
 	header X-Robots-Tag "noindex, nofollow"
-	# Centrifugo real-time channel.
-	handle /connection/websocket {
-		reverse_proxy {$UPSTREAM_CENTRIFUGO}
-	}
 	handle {
 		reverse_proxy {$UPSTREAM_FRONTEND}
 	}
@@ -138,9 +134,6 @@
 	}
 	handle /bosh* {
 		reverse_proxy {$UPSTREAM_XMPP}
-	}
-	handle /connection/websocket {
-		reverse_proxy {$UPSTREAM_CENTRIFUGO}
 	}
 	handle /files/* {
 		reverse_proxy {$UPSTREAM_MINIO}

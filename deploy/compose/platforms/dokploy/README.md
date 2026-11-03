@@ -37,7 +37,7 @@ records (a wildcard `*.chat.example.com` covers them):
 | Host | Routed to |
 |---|---|
 | `api.chat.example.com` | `api:8080` |
-| `app.chat.example.com` | `frontend:8080`; `centrifugo:8000` for `/connection/websocket` |
+| `app.chat.example.com` | `frontend:8080` |
 | `xmpp.chat.example.com` | `xmpp:5280`, paths `/ws` and `/bosh` only |
 | `files.chat.example.com` | `minio:9000` |
 | `secure-files.chat.example.com` | `api:8080` (chat attachments, gated by chat membership; the API serves this host itself) |
@@ -66,7 +66,7 @@ In Dokploy: project > **Create Service** > **Compose**.
    HTTPS URL. Turn **Isolated Deployment** on (Advanced). Without it every
    routed service joins Dokploy's shared `dokploy-network` under its compose
    service name, and any other compose service on the same Dokploy with a
-   service called `api`, `xmpp`, `minio`, `frontend` or `centrifugo` (a
+   service called `api`, `xmpp`, `minio` or `frontend` (a
    second Ethora stack included) is resolved by that name too: on a host
    with two stacks the second one's API reached the first one's MinIO
    (access key rejected), ejabberd (403) and API (`init` failed on a
@@ -91,17 +91,14 @@ In Dokploy: project > **Create Service** > **Compose**.
    |---|---|---|---|
    | `api` | `api.chat.example.com` | 8080 | `/` |
    | `frontend` | `app.chat.example.com` | 8080 | `/` |
-   | `centrifugo` | `app.chat.example.com` | 8000 | `/connection/websocket` |
    | `xmpp` | `xmpp.chat.example.com` | 5280 | `/ws` |
    | `xmpp` | `xmpp.chat.example.com` | 5280 | `/bosh` |
    | `minio` | `files.chat.example.com` | 9000 | `/` |
    | `api` | `secure-files.chat.example.com` | 8080 | `/` |
 
-   Leave "Strip Path" off (the default), so `/ws`, `/bosh` and
-   `/connection/websocket` reach the containers. Traefik gives the longer
-   path rule priority, so `/connection/websocket` reaches centrifugo and
-   everything else on `app.` reaches the frontend; on `xmpp.` only `/ws` and
-   `/bosh` are routed, which keeps ejabberd's `/api` and `/admin` internal.
+   Leave "Strip Path" off (the default), so `/ws` and `/bosh` reach the
+   container. On `xmpp.` only `/ws` and `/bosh` are routed, which keeps
+   ejabberd's `/api` and `/admin` internal.
 4. **Deploy**. Dokploy clones the repository to
    `/etc/dokploy/compose/<app name>/code`, adds the Traefik labels and the
    `dokploy-network` to the routed services, and runs `docker compose -p
@@ -143,7 +140,7 @@ api POST compose.update -d '{"composeId":"<composeId>","sourceType":"git","custo
 python3 -c 'import json,sys; print(json.dumps({"composeId": sys.argv[1], "env": open(sys.argv[2]).read(), "createEnvFile": True}))' <composeId> /tmp/ethora.env \
   | api POST compose.saveEnvironment -d @-
 # domains
-for d in "api 8080 api.$R /" "frontend 8080 app.$R /" "centrifugo 8000 app.$R /connection/websocket" \
+for d in "api 8080 api.$R /" "frontend 8080 app.$R /" \
          "xmpp 5280 xmpp.$R /ws" "xmpp 5280 xmpp.$R /bosh" "minio 9000 files.$R /"; do set -- $d
   api POST domain.create -d "{\"composeId\":\"<composeId>\",\"domainType\":\"compose\",\"serviceName\":\"$1\",\"port\":$2,\"host\":\"$3\",\"path\":\"$4\",\"https\":true,\"certificateType\":\"letsencrypt\",\"stripPath\":false}"
 done

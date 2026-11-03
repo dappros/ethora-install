@@ -56,7 +56,6 @@ data:
   ETHORA_MINIO_HOST: {{ .Values.external.minio.host | quote }}
   ETHORA_MINIO_PORT: {{ .Values.external.minio.port | toString | quote }}
   {{- end }}
-  ETHORA_CENTRIFUGO_URL: {{ printf "http://%s-centrifugo:8000" $fn | quote }}
   ETHORA_XMPP_URL: {{ printf "http://%s-xmpp:5280" $fn | quote }}
   ETHORA_API_URL: {{ printf "http://%s-api:8080" $fn | quote }}
   {{- range $k, $v := .Values.extraSettings }}

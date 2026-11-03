@@ -123,7 +123,6 @@ pm2 stop all
 - ✅ MongoDB (with replica set)
 - ✅ Redis
 - ✅ MinIO
-- ✅ Centrifugo
 - ✅ MySQL (for Ejabberd)
 - ✅ Ejabberd XMPP server
 - ✅ Backend API (Node.js)

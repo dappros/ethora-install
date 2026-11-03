@@ -143,8 +143,8 @@ MinIO picks up files as soon as they are on disk.
    cd ~/ethora-install-shared && sudo deploy/scripts/install.sh --yes
    ```
    Restoring `.deploy.env` first means the databases are created with the
-   old passwords and every secret (JWT signing key, XMPP secret, Centrifugo
-   key) matches the data. Keep both files at mode 600.
+   old passwords and every secret (JWT signing key, XMPP secret) matches
+   the data. Keep both files at mode 600.
 2. Restore the data with either method above.
 3. Point DNS at the new host. Certificates for the same names are reissued
    by the installer; if you moved `/etc/letsencrypt` as well, they are

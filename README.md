@@ -81,7 +81,7 @@ What you get:
 | XMPP server (ejabberd with the Ethora modules) | `dappros/ethora-xmpp` | `xmpp.<root>` |
 | File storage | MinIO | `files.<root>` |
 | Chat attachments (members only) | served by the API | `secure-files.<root>` |
-| MongoDB, MySQL, Redis, Centrifugo | stock images | internal |
+| MongoDB, MySQL, Redis | stock images | internal |
 
 ## Prefer Docker Compose?
 

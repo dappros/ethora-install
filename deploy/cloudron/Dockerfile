@@ -11,7 +11,7 @@
 #   init        first-boot steps (base app, admin, ejabberd accounts, migrations)
 #   xmpp        ejabberd from ethora-xmpp (an Alpine build: its musl loader
 #               and libraries come along in /opt/musl)
-#   centrifugo, minio, caddy   the upstream binaries (static Go)
+#   minio, caddy  the upstream binaries (static Go)
 #   web app     the ethora-frontend bundle, served by caddy
 #
 # ethora-compose-init is the ethora-xmpp image plus the compose bundle's
@@ -26,7 +26,6 @@ ARG API_IMAGE=docker.io/dappros/ethora-api:2610.16@sha256:121e3aee218d939236472d
 ARG FRONTEND_IMAGE=docker.io/dappros/ethora-frontend:2610.16@sha256:a1cef1753254ff5cb72519b1e86fa69d2cc487fe7ca7592bf49452054712091a
 ARG INIT_IMAGE=docker.io/dappros/ethora-compose-init:2610.16@sha256:7cea55c8b3d08c17ff95fdc2ef0d85cd2a7152010b361fea0ad1f8a0b6c14472
 ARG MINIO_IMAGE=docker.io/dappros/minio:RELEASE.2025-09-07T16-13-09Z@sha256:624bad2fe79a8613aa3c5c9b765ebcab365080b8445cf1b05c357cc7753725f0
-ARG CENTRIFUGO_IMAGE=docker.io/centrifugo/centrifugo:v6.9.7@sha256:d014d3e99e0e9e58c45e656a7ea4ab97c3f79f96c82a3614ea0f810b4dd0e461
 ARG CADDY_IMAGE=docker.io/library/caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
 
 FROM ${API_IMAGE} AS api
@@ -35,7 +34,6 @@ FROM ${API_IMAGE} AS api
 RUN env | grep '^ETHORA_BUILD_' > /tmp/ethora-build.env
 FROM ${FRONTEND_IMAGE} AS frontend
 FROM ${MINIO_IMAGE} AS minio
-FROM ${CENTRIFUGO_IMAGE} AS centrifugo
 FROM ${CADDY_IMAGE} AS caddy
 
 # ejabberd's runtime: the musl loader and every library its binaries and
@@ -87,7 +85,6 @@ RUN echo /opt/musl/lib > /etc/ld-musl-x86_64.path \
  && ln -s /opt/ejabberd /home/ejabberd
 
 COPY --from=minio /usr/bin/minio /usr/local/bin/minio
-COPY --from=centrifugo /usr/local/bin/centrifugo /usr/local/bin/centrifugo
 COPY --from=caddy /usr/bin/caddy /usr/local/bin/caddy
 
 # Licence texts of the release (the same in every Ethora image).

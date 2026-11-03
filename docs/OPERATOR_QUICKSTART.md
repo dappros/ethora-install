@@ -93,7 +93,7 @@ migration is written so the previous release keeps working.
 ```bash
 deploy/scripts/health-check.sh     # every service, license state, public URLs
 pm2 list                           # Node services
-docker ps                          # databases, XMPP, MinIO, Centrifugo
+docker ps                          # databases, XMPP, MinIO
 pm2 logs backend --lines 200       # API log
 ```
 

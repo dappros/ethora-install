@@ -245,10 +245,6 @@ check_service "Redis" "docker-compose -f $DEPLOY_DIR/docker-compose.enterprise.y
 # Check MinIO
 check_service "MinIO" "curl -f http://localhost:9000/minio/health/live"
 
-# Check Centrifugo
-# Centrifugo doesn't have a /health endpoint, so we check if the service is responding on root
-check_service "Centrifugo" "curl -f -s http://localhost:8001/ > /dev/null"
-
 # Check Ejabberd
 check_service "Ejabberd" "docker-compose -f $DEPLOY_DIR/docker-compose.enterprise.yml exec -T xmpp /home/ejabberd/bin/ejabberdctl ping"
 

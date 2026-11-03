@@ -8,7 +8,6 @@
 #
 #   /out/config/api/backend.env            <- templates/backend.env.template
 #   /out/config/frontend/frontend.env      <- templates/frontend.env.template
-#   /out/config/centrifugo/config.json     <- templates/centrifugo-config.json.template
 #   /out/config/xmpp/ejabberd.yml, jwt.key <- /ethora-dist/ejabberd-prod.yml (from the xmpp image)
 #   /out/config/caddy/Caddyfile            <- /ethora/Caddyfile
 #   /out/config/mysql, /out/config/minio   <- the database credentials, as *_FILE secrets
@@ -50,7 +49,7 @@
 #          (the host installer's layout).
 #   set    one origin, e.g. https://chat.example.com or http://nas.local:8420
 #          (appliances: Umbrel, CasaOS): Caddy routes by path, and the web
-#          app takes its API / XMPP / Centrifugo URLs from the address the
+#          app takes its API / XMPP URLs from the address the
 #          browser used.
 #
 # Internal endpoints default to the compose service names; the Helm chart and
@@ -63,9 +62,9 @@
 #                                                MYSQL_ROOT_PASSWORD whatever the user
 #   ETHORA_MINIO_HOST, ETHORA_MINIO_PORT         S3-compatible storage over plain HTTP
 #   ETHORA_MYSQL_DATABASE                        default ejabberd_db
-#   ETHORA_CENTRIFUGO_URL, ETHORA_XMPP_URL, ETHORA_API_URL, ETHORA_FRONTEND_URL
-#                                                http://centrifugo:8000, http://xmpp:5280,
-#                                                http://api:8080, http://frontend:8080
+#   ETHORA_XMPP_URL, ETHORA_API_URL, ETHORA_FRONTEND_URL
+#                                                http://xmpp:5280, http://api:8080,
+#                                                http://frontend:8080
 #   ETHORA_AI_SERVICE_URL, ETHORA_DOCS_PARSE_URL, ETHORA_WIDGET_URL (ai module)
 #                                                http://ai-service:8013, http://docs-parse:8201,
 #                                                http://widget:8080
@@ -80,15 +79,15 @@
 #   ETHORA_SITE_ADDRESS    the one-origin site's Caddy address, e.g. :3000
 #                          behind a proxy that terminates TLS itself
 #   ETHORA_EXTRA_SITES     more Caddy site blocks, appended as they are
-#   API_UID, XMPP_UID, CENTRIFUGO_UID, MYSQL_UID, MINIO_UID, FRONTEND_UID,
+#   API_UID, XMPP_UID, MYSQL_UID, MINIO_UID, FRONTEND_UID,
 #   AI_UID, AI_POSTGRES_UID, MODULE_UID, UPTIME_POSTGRES_UID, COTURN_UID
 #                          owners of the rendered files (the images' users)
 #
 # Differences from the host installer, all because the services talk over the
 # compose network instead of the host's loopback:
 #   - backend.env: MONGO_URI, CHAT_DATABASE, AI_SERVICE_MONGO_URI, REDIS_HOST, MINIO_HOST,
-#     MAM_MYSQL_HOST, CENTRIFUGO_API_URL and XMPP_PATH point at the compose
-#     service names (mongo, redis, minio, mysql, centrifugo, xmpp).
+#     MAM_MYSQL_HOST and XMPP_PATH point at the compose service names
+#     (mongo, redis, minio, mysql, xmpp).
 #   - ejabberd.yml: the tracking / audit URLs point at http://api:8080
 #     instead of the public https://api.<root>, so ejabberd never hairpins
 #     through the proxy.
@@ -106,7 +105,6 @@ MYSQL_INITDB="${MYSQL_INITDB_DIR:-/out/mysql-initdb}"
 # root, each file is handed to the one container user that reads it.
 API_UID="${API_UID:-1000}"          # ethora-api: node
 XMPP_UID="${XMPP_UID:-9000}"        # ethora-xmpp: ejabberd
-CENTRIFUGO_UID="${CENTRIFUGO_UID:-1000}"
 MYSQL_UID="${MYSQL_UID:-999}"       # mysql: mysql
 MINIO_UID="${MINIO_UID:-0}"         # minio: root
 FRONTEND_UID="${FRONTEND_UID:-0}"   # ethora-frontend: root
@@ -160,10 +158,6 @@ secret INTERNAL_REQUESTS_SECRET 32
 secret MYSQL_ROOT_PASSWORD 32
 secret MINIO_ROOT_USER 12 ethora-
 secret MINIO_ROOT_PASSWORD 32
-secret CENTRIFUGO_API_KEY 64
-secret CENTRIFUGO_HMAC_SECRET 64
-secret CENTRIFUGO_ADMIN_PASSWORD 24
-secret CENTRIFUGO_ADMIN_SECRET 64
 # The ai module's (generated for every install, so switching it on later
 # needs no new values). WIDGET_SCRIPT_VERSION is not secret, only persistent:
 # the version suffix of the widget URL, fixed at the first start.
@@ -244,7 +238,6 @@ ETHORA_MYSQL_HOST="${ETHORA_MYSQL_HOST:-mysql}"
 ETHORA_MYSQL_USER="${ETHORA_MYSQL_USER:-root}"
 ETHORA_MYSQL_DATABASE="${ETHORA_MYSQL_DATABASE:-ejabberd_db}"
 ETHORA_MINIO_HOST="${ETHORA_MINIO_HOST:-minio}"
-ETHORA_CENTRIFUGO_URL="${ETHORA_CENTRIFUGO_URL:-http://centrifugo:8000}"
 ETHORA_XMPP_URL="${ETHORA_XMPP_URL:-http://xmpp:5280}"
 ETHORA_API_URL="${ETHORA_API_URL:-http://api:8080}"
 ETHORA_FRONTEND_URL="${ETHORA_FRONTEND_URL:-http://frontend:8080}"
@@ -259,7 +252,6 @@ ETHORA_LIVEKIT_URL="${ETHORA_LIVEKIT_URL:-http://livekit:7880}"
 export REDIS_PORT="${ETHORA_REDIS_PORT:-6379}"
 export MYSQL_PORT="${ETHORA_MYSQL_PORT:-3306}"
 MINIO_PORT="${ETHORA_MINIO_PORT:-9000}"
-export CENTRIFUGO_PORT=8000
 export PUSH_PORT="${PUSH_PORT:-8098}"
 export AI_SERVICE_PORT="${AI_SERVICE_PORT:-8013}"
 export DOCS_PARSE_PORT="${DOCS_PARSE_PORT:-8201}"
@@ -326,8 +318,6 @@ def REFRESH_TOKEN_TTL_DAYS 7
 def REFRESH_REUSE_POLICY log_only
 def XMPP_JWT_TTL 10m
 def XMPP_JWT_WIDGET_TTL 100d
-def CENTRIFUGO_ENABLED true
-def CENTRIFUGO_TIMEOUT_MS 2000
 def POSTMARK_ENABLED false
 def POSTMARK_FROM_EMAIL noreply@ethoramail.com
 def POSTMARK_FROM_NAME "Ethora Platform"
@@ -370,20 +360,18 @@ if [ -z "$PUBLIC_URL" ]; then
   export VITE_API_PLACEHOLDER="VITE_API=https://$API_DOMAIN/v1"
   export VITE_API_V2_PLACEHOLDER="VITE_API_V2=https://$API_DOMAIN/v2"
   export VITE_APP_XMPP_SERVICE_PLACEHOLDER="VITE_APP_XMPP_SERVICE=wss://$XMPP_DOMAIN/ws"
-  export VITE_APP_CENTRIFUGE_SERVICE_PLACEHOLDER="VITE_APP_CENTRIFUGE_SERVICE=wss://$WEB_DOMAIN/connection/websocket"
 else
   web_url="$PUBLIC_URL"; api_url="$PUBLIC_URL"; files_url="$PUBLIC_URL"
   xmpp_ws="$ws_origin/ws"
   export AUTH_COOKIE_DOMAIN_PLACEHOLDER="AUTH_COOKIE_DOMAIN="
   # The web app resolves __ETHORA_ORIGIN__ / __ETHORA_ORIGIN_WS__ against
-  # window.location when it loads (frontend-start.sh), so the API and
-  # Centrifugo follow whatever address the install was opened by. XMPP does
+  # window.location when it loads (frontend-start.sh), so the API follows
+  # whatever address the install was opened by. XMPP does
   # not: the web client names its XMPP domain after the WebSocket host, so it
   # always connects to PUBLIC_URL itself.
   export VITE_API_PLACEHOLDER="VITE_API=__ETHORA_ORIGIN__/v1"
   export VITE_API_V2_PLACEHOLDER="VITE_API_V2=__ETHORA_ORIGIN__/v2"
   export VITE_APP_XMPP_SERVICE_PLACEHOLDER="VITE_APP_XMPP_SERVICE=$xmpp_ws"
-  export VITE_APP_CENTRIFUGE_SERVICE_PLACEHOLDER="VITE_APP_CENTRIFUGE_SERVICE=__ETHORA_ORIGIN_WS__/connection/websocket"
 fi
 export DEFAULT_APP_URL_PLACEHOLDER="DEFAULT_APP_URL=$web_url"
 export VERIFY_EMAIL_WEB_URL_PLACEHOLDER="VERIFY_EMAIL_WEB_URL=$web_url/verifyEmail"
@@ -501,9 +489,9 @@ set_env_line() {
 
 stage="$(mktemp -d "${TMPDIR:-/tmp}/ethora-config.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT
-mkdir -p "$stage/api" "$stage/frontend" "$stage/centrifugo" "$stage/xmpp"
+mkdir -p "$stage/api" "$stage/frontend" "$stage/xmpp"
 
-for t in backend.env.template frontend.env.template centrifugo-config.json.template; do
+for t in backend.env.template frontend.env.template; do
   [ -f "$TEMPLATES/$t" ] || die "template not found: $TEMPLATES/$t (is ./templates mounted?)"
 done
 
@@ -518,7 +506,6 @@ set_env_line "$stage/api/backend.env" MAM_MYSQL_USER "$ETHORA_MYSQL_USER"
 set_env_line "$stage/api/backend.env" MAM_MYSQL_DATABASE "$ETHORA_MYSQL_DATABASE"
 set_env_line "$stage/api/backend.env" MINIO_HOST "$ETHORA_MINIO_HOST"
 set_env_line "$stage/api/backend.env" MINIO_PORT "$MINIO_PORT"
-set_env_line "$stage/api/backend.env" CENTRIFUGO_API_URL "$ETHORA_CENTRIFUGO_URL/api"
 set_env_line "$stage/api/backend.env" AI_SERVICE_URL "$ETHORA_AI_SERVICE_URL"
 set_env_line "$stage/api/backend.env" DOCS_PARSE_URL "$ETHORA_DOCS_PARSE_URL"
 set_env_line "$stage/api/backend.env" PUSH_SERVER_URL "$ETHORA_PUSH_URL"
@@ -650,9 +637,6 @@ fi
 
 # frontend.env
 render "$TEMPLATES/frontend.env.template" "$stage/frontend/frontend.env"
-
-# centrifugo config.json
-render "$TEMPLATES/centrifugo-config.json.template" "$stage/centrifugo/config.json"
 
 # ejabberd.yml + jwt.key: the production branch of setup-ejabberd-config.sh.
 [ -f "$DIST/ejabberd-prod.yml" ] || die "$DIST/ejabberd-prod.yml not found; the config service must run the ethora-xmpp image"
@@ -832,7 +816,6 @@ if [ -n "$PUBLIC_URL" ] && [ "$AI_MODULE" = true ]; then
 fi
 export ETHORA_WIDGET_ROUTE
 export UPSTREAM_XMPP="$(hostport_of "$ETHORA_XMPP_URL")"
-export UPSTREAM_CENTRIFUGO="$(hostport_of "$ETHORA_CENTRIFUGO_URL")"
 export UPSTREAM_FRONTEND="$(hostport_of "$ETHORA_FRONTEND_URL")"
 export UPSTREAM_MINIO="$ETHORA_MINIO_HOST:$MINIO_PORT"
 mkdir -p "$stage/caddy"
@@ -859,9 +842,9 @@ cp "$SCRIPTS_SRC"/*.sh "$SCRIPTS_SRC"/*.js "$stage/scripts/"
 # ------------------------------------------------------------ install --
 # Hand each directory to the one container user that reads it; secrets stay
 # unreadable to the others. Then swap the whole tree in.
-chmod 700 "$stage/api" "$stage/frontend" "$stage/centrifugo" "$stage/xmpp" "$stage/mysql" "$stage/minio" "$stage/ai" "$stage/ai-postgres" \
+chmod 700 "$stage/api" "$stage/frontend" "$stage/xmpp" "$stage/mysql" "$stage/minio" "$stage/ai" "$stage/ai-postgres" \
   "$stage/push" "$stage/playground" "$stage/mcp" "$stage/uptime" "$stage/uptime-db" "$stage/livekit" "$stage/coturn"
-chmod 600 "$stage"/api/* "$stage"/frontend/* "$stage"/centrifugo/* "$stage"/xmpp/* "$stage"/mysql/* "$stage"/minio/*
+chmod 600 "$stage"/api/* "$stage"/frontend/* "$stage"/xmpp/* "$stage"/mysql/* "$stage"/minio/*
 for f in "$stage"/ai/* "$stage"/ai-postgres/* "$stage"/push/* "$stage"/playground/* "$stage"/mcp/* "$stage"/uptime/* "$stage"/uptime-db/* "$stage"/livekit/* "$stage"/coturn/*; do [ -f "$f" ] && chmod 600 "$f"; done
 # Neither secret nor per-service: readable by every container (the widget's
 # env names public URLs only).
@@ -872,7 +855,6 @@ for f in "$stage"/caddy/* "$stage"/scripts/* "$stage"/widget/*; do [ -f "$f" ] &
 own() { chown -R "$1" "$2" 2>/dev/null || [ "$(id -u)" != 0 ] || die "chown $1 $2 failed"; }
 own "$API_UID:$API_UID" "$stage/api"
 own "$FRONTEND_UID:$FRONTEND_UID" "$stage/frontend"
-own "$CENTRIFUGO_UID:$CENTRIFUGO_UID" "$stage/centrifugo"
 own "$XMPP_UID:$XMPP_UID" "$stage/xmpp"
 own "$MYSQL_UID:$MYSQL_UID" "$stage/mysql"
 own "$MINIO_UID:$MINIO_UID" "$stage/minio"
@@ -894,12 +876,14 @@ mkdir -p "$OUT"
 if [ ! -d "$OUT/base-app" ]; then
   mkdir -p "$OUT/base-app" && chmod 700 "$OUT/base-app" && own "$API_UID:$API_UID" "$OUT/base-app"
 fi
-for d in api frontend centrifugo xmpp mysql minio caddy scripts ai ai-postgres widget push playground mcp uptime uptime-db livekit coturn; do
+for d in api frontend xmpp mysql minio caddy scripts ai ai-postgres widget push playground mcp uptime uptime-db livekit coturn; do
   rm -rf "$OUT/$d.new"
   cp -a "$stage/$d" "$OUT/$d.new"
   rm -rf "$OUT/$d"
   mv "$OUT/$d.new" "$OUT/$d"
 done
+# Left by renders from before Centrifugo was removed; it holds its secrets.
+rm -rf "$OUT/centrifugo"
 chmod 755 "$OUT"
 
 # MySQL runs this only when its data directory is empty (first start).

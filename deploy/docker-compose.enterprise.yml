@@ -98,34 +98,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # Centrifugo - Real-time messaging
-  # config.json is GENERATED per-install by deploy/scripts/setup-env.sh from
-  # deploy/templates/centrifugo-config.json.template using the secrets in .deploy.env.
-  # Bind-mount changes to that file require a `docker restart centrifugo` (or
-  # `docker compose up -d --force-recreate centrifugo`) to take effect inside
-  # the container; update.sh handles this when the rendered file changes.
-  centrifugo:
-    container_name: centrifugo
-    image: centrifugo/centrifugo:v6
-    volumes:
-      - ${BACKEND_DIR:-./ethora-backend}/centrifugo-config.json:/centrifugo/config.json
-    command: centrifugo -c config.json
-    ports:
-      - "127.0.0.1:${CENTRIFUGO_PORT:-8001}:8000"
-    ulimits:
-      nofile:
-        soft: 65535
-        hard: 65535
-    restart: always
-    networks:
-      - ethora-network
-    healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8000/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-
   # Crawler Service
   crawler:
     build:

@@ -42,7 +42,6 @@ Paste-ready values for the vendor portal form.
 | MySQL | 8.1.0 | GPL-2.0 |
 | Redis | 7 | RSALv2 / SSPLv1 |
 | MinIO | RELEASE.2025-09-07 | AGPL-3.0 |
-| Centrifugo | 6 | Apache-2.0 |
 | Docker Engine | 28 | Apache-2.0 |
 | Caddy | 2.10 | Apache-2.0 |
 | Node.js | 24 | MIT |

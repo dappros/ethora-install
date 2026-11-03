@@ -1,55 +1,6 @@
 {{- $fn := include "ethora.fullname" . -}}
-{{- /* ------------------------------------------------------- centrifugo */ -}}
-{{- $c := dict "root" . "component" "centrifugo" }}
-apiVersion: v1
-kind: Service
-metadata:
-  name: {{ include "ethora.cname" $c }}
-  labels: {{- include "ethora.labels" . | nindent 4 }}
-spec:
-  selector: {{- include "ethora.selectorLabels" $c | nindent 4 }}
-  ports:
-    - { name: http, port: 8000, targetPort: 8000 }
----
-# Real-time counters for the admin panel; in memory, so a Deployment.
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: {{ include "ethora.cname" $c }}
-  labels: {{- include "ethora.labels" . | nindent 4 }}
-spec:
-  replicas: 1
-  selector:
-    matchLabels: {{- include "ethora.selectorLabels" $c | nindent 6 }}
-  template:
-    metadata:
-      labels: {{- include "ethora.selectorLabels" $c | nindent 8 }}
-      annotations:
-        checksum/settings: {{ include (print $.Template.BasePath "/settings.yaml") . | sha256sum }}
-    spec:
-      {{- include "ethora.podCommon" . | nindent 6 }}
-      initContainers:
-        {{- include "ethora.renderInit" (dict "root" .) | nindent 8 }}
-      containers:
-        - name: centrifugo
-          image: {{ include "ethora.image" (dict "root" . "name" "centrifugo") }}
-          imagePullPolicy: {{ .Values.imagePullPolicy }}
-          command: ["centrifugo", "-c", "/ethora/config/centrifugo/config.json"]
-          ports:
-            - { name: http, containerPort: 8000 }
-          readinessProbe:
-            httpGet: { path: /health, port: 8000 }
-            periodSeconds: 15
-          livenessProbe:
-            httpGet: { path: /health, port: 8000 }
-            initialDelaySeconds: 10
-            periodSeconds: 30
-          resources: {{- toYaml .Values.centrifugo.resources | nindent 12 }}
-          volumeMounts: {{- include "ethora.configMount" . | nindent 12 }}
-      volumes: {{- include "ethora.configVolume" . | nindent 8 }}
----
 {{- /* ------------------------------------------------------------- xmpp */ -}}
-{{- $c = dict "root" . "component" "xmpp" }}
+{{- $c := dict "root" . "component" "xmpp" }}
 apiVersion: v1
 kind: Service
 metadata:

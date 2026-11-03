@@ -118,10 +118,9 @@ if [ "$API_DOMAIN" == "localhost" ]; then
   api_base="http://localhost:${BACKEND_PORT}"
 fi
 
-# MinIO / Centrifugo / Crawler are reached via known localhost ports on the host (installer runs on same machine).
+# MinIO / Crawler are reached via known localhost ports on the host (installer runs on same machine).
 minio_health_url="http://localhost:9000/minio/health/live"
 minio_console_url="http://localhost:9001"
-centrifugo_url="http://localhost:8001/"
 crawler_health_url="http://localhost:8000/health"
 
 # XMPP admin pages:
@@ -170,7 +169,6 @@ run_checks() {
   add_check "Frontend (web)" "${frontend_url}/"
   add_check "MinIO live" "${minio_health_url}"
   add_check "MinIO console" "${minio_console_url}/"
-  add_check "Centrifugo (root)" "${centrifugo_url}"
   add_check "Crawler /health" "${crawler_health_url}"
 
   # XMPP admin: check both (prod usually uses 5443; localhost has both)
@@ -211,7 +209,7 @@ docker_health_lines() {
     return 0
   fi
 
-  local containers=("deploy_mongo_1" "deploy_mysql_1" "deploy_redis-server_1" "deploy_minio_1" "deploy_xmpp_1" "centrifugo")
+  local containers=("deploy_mongo_1" "deploy_mysql_1" "deploy_redis-server_1" "deploy_minio_1" "deploy_xmpp_1")
   if [ "${CRAWLER_ENABLED:-false}" == "true" ]; then
     containers+=("crawler-service")
   fi

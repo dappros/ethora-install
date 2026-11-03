@@ -2,7 +2,7 @@
 
 [Ethora](https://ethora.com) Core on Kubernetes: the API, the web chat and
 admin panel, the XMPP server (ejabberd with the Ethora modules) and file
-storage, with MongoDB, MySQL, Redis, MinIO and Centrifugo, behind one Ingress
+storage, with MongoDB, MySQL, Redis and MinIO, behind one Ingress
 per public host with cert-manager TLS.
 
 It is the Kubernetes form of the compose bundle (`deploy/compose/`): the
@@ -73,15 +73,13 @@ spec:
 | `mysql` | StatefulSet, PVC | `mysql:8.1.0` | ejabberd: XMPP accounts, rooms, history |
 | `redis` | StatefulSet, PVC | `redis:7.4-alpine` | cache and queues |
 | `minio` | StatefulSet, PVC | `dappros/minio` | uploaded files |
-| `centrifugo` | Deployment | `centrifugo/centrifugo:v6.9.7` | real-time counters (in memory) |
 | `xmpp` | Deployment (1) | `dappros/ethora-xmpp` | ejabberd with the Ethora modules |
 | `api`, `jobs` | Deployments | `dappros/ethora-api` | HTTP API, cron and queue workers |
 | `frontend` | Deployment | `dappros/ethora-frontend` | web chat and admin panel |
 | `init-<revision>` | Job | `dappros/ethora-api` | first-boot steps, after every install and upgrade (idempotent) |
 
 Ingresses: `api.` (all paths; `/metrics` is sent to the web app, so the
-API's metrics stay internal), `app.` (plus `/connection/websocket` to
-Centrifugo), `xmpp.` (`/ws` and `/bosh` only, never ejabberd's `/api` or
+API's metrics stay internal), `app.`, `xmpp.` (`/ws` and `/bosh` only, never ejabberd's `/api` or
 `/admin`), `files.` (MinIO). The API and files ingresses take uploads of
 any size and the WebSocket ones keep connections for an hour (ingress-nginx
 annotations in `ingress.uploadAnnotations` / `websocketAnnotations`; set your

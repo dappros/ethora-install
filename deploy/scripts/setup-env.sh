@@ -557,7 +557,6 @@ replace_template() {
         replace_literal "VITE_API_PLACEHOLDER" "VITE_API=http://${API_DOMAIN}:${BACKEND_PORT}/v1"
         replace_literal "VITE_API_V2_PLACEHOLDER" "VITE_API_V2=http://${API_DOMAIN}:${BACKEND_PORT}/v2"
         replace_literal "VITE_APP_XMPP_SERVICE_PLACEHOLDER" "VITE_APP_XMPP_SERVICE=ws://${XMPP_DOMAIN}:5443/ws"
-        replace_literal "VITE_APP_CENTRIFUGE_SERVICE_PLACEHOLDER" "VITE_APP_CENTRIFUGE_SERVICE=ws://${WEB_DOMAIN}:8001/connection/websocket"
     else
         # Backend replacements
         replace_literal "ROOT_DOMAIN_PLACEHOLDER" "ROOT_DOMAIN=${ROOT_DOMAIN:-$(echo "$WEB_DOMAIN" | sed 's|^[^.]*\.||')}"
@@ -594,7 +593,6 @@ replace_template() {
         replace_literal "VITE_API_PLACEHOLDER" "VITE_API=https://${API_DOMAIN}/v1"
         replace_literal "VITE_API_V2_PLACEHOLDER" "VITE_API_V2=https://${API_DOMAIN}/v2"
         replace_literal "VITE_APP_XMPP_SERVICE_PLACEHOLDER" "VITE_APP_XMPP_SERVICE=wss://${XMPP_DOMAIN}/ws"
-        replace_literal "VITE_APP_CENTRIFUGE_SERVICE_PLACEHOLDER" "VITE_APP_CENTRIFUGE_SERVICE=wss://${WEB_DOMAIN}/connection/websocket"
     fi
     
     replace_literal "{{ROOT_DOMAIN}}" "${ROOT_DOMAIN:-$(echo "$WEB_DOMAIN" | sed 's|^[^.]*\.||')}"
@@ -612,14 +610,6 @@ replace_template() {
             else
                 # Production: xmpp is proxied by nginx on 443
                 content=$(echo "$content"; echo "VITE_APP_XMPP_SERVICE=wss://${XMPP_DOMAIN}/ws")
-            fi
-        fi
-        if ! echo "$content" | grep -q "VITE_APP_CENTRIFUGE_SERVICE="; then
-            if [ "$is_localhost" == "true" ]; then
-                content=$(echo "$content"; echo "VITE_APP_CENTRIFUGE_SERVICE=ws://${WEB_DOMAIN}:8001/connection/websocket")
-            else
-                # Production: Centrifugo is proxied by nginx on 443
-                content=$(echo "$content"; echo "VITE_APP_CENTRIFUGE_SERVICE=wss://${WEB_DOMAIN}/connection/websocket")
             fi
         fi
         if ! echo "$content" | grep -q "VITE_XMPP_SERVICE="; then
@@ -754,17 +744,6 @@ replace_template() {
     replace_literal "{{ERRORS_WEB_DSN}}" "${ERRORS_WEB_DSN:-}"
     replace_literal "{{ERRORS_ENVIRONMENT}}" "${ERRORS_ENVIRONMENT:-${API_DOMAIN:-}}"
     replace_literal "{{ERRORS_SEND_PII}}" "${ERRORS_SEND_PII:-true}"
-
-    # Centrifugo (per-deployment, non-critical real-time stats).
-    # Placeholders are shared between backend.env.template and centrifugo-config.json.template
-    # so a single render keeps backend signer + centrifugo verifier in sync.
-    replace_literal "{{CENTRIFUGO_ENABLED}}" "${CENTRIFUGO_ENABLED:-true}"
-    replace_literal "{{CENTRIFUGO_PORT}}" "${CENTRIFUGO_PORT:-8001}"
-    replace_literal "{{CENTRIFUGO_TIMEOUT_MS}}" "${CENTRIFUGO_TIMEOUT_MS:-2000}"
-    replace_literal "{{CENTRIFUGO_API_KEY}}" "${CENTRIFUGO_API_KEY:-}"
-    replace_literal "{{CENTRIFUGO_HMAC_SECRET}}" "${CENTRIFUGO_HMAC_SECRET:-}"
-    replace_literal "{{CENTRIFUGO_ADMIN_PASSWORD}}" "${CENTRIFUGO_ADMIN_PASSWORD:-}"
-    replace_literal "{{CENTRIFUGO_ADMIN_SECRET}}" "${CENTRIFUGO_ADMIN_SECRET:-}"
 
     # AI providers
     replace_literal "{{AI_API_URL}}" "${AI_API_URL:-https://api.openai.com/v1}"
@@ -1310,56 +1289,6 @@ if [ -z "${INTERNAL_REQUESTS_SECRET:-}" ] || [ "${INTERNAL_REQUESTS_SECRET:-}" =
 fi
 persist_env_var "INTERNAL_REQUESTS_SECRET" "${INTERNAL_REQUESTS_SECRET:-}"
 
-# Centrifugo secrets must remain stable across updates (HMAC secret is shared
-# between the backend's wsToken signer and the centrifugo container's verifier;
-# the API key gates the backend -> centrifugo /publish HTTP call).
-# We generate them here too so existing installs (which never had these in
-# .deploy.env) get values populated on the first update without needing reinstall.
-if [ -z "${CENTRIFUGO_ENABLED:-}" ] || [ "${CENTRIFUGO_ENABLED:-}" == "null" ]; then
-    if command -v yq >/dev/null 2>&1 && [ -f "$CONFIG_FILE" ]; then
-        export CENTRIFUGO_ENABLED="$(yq eval '.services.centrifugo.enabled | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; export CENTRIFUGO_ENABLED="${CENTRIFUGO_ENABLED:-true}"
-    else
-        export CENTRIFUGO_ENABLED="true"
-    fi
-fi
-if [ -z "${CENTRIFUGO_PORT:-}" ] || [ "${CENTRIFUGO_PORT:-}" == "null" ]; then
-    if command -v yq >/dev/null 2>&1 && [ -f "$CONFIG_FILE" ]; then
-        export CENTRIFUGO_PORT="$(yq eval '.services.centrifugo.port // 8001' "$CONFIG_FILE" 2>/dev/null || echo "8001")"
-    else
-        export CENTRIFUGO_PORT="8001"
-    fi
-fi
-if [ -z "${CENTRIFUGO_TIMEOUT_MS:-}" ] || [ "${CENTRIFUGO_TIMEOUT_MS:-}" == "null" ]; then
-    if command -v yq >/dev/null 2>&1 && [ -f "$CONFIG_FILE" ]; then
-        export CENTRIFUGO_TIMEOUT_MS="$(yq eval '.services.centrifugo.timeout_ms // 2000' "$CONFIG_FILE" 2>/dev/null || echo "2000")"
-    else
-        export CENTRIFUGO_TIMEOUT_MS="2000"
-    fi
-fi
-if [ -z "${CENTRIFUGO_API_KEY:-}" ] || [ "${CENTRIFUGO_API_KEY:-}" == "null" ]; then
-    export CENTRIFUGO_API_KEY="$(openssl rand -hex 32)"
-    log "Generated Centrifugo API key (first run on this install)"
-fi
-if [ -z "${CENTRIFUGO_HMAC_SECRET:-}" ] || [ "${CENTRIFUGO_HMAC_SECRET:-}" == "null" ]; then
-    export CENTRIFUGO_HMAC_SECRET="$(openssl rand -hex 32)"
-    log "Generated Centrifugo HMAC secret (first run on this install)"
-fi
-if [ -z "${CENTRIFUGO_ADMIN_PASSWORD:-}" ] || [ "${CENTRIFUGO_ADMIN_PASSWORD:-}" == "null" ]; then
-    export CENTRIFUGO_ADMIN_PASSWORD="$(openssl rand -base64 24)"
-    log "Generated Centrifugo admin password (first run on this install)"
-fi
-if [ -z "${CENTRIFUGO_ADMIN_SECRET:-}" ] || [ "${CENTRIFUGO_ADMIN_SECRET:-}" == "null" ]; then
-    export CENTRIFUGO_ADMIN_SECRET="$(openssl rand -hex 32)"
-    log "Generated Centrifugo admin secret (first run on this install)"
-fi
-persist_env_var "CENTRIFUGO_ENABLED" "${CENTRIFUGO_ENABLED:-true}"
-persist_env_var "CENTRIFUGO_PORT" "${CENTRIFUGO_PORT:-8001}"
-persist_env_var "CENTRIFUGO_TIMEOUT_MS" "${CENTRIFUGO_TIMEOUT_MS:-2000}"
-persist_env_var "CENTRIFUGO_API_KEY" "${CENTRIFUGO_API_KEY:-}"
-persist_env_var "CENTRIFUGO_HMAC_SECRET" "${CENTRIFUGO_HMAC_SECRET:-}"
-persist_env_var "CENTRIFUGO_ADMIN_PASSWORD" "${CENTRIFUGO_ADMIN_PASSWORD:-}"
-persist_env_var "CENTRIFUGO_ADMIN_SECRET" "${CENTRIFUGO_ADMIN_SECRET:-}"
-
 # Persistent uploads dir for push service account JSON files
 if [ -z "${PUSH_UPLOADS_DIR:-}" ] || [ "${PUSH_UPLOADS_DIR:-}" == "null" ]; then
     export PUSH_UPLOADS_DIR="$BACKEND_DIR/services/push/uploads"
@@ -1519,17 +1448,6 @@ if [ "${CALLS_P2P_ENABLED:-false}" == "true" ]; then
         echo "TURN_SECRET=${TURN_SECRET}"
         echo "TURN_CREDENTIAL_TTL_SECONDS=${TURN_CREDENTIAL_TTL_SECONDS}"
     } >> "$BACKEND_API_DIR/.env"
-fi
-
-# Generate centrifugo container config (mounted by docker-compose.enterprise.yml).
-# The file path here MUST match the volume mount in deploy/docker-compose.enterprise.yml
-# (currently `${BACKEND_DIR:-./ethora-backend}/centrifugo-config.json`).
-# We always regenerate it so any rotated secret is propagated to the centrifugo container
-# the next time it is recreated/restarted by update.sh / install.sh.
-if [ -f "$DEPLOY_DIR/templates/centrifugo-config.json.template" ]; then
-    replace_template \
-        "$DEPLOY_DIR/templates/centrifugo-config.json.template" \
-        "$BACKEND_DIR/centrifugo-config.json"
 fi
 
 # Generate push service .env (optional; service lives under backend repo)

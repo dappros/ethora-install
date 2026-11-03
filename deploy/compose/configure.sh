@@ -339,10 +339,6 @@ secret INTERNAL_REQUESTS_SECRET 32
 secret MYSQL_ROOT_PASSWORD 32
 secret MINIO_ROOT_USER 12 ethora-
 secret MINIO_ROOT_PASSWORD 32
-secret CENTRIFUGO_API_KEY 64
-secret CENTRIFUGO_HMAC_SECRET 64
-secret CENTRIFUGO_ADMIN_PASSWORD 24
-secret CENTRIFUGO_ADMIN_SECRET 64
 # The ai module's, generated for every install so the module can be switched
 # on later. WIDGET_SCRIPT_VERSION is the widget URL's version suffix: fixed
 # the first time (year and month) and kept, since pages embed that URL.

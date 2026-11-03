@@ -36,7 +36,7 @@ grep -qE '^version: [0-9]{2}\.[0-9]{1,2}\.[0-9]+$' "$CHART/Chart.yaml" && ok "ch
 echo "# five hosts"
 H="$T/hosts.yaml"
 for kind in StatefulSet Deployment; do
-  for c in $( [ $kind = StatefulSet ] && echo "mongo mysql redis minio" || echo "api jobs frontend xmpp centrifugo"); do
+  for c in $( [ $kind = StatefulSet ] && echo "mongo mysql redis minio" || echo "api jobs frontend xmpp"); do
     doc "$kind" "ethora-ethora-core-$c" "$H" | grep -q . && ok "$kind $c" || fail "$kind $c missing"
   done
 done
@@ -51,23 +51,24 @@ echo "$X" | grep -q 'path: /ws$' && echo "$X" | grep -q 'path: /bosh$' && ! echo
 A="$(doc Ingress ethora-ethora-core-api "$H")"
 echo "$A" | grep -A6 'path: /metrics' | grep -q 'name: ethora-ethora-core-frontend' && ok "api ingress: /metrics is not the API's" || fail "api /metrics route"
 echo "$A" | grep -q 'proxy-body-size: "0"' && ok "api ingress: no upload size limit" || fail "api upload annotation"
-doc Ingress ethora-ethora-core-web "$H" | grep -q 'proxy-read-timeout: "3600"' && ok "web ingress: WebSocket timeouts" || fail "web websocket annotation"
+doc Ingress ethora-ethora-core-xmpp "$H" | grep -q 'proxy-read-timeout: "3600"' && ok "xmpp ingress: WebSocket timeouts" || fail "xmpp websocket annotation"
+grep -qiE 'centrifug|connection/websocket' "$H" && fail "nothing of Centrifugo rendered" || ok "nothing of Centrifugo rendered"
 S="$(doc ConfigMap ethora-ethora-core-settings "$H")"
 for kv in 'ETHORA_MONGO_URI: "mongodb://ethora-ethora-core-mongo:27017/ethora_prod?directConnection=true"' 'ETHORA_REDIS_HOST: "ethora-ethora-core-redis"' \
           'ETHORA_MYSQL_HOST: "ethora-ethora-core-mysql"' 'ETHORA_MINIO_HOST: "ethora-ethora-core-minio"' 'ETHORA_API_URL: "http://ethora-ethora-core-api:8080"' \
-          'ETHORA_XMPP_URL: "http://ethora-ethora-core-xmpp:5280"' 'ETHORA_CENTRIFUGO_URL: "http://ethora-ethora-core-centrifugo:8000"' 'API_DOMAIN: "api.chat.example.com"' \
+          'ETHORA_XMPP_URL: "http://ethora-ethora-core-xmpp:5280"' 'API_DOMAIN: "api.chat.example.com"' \
           'SECURE_FILES_DOMAIN: "secure-files.chat.example.com"'; do
   echo "$S" | grep -qF "$kv" && ok "settings: ${kv%%:*}" || fail "settings: $kv"
 done
 SEC="$(doc Secret ethora-ethora-core-secrets "$H")"
-[ "$(echo "$SEC" | grep -cE '^  [A-Z_]+: "')" = 17 ] && ok "secret: 17 keys generated" || fail "secret keys" "$(echo "$SEC" | grep -cE '^  [A-Z_]+: "')"
+[ "$(echo "$SEC" | grep -cE '^  [A-Z_]+: "')" = 13 ] && ok "secret: 13 keys generated" || fail "secret keys" "$(echo "$SEC" | grep -cE '^  [A-Z_]+: "')"
 echo "$SEC" | grep -q 'helm.sh/resource-policy: keep' && ok "secret kept on uninstall" || fail "secret resource-policy"
 MY="$(doc StatefulSet ethora-ethora-core-mysql "$H")"
 echo "$MY" | grep -q 'subPath: mysql' && echo "$MY" | grep -q MYSQL_ROOT_PASSWORD_FILE && ok "mysql: subPath data, password from file" || fail "mysql volume/password"
 XD="$(doc Deployment ethora-ethora-core-xmpp "$H")"
 echo "$XD" | grep -q 'value: "+Q 65536"' && ok "xmpp: Erlang port table capped" || fail "xmpp ERL_FLAGS"
 grep -q 'name: ethora-ethora-core-init-1$' "$H" && ok "init Job named after the revision" || fail "init job name"
-for c in api jobs frontend xmpp centrifugo mysql minio; do
+for c in api jobs frontend xmpp mysql minio; do
   kind=Deployment; case $c in mysql|minio) kind=StatefulSet ;; esac
   doc "$kind" "ethora-ethora-core-$c" "$H" | grep -q 'ethora-compose-init:2610' || fail "$c renders its config with ethora-compose-init"
 done; ok "every consumer renders its config with ethora-compose-init:<appVersion>"
@@ -76,7 +77,7 @@ echo "# one origin, external databases, existing secret"
 O="$T/one-origin.yaml"
 [ "$(grep -c '^kind: Ingress$' "$O")" = 1 ] && ok "one origin: one ingress" || fail "one-origin ingress count"
 OI="$(doc Ingress ethora-ethora-core-web "$O")"
-for p in /v1 /v2 /api-docs /ws /bosh /connection/websocket /files /; do
+for p in /v1 /v2 /api-docs /ws /bosh /files /; do
   echo "$OI" | grep -q "path: $p\$" || fail "one origin: path $p"
 done; ok "one origin: every path routed"
 doc ConfigMap ethora-ethora-core-settings "$O" | grep -q 'PUBLIC_URL: "https://chat.example.com"' && ok "one origin: PUBLIC_URL set" || fail "one origin: PUBLIC_URL"

@@ -167,7 +167,6 @@ main() {
     check_docker_service "deploy_redis-server_1" "redis-server"
     check_docker_service "deploy_minio_1" "minio"
     check_docker_service "deploy_xmpp_1" "xmpp"
-    check_docker_service "centrifugo" "centrifugo"
     # Crawler is optional (AI feature). Only check/restart it when explicitly enabled.
     if [ "${CRAWLER_ENABLED:-false}" == "true" ]; then
         check_docker_service "crawler-service" "crawler"

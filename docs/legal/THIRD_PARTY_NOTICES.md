@@ -14,7 +14,6 @@ published image lists it).
 | MongoDB 6.0 | SSPL v1 | https://github.com/mongodb/mongo | Run unmodified as a service to the install itself. |
 | MySQL 8.1 | GNU GPL v2 | https://github.com/mysql/mysql-server | Unmodified. |
 | Redis 7 | BSD 3-clause (RSALv2/SSPL for 7.4+) | https://github.com/redis/redis | Unmodified. |
-| Centrifugo v6 | Apache 2.0 | https://github.com/centrifugal/centrifugo | Unmodified. |
 | pgvector / PostgreSQL 16 (enterprise AI module) | PostgreSQL Licence | https://github.com/pgvector/pgvector | Unmodified. |
 | nginx 1.27 (base of `ethora-frontend`) | BSD 2-clause | https://nginx.org | Unmodified. |
 | Node.js 24 (base of `ethora-api`, `ethora-ai`, `ethora-push`) | MIT | https://github.com/nodejs/node | Unmodified. |

@@ -1121,17 +1121,6 @@ parse_config() {
     export UPTIME_PUBLIC_ENABLED="$(yq eval '.services.uptime.public_enabled | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; export UPTIME_PUBLIC_ENABLED="${UPTIME_PUBLIC_ENABLED:-true}"
     export UPTIME_ETHORA_ENABLED=$(yq eval '.services.uptime.ethora_enabled // "false"' "$CONFIG_FILE")
 
-    # Centrifugo (real-time stats); per-deployment config + secrets.
-    # Backend reaches it via http://127.0.0.1:${CENTRIFUGO_PORT}/api (host network),
-    # the centrifugo container listens on 8000 internally and binds to ${CENTRIFUGO_PORT} on the host.
-    export CENTRIFUGO_ENABLED="$(yq eval '.services.centrifugo.enabled | select(. != null)' "$CONFIG_FILE" 2>/dev/null)"; export CENTRIFUGO_ENABLED="${CENTRIFUGO_ENABLED:-true}"
-    export CENTRIFUGO_PORT=$(yq eval '.services.centrifugo.port // 8001' "$CONFIG_FILE")
-    export CENTRIFUGO_TIMEOUT_MS=$(yq eval '.services.centrifugo.timeout_ms // 2000' "$CONFIG_FILE")
-    export CENTRIFUGO_API_KEY=$(yq eval '.services.centrifugo.api_key // ""' "$CONFIG_FILE")
-    export CENTRIFUGO_HMAC_SECRET=$(yq eval '.services.centrifugo.hmac_secret // ""' "$CONFIG_FILE")
-    export CENTRIFUGO_ADMIN_PASSWORD=$(yq eval '.services.centrifugo.admin_password // ""' "$CONFIG_FILE")
-    export CENTRIFUGO_ADMIN_SECRET=$(yq eval '.services.centrifugo.admin_secret // ""' "$CONFIG_FILE")
-
     export XMPP_ADMIN_PASSWORD=$(yq eval '.services.ejabberd.admin_password' "$CONFIG_FILE")
     
     export ADMIN_EMAIL=$(yq eval '.admin.email' "$CONFIG_FILE")
@@ -1434,26 +1423,6 @@ parse_config() {
         fi
     fi
 
-    # Centrifugo secrets: auto-generate per install if not provided in deploy.yml.
-    # These are used both by the backend (to sign wsTokens and authenticate to /api) and
-    # by the centrifugo container (config.json), so they MUST stay in sync within an install.
-    if [ -z "${CENTRIFUGO_API_KEY:-}" ] || [ "${CENTRIFUGO_API_KEY:-}" == "null" ]; then
-        export CENTRIFUGO_API_KEY=$(openssl rand -hex 32)
-        log "Generated Centrifugo API key"
-    fi
-    if [ -z "${CENTRIFUGO_HMAC_SECRET:-}" ] || [ "${CENTRIFUGO_HMAC_SECRET:-}" == "null" ]; then
-        export CENTRIFUGO_HMAC_SECRET=$(openssl rand -hex 32)
-        log "Generated Centrifugo HMAC secret"
-    fi
-    if [ -z "${CENTRIFUGO_ADMIN_PASSWORD:-}" ] || [ "${CENTRIFUGO_ADMIN_PASSWORD:-}" == "null" ]; then
-        export CENTRIFUGO_ADMIN_PASSWORD=$(openssl rand -base64 24)
-        log "Generated Centrifugo admin password"
-    fi
-    if [ -z "${CENTRIFUGO_ADMIN_SECRET:-}" ] || [ "${CENTRIFUGO_ADMIN_SECRET:-}" == "null" ]; then
-        export CENTRIFUGO_ADMIN_SECRET=$(openssl rand -hex 32)
-        log "Generated Centrifugo admin secret"
-    fi
-
     # Derive tracking URLs if not explicitly provided in deploy.yml
     if [ -z "$TRACK_MEMBER_URL" ] || [ "$TRACK_MEMBER_URL" == "null" ]; then
         if [ "$API_DOMAIN" == "localhost" ]; then
@@ -1608,13 +1577,6 @@ export REFRESH_SECRET="$REFRESH_SECRET"
 export B2B_PUSH_SECRET="${B2B_PUSH_SECRET:-}"
 export INTERNAL_REQUESTS_SECRET="${INTERNAL_REQUESTS_SECRET:-}"
 export XMPP_SECRET="$XMPP_SECRET"
-export CENTRIFUGO_ENABLED="${CENTRIFUGO_ENABLED:-true}"
-export CENTRIFUGO_PORT="${CENTRIFUGO_PORT:-8001}"
-export CENTRIFUGO_TIMEOUT_MS="${CENTRIFUGO_TIMEOUT_MS:-2000}"
-export CENTRIFUGO_API_KEY="${CENTRIFUGO_API_KEY:-}"
-export CENTRIFUGO_HMAC_SECRET="${CENTRIFUGO_HMAC_SECRET:-}"
-export CENTRIFUGO_ADMIN_PASSWORD="${CENTRIFUGO_ADMIN_PASSWORD:-}"
-export CENTRIFUGO_ADMIN_SECRET="${CENTRIFUGO_ADMIN_SECRET:-}"
 export TRACK_MEMBER_URL="$TRACK_MEMBER_URL"
 export TRACK_LAST_MESSAGE_URL="$TRACK_LAST_MESSAGE_URL"
 export TRACK_MESSAGE_URL="$TRACK_MESSAGE_URL"
@@ -2099,7 +2061,6 @@ EOF
     fi
     wait_for_service "MySQL" "docker-compose -f \"$DEPLOY_DIR/docker-compose.enterprise.yml\" exec -T mysql mysqladmin ping -h localhost -p\"$MYSQL_ROOT_PASSWORD\" --silent"
     wait_for_service "Ejabberd" "docker-compose -f \"$DEPLOY_DIR/docker-compose.enterprise.yml\" exec -T xmpp /home/ejabberd/bin/ejabberdctl ping"
-    wait_for_service "Centrifugo" "docker-compose -f \"$DEPLOY_DIR/docker-compose.enterprise.yml\" exec -T centrifugo wget --no-verbose --tries=1 --spider http://localhost:8000/" 60 2
 
     # Backend is a PM2-managed process (not a container). After setup-node-services, we also wait for /ping.
     # This avoids transient nginx 502s if checks run immediately after PM2 restart.

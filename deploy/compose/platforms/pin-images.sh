@@ -15,7 +15,6 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD="${1:?usage: pin-images.sh <release build, e.g. 2610.8>}"
 [[ "$BUILD" =~ ^[0-9]{4}\.[0-9]+$ ]] || { echo "build must look like 2610.8" >&2; exit 2; }
-CENTRIFUGO_TAG="${CENTRIFUGO_TAG:-v6.9.7}"   # what centrifugo/centrifugo:v6 is
 CADDY_TAG="${CADDY_TAG:-2.10.2-alpine}"      # what caddy:2.10-alpine is
 
 digest() {
@@ -37,7 +36,6 @@ digest() {
   echo "MYSQL_IMAGE=$(digest "docker.io/library/mysql:8.1.0")"
   echo "REDIS_IMAGE=$(digest "docker.io/library/redis:7.4-alpine")"
   echo "MINIO_IMAGE=$(digest "docker.io/dappros/minio:RELEASE.2025-09-07T16-13-09Z")"
-  echo "CENTRIFUGO_IMAGE=$(digest "docker.io/centrifugo/centrifugo:$CENTRIFUGO_TAG")"
   echo "CADDY_IMAGE=$(digest "docker.io/library/caddy:$CADDY_TAG")"
 } > "$HERE/images.env.tmp"
 mv "$HERE/images.env.tmp" "$HERE/images.env"

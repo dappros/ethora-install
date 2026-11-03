@@ -3,10 +3,10 @@ name: ethora-core
 description: >-
   Ethora Core, a self-hosted chat and messaging server: API, web chat and admin
   panel, XMPP server (ejabberd with the Ethora modules) and file storage, with
-  MongoDB, MySQL, Redis, MinIO and Centrifugo.
+  MongoDB, MySQL, Redis and MinIO.
 type: application
 # CalVer, YY.M.patch: the year and month the chart ships (see CLAUDE.md).
-version: 26.10.1
+version: 26.11.0
 # The image release line the chart runs by default (docker.io/dappros/ethora-*:2610).
 appVersion: "2610"
 kubeVersion: ">=1.25.0-0"

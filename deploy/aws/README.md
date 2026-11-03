@@ -17,7 +17,7 @@ Two pieces:
   `http://<ip>:8888` (user `admin`, password = instance id).
 
 What runs on the instance is exactly the compose bundle: Caddy for TLS and
-routing, the three Ethora images, MongoDB, MySQL, Redis, MinIO, Centrifugo,
+routing, the three Ethora images, MongoDB, MySQL, Redis, MinIO,
 data in Docker volumes. Settings live in
 `/home/ubuntu/ethora-install-shared/deploy/compose/.env`; update with
 `git pull && docker compose pull && docker compose up -d` in that directory;

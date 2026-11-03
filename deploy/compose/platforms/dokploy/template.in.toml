@@ -24,10 +24,6 @@ internal_requests_secret = "${password:32}"
 mysql_root_password = "${password:32}"
 minio_root_user = "ethora${password:12}"
 minio_root_password = "${password:32}"
-centrifugo_api_key = "${password:64}"
-centrifugo_hmac_secret = "${password:64}"
-centrifugo_admin_password = "${password:24}"
-centrifugo_admin_secret = "${password:64}"
 ai_service_secret = "${password:32}"
 docs_parse_secret = "${password:32}"
 ai_postgres_password = "${password:32}"
@@ -75,10 +71,6 @@ env = [
   "MYSQL_ROOT_PASSWORD=${mysql_root_password}",
   "MINIO_ROOT_USER=${minio_root_user}",
   "MINIO_ROOT_PASSWORD=${minio_root_password}",
-  "CENTRIFUGO_API_KEY=${centrifugo_api_key}",
-  "CENTRIFUGO_HMAC_SECRET=${centrifugo_hmac_secret}",
-  "CENTRIFUGO_ADMIN_PASSWORD=${centrifugo_admin_password}",
-  "CENTRIFUGO_ADMIN_SECRET=${centrifugo_admin_secret}",
   "AI_SERVICE_SECRET=${ai_service_secret}",
   "DOCS_PARSE_SECRET=${docs_parse_secret}",
   "AI_POSTGRES_PASSWORD=${ai_postgres_password}",
@@ -125,13 +117,6 @@ host = "api.${root_domain}"
 serviceName = "frontend"
 port = 8080
 host = "app.${root_domain}"
-
-# ... and, on the same host, the real-time channel (longer path rule wins).
-[[config.domains]]
-serviceName = "centrifugo"
-port = 8000
-host = "app.${root_domain}"
-path = "/connection/websocket"
 
 # xmpp.<root>: only /ws and /bosh; ejabberd's /api and /admin stay internal.
 [[config.domains]]
@@ -205,10 +190,6 @@ filePath = "/templates/backend.env.template"
 [[config.mounts]]
 filePath = "/templates/frontend.env.template"
 @content templates/frontend.env.template
-
-[[config.mounts]]
-filePath = "/templates/centrifugo-config.json.template"
-@content templates/centrifugo-config.json.template
 
 [[config.mounts]]
 filePath = "/templates/ai-service.env.template"

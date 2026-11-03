@@ -125,7 +125,6 @@ flowchart TB
     XMPP["XMPP server and modules<br/>Ejabberd"]
     Push["Push notifications<br/>Firebase"]
     Files["File storage<br/>MinIO"]
-    RT["Realtime delivery<br/>Centrifugo"]
   end
 
   subgraph Data["Data and infrastructure"]
@@ -141,7 +140,6 @@ flowchart TB
 
   API --> Mongo
   API --> Redis
-  API --> RT
   API --> Push
   API --> Files
   Jobs --> Mongo
@@ -195,9 +193,9 @@ flowchart TB
 ┌─────────────────────────────────────────────────────────┐
 │              Docker Services (docker-compose)           │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐│
-│  │ MongoDB  │  │  Redis   │  │ Centrifugo│ │  MySQL   ││
+│  │ MongoDB  │  │  Redis   │  │  MinIO   │ │  MySQL   ││
 │  │ Port     │  │ Port     │  │ Port     │ │ Port     ││
-│  │ 27017    │  │ 6379     │  │ 8001     │ │ 3306     ││
+│  │ 27017    │  │ 6379     │  │ 9000     │ │ 3306     ││
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘│
 └─────────────────────────────────────────────────────────┘
 ```
