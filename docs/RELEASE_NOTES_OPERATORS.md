@@ -30,6 +30,20 @@ still show correct numbers after a reload). On a compose install, run
 Caddy when only its rendered Caddyfile changed, and until then the old
 route answers 502.
 
+**ejabberd events go through Redis.** Membership, message archive, "last
+message" and edit / delete / history-read audit events no longer reach the API
+as one HTTP request per stanza from inside the chat room: ejabberd appends them
+to the Redis stream `ethora:xmpp:events` and backend-jobs consumes it, so a
+slow or restarting API no longer slows chat, and events published while the
+API is down are handled once it is back. Every deploy form now renders
+`redis_server` / `redis_port` into `ejabberd.yml` (host installer:
+`redis-server:6379`, override with `EJABBERD_REDIS_HOST` /
+`EJABBERD_REDIS_PORT`; compose, Helm and Cloudron: the Redis the API uses).
+backend-jobs must run: it is the only consumer. Without `redis_server`, or
+while Redis is unreachable, ejabberd sends the same events to the existing
+`/v1/chats/*` callbacks as before, so the URLs and `security.xmpp_secret`
+stay. The stream is capped at about 100,000 entries.
+
 **XMPP app isolation.** `mod_ethora` now refuses any stanza that crosses from
 one app to another: messages of every type, presence and iq, to users and to
 rooms (so also MucSub and room history), plus anything a room or

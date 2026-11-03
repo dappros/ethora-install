@@ -535,7 +535,8 @@ else
 
   # ejabberd.yml must equal what setup-ejabberd-config.sh produces from the
   # same template and values (its production branch), except the tracking URLs
-  # which point at the api service here (passed to both sides below).
+  # which point at the api service here and the Redis host, which is the redis
+  # service here (passed to both sides below).
   I="$T/installer"; mkdir -p "$I/docker"; cp "$T/dist/ejabberd-prod.yml" "$I/docker/ejabberd-prod.yml"
   sed -n '/^if sed --version/,/^fi$/p; /^update_[a-z_]*() {/,/^}$/p' "$DEPLOY/scripts/setup-ejabberd-config.sh" > "$T/installer-fns.sh"
   (
@@ -545,13 +546,14 @@ else
     export XMPP_DOMAIN=xmpp.chat.example.com API_DOMAIN=api.chat.example.com EJABBERD_DIR="$I"
     export TRACK_MEMBER_URL=http://api:8080/v1/chats/track-member TRACK_LAST_MESSAGE_URL=http://api:8080/v1/chats/track-last-message \
            TRACK_MESSAGE_URL=http://api:8080/v1/chats/archive-message HISTORY_ACCESS_URL=http://api:8080/v1/chats/history-access \
-           MESSAGE_AUDIT_URL=http://api:8080/v1/chats/message-audit
+           MESSAGE_AUDIT_URL=http://api:8080/v1/chats/message-audit EJABBERD_REDIS_HOST=redis
     # shellcheck disable=SC1090
     source "$T/installer-fns.sh"
     cfg="$I/docker/ejabberd-prod.yml"
     sed -i "/^hosts:/,/^[a-z]/s/^  -.*/  - $XMPP_DOMAIN/" "$cfg"
     update_api_acl_admin_jid "$cfg"; update_tracking_urls_and_secret "$cfg"
     update_offline_post_urls_and_secret "$cfg"; update_certfiles_path "$cfg"; update_translate_url "$cfg"; update_jwt_auth "$cfg"
+    update_redis_server "$cfg"
   ) >/dev/null 2>&1
   # The installer's sql_password sed has no escaping (its generated passwords
   # never need it), so compare that line separately.

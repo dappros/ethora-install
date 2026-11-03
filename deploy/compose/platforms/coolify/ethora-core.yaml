@@ -1351,6 +1351,14 @@ x-file-render-config: &file-render-config
       awk '{ print } /^auth_method:/ { print "jwt_key: \"/home/ejabberd/conf/jwt.key\""; print "jwt_jid_field: \"jid\"" }' "$cfg" > "$cfg.tmp" && mv "$cfg.tmp" "$cfg"
     fi
 
+    # Redis for ejabberd's event stream to the backend (ethora_callback in the
+    # xmpp image): with redis_server set, membership / archive / audit events go
+    # to a Redis stream that the jobs service consumes, instead of HTTP callbacks.
+    # The template may lack a final newline.
+    [ -z "$(tail -c 1 "$cfg")" ] || echo >> "$cfg"
+    printf '\n# Redis for the event stream to the backend (ethora_callback).\nredis_server: "%s"\nredis_port: %s\n' \
+      "$ETHORA_REDIS_HOST" "$REDIS_PORT" >> "$cfg"
+
     # xmpp-start.sh registers admin@<xmpp host> with this password.
     printf '%s\n' "$XMPP_ADMIN_PASSWORD" > "$stage/xmpp/admin-password"
 

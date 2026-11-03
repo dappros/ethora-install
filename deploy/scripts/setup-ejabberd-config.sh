@@ -276,6 +276,29 @@ update_certfiles_path() {
 # xmppPassword. ejabberd verifies it via jwt_key. We render the JWK key file from
 # the same shared secret and add `jwt` to auth_method (keeping sql for register /
 # system accounts / bots, and anonymous for widget/anon logins).
+# ejabberd publishes its events (membership, archive, audit) to a Redis stream
+# that backend-jobs consumes, and falls back to the HTTP callbacks above when
+# redis_server is unset. It reaches the platform's Redis as the redis-server
+# container on ethora-network, on the container port.
+update_redis_server() {
+    local cfg="$1"
+    if [ ! -f "$cfg" ]; then
+        return 0
+    fi
+    local host="${EJABBERD_REDIS_HOST:-redis-server}"
+    local port="${EJABBERD_REDIS_PORT:-6379}"
+    if grep -qE "^redis_server:" "$cfg"; then
+        sed_i -e "s|^redis_server:.*|redis_server: \"${host}\"|" -e "s|^redis_port:.*|redis_port: ${port}|" "$cfg" \
+          || warn "Failed to update redis_server"
+    else
+        # The template may lack a final newline.
+        [ -z "$(tail -c 1 "$cfg")" ] || echo >> "$cfg"
+        printf '\n# Redis for the event stream to the backend (ethora_callback).\nredis_server: "%s"\nredis_port: %s\n' \
+          "$host" "$port" >> "$cfg" || warn "Failed to add redis_server"
+    fi
+    log "Configured ejabberd redis_server: ${host}:${port}"
+}
+
 update_jwt_auth() {
     local cfg="$1"
     if [ ! -f "$cfg" ]; then
@@ -320,6 +343,7 @@ if [ "$XMPP_DOMAIN" == "localhost" ]; then
         update_certfiles_path "$EJABBERD_CONFIG"
         update_translate_url "$EJABBERD_CONFIG"
         update_jwt_auth "$EJABBERD_CONFIG"
+        update_redis_server "$EJABBERD_CONFIG"
     else
         warn "ejabberd-local.yml not found, using existing config"
     fi
@@ -341,6 +365,7 @@ else
         update_certfiles_path "$EJABBERD_CONFIG"
         update_translate_url "$EJABBERD_CONFIG"
         update_jwt_auth "$EJABBERD_CONFIG"
+        update_redis_server "$EJABBERD_CONFIG"
     else
         warn "ejabberd.yml not found, creating from template..."
         if [ -f "$ROOT_DIR/ejabberd-docker/docker/ejabberd-prod.yml" ]; then
@@ -354,6 +379,7 @@ else
             update_certfiles_path "$EJABBERD_CONFIG"
             update_translate_url "$EJABBERD_CONFIG"
         update_jwt_auth "$EJABBERD_CONFIG"
+        update_redis_server "$EJABBERD_CONFIG"
         else
             warn "No Ejabberd template found"
         fi
