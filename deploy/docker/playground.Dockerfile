@@ -8,6 +8,9 @@ FROM node:${NODE_VERSION}-bookworm-slim
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
 # `upgrade` picks up Debian security fixes published after the base image was
 # built (the release workflow blocks on fixable CRITICAL CVEs).
+# Set to the build date by CI (release-images), so the upgrade below runs
+# again each day instead of coming back from an old layer cache.
+ARG SECURITY_UPGRADE_DATE=""
 RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends ca-certificates curl tini && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json package-lock.json ./
