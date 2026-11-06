@@ -452,6 +452,19 @@ requirements changed; before, the running container kept the old code until
 someone restarted it (`docker restart crawler-service`). The first update
 with this change restarts it once.
 
+**Archive closes access, not only login.** Archiving a user or an App used to
+block only the email login: an archived user, or any user of an archived App,
+could still refresh, exchange a client token, sign in with Google, Apple or a
+wallet, use OAuth, open widget sessions, keep using earlier access tokens and
+stay in chat. Now all of these answer `403 USER_ARCHIVED` / `APP_ARCHIVED`, an
+archived App's app and server tokens stop working, and the ejabberd account is
+banned (`ban_account`): open chat sessions close and new chat logins are
+refused. Restore lifts it without a new login. The chat part needs
+`mod_admin_extra` and `mod_private` in `ejabberd.yml`, which every shipped
+config has. Accounts archived before this update are not banned in chat until
+they are restored and archived again. Details:
+[SOFT_DELETE_AND_BUNDLES.md](SOFT_DELETE_AND_BUNDLES.md#what-archive-blocks).
+
 **Host.** No new ports. Node.js 24 as in 2609.
 
 ## 2609 (production line, promoted 2026-09-15)
