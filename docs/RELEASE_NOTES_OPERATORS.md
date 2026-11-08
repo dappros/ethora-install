@@ -14,6 +14,19 @@ default is not what you want.
 
 ## 2610 (development line, September 2026)
 
+**The rendered `.env` wins over inherited environment (host installs).** The
+API, the AI service, the push service and the MCP server now take the values
+in their rendered `.env` over variables the process inherited from the shell
+PM2 was started in. Before, PM2 kept the deploy shell's variables from the
+first `pm2 start`, so a value you changed in a rendered `.env` afterwards (a
+rotated secret, a hand edit while debugging) did not reach the running
+service after `pm2 restart --update-env` unless the same variable was also
+exported in that shell. Nothing to do on update; if you relied
+on exporting a variable to override a rendered `.env` value, put it in
+`deploy.yml` instead. Containers carry no `.env`, so image and compose
+installs are unaffected. The MCP server applies this only when its `.env`
+carries `ETHORA_MCP_DOTENV_OVERRIDE=true`, which the deploy writes.
+
 **Centrifugo is gone.** The admin panel's live updates (app statistics, site
 crawl progress) now arrive as XMPP events on the web app's existing chat
 connection, so the Centrifugo container, its config and the

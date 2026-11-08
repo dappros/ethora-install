@@ -2670,6 +2670,10 @@ ETHORA_MCP_OPENAI_APPS_CHALLENGE={{MCP_OPENAI_APPS_CHALLENGE}}
 # INTERNAL_REQUESTS_SECRET). The MCP server posts usage events (session opens,
 # tool calls) to POST /internal/mcp/events with it; empty disables them.
 ETHORA_MCP_INTERNAL_SECRET={{INTERNAL_REQUESTS_SECRET}}
+# This file is the deployment's source of truth: let it win over variables the
+# process inherited from the shell PM2 was started in (otherwise a value
+# changed here never reaches the running service).
+ETHORA_MCP_DOTENV_OVERRIDE=true
 '''
 
 [[config.mounts]]
