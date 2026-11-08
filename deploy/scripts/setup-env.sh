@@ -792,6 +792,7 @@ replace_template() {
     replace_literal "{{MCP_ENABLE_DANGEROUS_TOOLS}}" "${MCP_ENABLE_DANGEROUS_TOOLS:-true}"
     replace_literal "{{MCP_OPENAI_APPS_CHALLENGE}}" "${MCP_OPENAI_APPS_CHALLENGE:-}"
     replace_literal "{{OAUTH_ISSUER}}" "${OAUTH_ISSUER:-}"
+    replace_literal "{{INTERNAL_REQUESTS_SECRET}}" "${INTERNAL_REQUESTS_SECRET:-}"
     replace_literal "{{WIDGET_SCRIPT_VERSION}}" "${WIDGET_SCRIPT_VERSION:-}"
     replace_literal "{{WIDGET_URL}}" "${WIDGET_URL:-}"
     replace_literal "{{WIDGET_VERSIONED_URL}}" "${WIDGET_VERSIONED_URL:-}"
