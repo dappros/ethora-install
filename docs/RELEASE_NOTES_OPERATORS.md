@@ -14,6 +14,45 @@ default is not what you want.
 
 ## 2610 (development line, September 2026)
 
+**Daily AI spend caps per App, on by default.** Every App now has two daily
+caps, counted per UTC day. Conversations: 2,000,000 tokens (agent replies,
+reply checks, heartbeat messages, flow answers, the agent reply API and
+knowledge-search embeddings). Indexing: 1,000,000 embedding tokens, about
+4 MB of text (Web Index pages and uploaded documents). At 80% of the
+conversation cap the App's owner is emailed. At the cap the App's agents
+stop answering until 00:00 UTC or until the cap is raised; the agent reply
+API answers 429 `AI_BUDGET_EXCEEDED`, and scripted flow steps that need no
+model keep working. A person writing to a paused App's agent gets one line
+per room per day, "Sorry, I can't reply right now. Please try again later."
+(the AI service variable `AI_BUDGET_PAUSED_MESSAGE` changes it; it does not
+mention the cap). The agents of an App that is archived or deleted now stay
+quiet; before, they kept answering in its rooms. Pages and documents past the indexing cap are stored
+and indexed on a later day; the admin panel marks them "Waiting to be
+indexed". The base App is not capped unless it is given caps of its own.
+Decide before the update whether the defaults suit your installs: an App
+that used more than this in a day before the update will pause or index
+more slowly after it. Change the defaults on the admin panel's Server
+settings page (`AI_APP_DAILY_TOKEN_CAP` under Agents,
+`AI_APP_DAILY_INDEXING_TOKEN_CAP` under Web Index refresh; 0 turns a cap
+off). Owners change their own App's caps on the App's Statistics page, AI
+tokens tab, and integrations with `PATCH /v2/apps/:appId/ai-budget` using
+the App's server token. The owner emails go out only when email (Postmark)
+is configured. backend-jobs must run: its embed retry indexes what was held
+back, about 100 pages every 10 minutes across all Apps, and now also
+re-sends uploaded documents whose embedding failed (before, such a document
+stayed unsearchable).
+
+**Smaller prompts per agent reply.** The AI service sends less with each
+model call. Knowledge excerpts: at most 8 instead of 15, at most 3 from one
+page, and about 3,000 tokens in all; text that neighbouring chunks of a page
+repeat is sent once. Room history: the newest messages that fit in about
+4,000 tokens, with one message cut at about 1,500. On a knowledge-heavy
+agent this was about 40% fewer tokens per reply in testing. Nothing to do
+on update. If an agent's answers lose detail, these are AI service
+environment variables: `AI_RAG_MAX_DOCS`, `AI_RAG_MAX_PER_SOURCE`,
+`AI_RAG_KEYWORD_DOCS`, `AI_RAG_MAX_CONTEXT_TOKENS`,
+`AI_CONVERSATION_MAX_HISTORY_TOKENS`, `AI_CONVERSATION_MAX_MESSAGE_TOKENS`.
+
 **The rendered `.env` wins over inherited environment (host installs).** The
 API, the AI service, the push service and the MCP server now take the values
 in their rendered `.env` over variables the process inherited from the shell
