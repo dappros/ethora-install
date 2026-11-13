@@ -8,6 +8,14 @@ with a staging box, or someone installing locally.
 The first three sections are what you need day to day. Everything after
 them is reference and runbooks.
 
+**Two ways to install.** This page covers the host installer: everything
+built from source on the server, services under PM2 and Docker, nginx in
+front. It is what QA, production and existing customer installs run. New
+installs and the cloud images (AWS, Azure, DigitalOcean) use the **compose
+bundle** instead: prebuilt images from Docker Hub, `./configure.sh` then
+`docker compose up -d`, no build on the server. See
+[compose/README.md](compose/README.md).
+
 ## Table of Contents
 
 Day to day:
@@ -98,8 +106,8 @@ Fresh Ubuntu 22.04 or 24.04 host, DNS records pointing at it, a user with
 itself.
 
 ```bash
-# 1. Source checkout (release line 2609 shown; use the branch you were given)
-git clone -b 2609 git@github.com:dappros/ethora-install-shared.git ~/ethora-install-shared
+# 1. Source checkout (release line 2610 shown; use the branch you were given)
+git clone -b 2610 git@github.com:dappros/ethora-install-shared.git ~/ethora-install-shared
 cd ~/ethora-install-shared
 
 # 2. Write deploy/config/deploy.yml: root domain, admin email, license key.
@@ -790,14 +798,17 @@ If `backend-jobs` is not running, scheduled tasks will not run.
 
 This matters for day-to-day development and deployments:
 
-- **`ethora-backend/`** in monoserver is a **git submodule**.
-  - Updating backend code requires:
-    - pushing commits in `ethora-backend` (enterprise branch: `new-dev-tf`)
-    - then bumping the submodule pointer in monoserver (commit in `ethora-monoserver`).
-- **`ethora-app-reactjs/`** in monoserver is a **git submodule**.
-  - Updating frontend code requires:
-    - pushing commits to the frontend repo (branch: `dev-tf`)
-    - then bumping the frontend submodule pointer in monoserver.
+- Every component (`ethora-backend/`, `ethora-app-reactjs/`, `ejabberd-docker/`,
+  ...) is a **git submodule** of the monoserver; the monoserver stores which
+  commit of each one a release line runs.
+- Each release line (`2609`, `2610`, ...) follows one branch per component,
+  named in that line's `.gitmodules` (for `2610`: `ethora-backend`,
+  `ethora-app-reactjs`, `ejabberd-docker` and `ethora-uptime` follow `2610`,
+  the public SDK repos follow `main`).
+- A change lands in the component repo on that branch first; the hourly
+  `bump-submodules` workflow then moves the monoserver line's pointer, and
+  `ethora-install-shared` (what servers clone) follows within minutes.
+  `update.sh --ref <line>` on a server picks it up.
 
 ### Optional synthetic regression test (journeys)
 
@@ -855,9 +866,8 @@ legacy layouts the scripts still recognise.
 
 The installer will check for and attempt to install these, but you can install them manually:
 
-- **Docker** (20.10+)
-- **Docker Compose** (1.29+)
-- **Node.js** (18+)
+- **Docker** (24+) with the **Compose plugin** (`docker compose`, v2)
+- **Node.js** (24; the installer sets up the NodeSource 24.x repository)
 - **npm** or **pnpm**
 - **PM2** (for process management)
 - **Nginx**
