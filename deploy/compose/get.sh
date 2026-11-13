@@ -25,6 +25,7 @@
 #   --dir DIR                where the bundle goes (default /opt/ethora)
 #   --ref BRANCH             bundle branch (default main)
 set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
 
 REPO="${ETHORA_REPO:-https://github.com/dappros/ethora-install.git}"
 DIR="${ETHORA_DIR:-/opt/ethora}"
@@ -70,7 +71,15 @@ disk_gb="$(df -BG --output=avail / | tail -n 1 | tr -dc 0-9)"
 say "server: ${mem_gb} GB memory, ${disk_gb} GB free disk"
 [ "${mem_gb:-0}" -ge 4 ] || warn "4 GB of memory is the minimum for Ethora Core (8 GB with the Enterprise modules)"
 [ "${disk_gb:-0}" -ge 20 ] || warn "20 GB of free disk is the minimum (30 GB with the Enterprise modules)"
+# An existing install: this run reconfigures and updates it (secrets and data stay).
+EXISTING=false
+if [ -f "$DIR/deploy/compose/.env" ]; then
+  EXISTING=true
+  say "Ethora is already installed in $DIR: this run updates the bundle and reconfigures it (secrets and data are kept)"
+fi
 for p in 80 443; do
+  # Ethora's own proxy holding the port is expected on a re-run.
+  [ "$EXISTING" = true ] && command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'caddy' && continue
   if command -v ss >/dev/null 2>&1 && ss -ltnH "sport = :$p" 2>/dev/null | grep -q .; then
     warn "port $p is in use: Ethora's proxy needs 80 and 443 (stop the web server that holds it, or see the bundle README for running behind your own proxy)"
   fi
