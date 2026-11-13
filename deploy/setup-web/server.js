@@ -167,6 +167,7 @@ function existingBundleAnswers() {
     admin_email: env.ADMIN_EMAIL || '',
     display_name: env.BASE_APP_DISPLAY_NAME || '',
     license_key: env.ETHORA_LICENSE_KEY || '',
+    modules: (env.COMPOSE_PROFILES || '').split(',').filter((p) => p && p !== 'caddy').join(','),
     secure_files: env.SECURE_FILES_DOMAIN === 'off' ? 'off' : 'on',
   }
 }
@@ -181,12 +182,14 @@ function startCompose(a) {
   if (s(a.display_name)) args.push('--display-name', s(a.display_name))
   if (s(a.license_key)) args.push('--license-key', s(a.license_key))
   if (a.secure_files === 'off') args.push('--secure-files', 'off')
+  if (/^[a-z,]+$/.test(s(a.modules))) args.push('--modules', s(a.modules))
+  if (s(a.ai_api_key)) args.push('--ai-api-key', s(a.ai_api_key))
   if (DRY_RUN) args.push('--dry-run')
 
   state.phase = 'running'; state.startedAt = new Date().toISOString(); state.finishedAt = null
   state.exitCode = null; state.error = null; state.appUrl = null; state.adminPassword = null
   try { fs.writeFileSync(LOG_FILE, '') } catch (_) {}
-  appendLog(`[setup-web] ${new Date().toISOString()} cloud/install.sh ${args.map((x, i) => (['--admin-password', '--license-key'].includes(args[i - 1]) ? '***' : x)).join(' ')}\n`)
+  appendLog(`[setup-web] ${new Date().toISOString()} cloud/install.sh ${args.map((x, i) => (['--admin-password', '--license-key', '--ai-api-key'].includes(args[i - 1]) ? '***' : x)).join(' ')}\n`)
   let out = ''
   child = spawn('bash', [CLOUD_INSTALL_SH, ...args], { cwd: path.dirname(CLOUD_INSTALL_SH), env: { ...process.env, ETHORA_DONE_FILE: DONE_FILE, HOME: process.env.HOME || '/root' } })
   child.stdout.on('data', (d) => { out += d; appendLog(d.toString()) })
@@ -296,8 +299,8 @@ function formFields(pre) {
   if (MODE === 'compose') return `
 <fieldset><legend>Required</legend>
 <label for="domain">Root domain</label>
-<input id="domain" name="domain" type="text" required placeholder="chat.example.com" value="${v('domain')}">
-<div class="hint">Gives api., app., xmpp., files. and secure-files. subdomains. Point them at this server (a wildcard record covers them) before submitting: Let's Encrypt issues the certificates during the install. No domain yet? Use &lt;this server's IP with dashes&gt;.sslip.io, e.g. 203-0-113-10.sslip.io.</div>
+<input id="domain" name="domain" type="text" required placeholder="chat.example.com" value="${v('domain', process.env.SETUP_SUGGESTED_DOMAIN || '')}">
+<div class="hint">Gives api., app., xmpp., files. and secure-files. subdomains. Point them at this server (a wildcard record covers them) before submitting: Let's Encrypt issues the certificates during the install. No domain yet? &lt;this server's IP with dashes&gt;.sslip.io works at once${process.env.SETUP_SUGGESTED_DOMAIN ? ' (filled in above)' : ', e.g. 203-0-113-10.sslip.io'}.</div>
 <label for="admin_email">Admin email</label>
 <input id="admin_email" name="admin_email" type="email" required placeholder="ops@example.com" value="${v('admin_email')}">
 <div class="hint">Platform admin login, base app owner, and Let's Encrypt contact. The admin password is generated and shown once at the end.</div>
@@ -307,6 +310,12 @@ function formFields(pre) {
 <label for="license_key">License key (optional)</label>
 <textarea id="license_key" name="license_key" placeholder="ETHORA1.…  (leave empty for Ethora Core, free)">${v('license_key')}</textarea>
 <div class="hint">Ethora Core needs no key: 5 apps and 500 user accounts per server, nothing expires. Register for free on the License page of the admin panel afterwards to raise the limits, or paste an Enterprise key here or there later.</div>
+<label for="modules">Enterprise modules (with a license key)</label>
+<input id="modules" name="modules" type="text" placeholder="ai,push,mcp,uptime" value="${v('modules')}">
+<div class="hint">Any of ai, push, playground, mcp, uptime, calls, comma-separated. Their images come with the license; leave empty for Ethora Core.</div>
+<label for="ai_api_key">OpenAI API key (ai module, optional)</label>
+<input id="ai_api_key" name="ai_api_key" type="password" autocomplete="off">
+<div class="hint">Lets the AI agents answer. It can also be added later in the admin panel (Server settings, AI).</div>
 </fieldset>
 
 <details><summary>Advanced</summary><fieldset>

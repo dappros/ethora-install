@@ -9,6 +9,24 @@ It is the second way to run Ethora Core, next to the host installer
 (`deploy/scripts/install.sh`). Both run the same images from the same
 configuration templates; this one needs only Docker.
 
+## Install with one command
+
+On a fresh Linux server (Ubuntu 22.04 / 24.04 or similar) with ports 80 and
+443 open, 2 vCPU, 4 GB RAM and 20 GB of disk:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dappros/ethora-install/main/deploy/compose/get.sh | sudo bash
+```
+
+It installs Docker and git when they are missing, fetches this bundle into
+`/opt/ethora`, asks four questions (domain, admin email, licence key, AI key;
+press Enter for the suggestions) and runs the install below, including the
+first-boot wait and the end-to-end check. No domain yet? The suggested
+`<server IP>.sslip.io` works at once, with real certificates. Prefer a form
+in the browser: `... | sudo bash -s -- --web` serves the setup page on port
+8888 with a one-time password. Everything is scriptable:
+`... | sudo bash -s -- --domain chat.example.com --admin-email you@example.com --yes`.
+
 ## Install
 
 On a server with Docker Engine 24+ and the Compose plugin (2.24+), ports 80
@@ -21,6 +39,8 @@ cd ethora-compose            # this directory, copied to the server
 docker compose up -d
 ```
 
+`--domain auto` uses `<this server's public IP with dashes>.sslip.io`; run
+`./configure.sh` without flags for questions with suggestions.
 `configure.sh` writes `.env`: the hosts derive from your root domain, every
 secret is generated, and the admin password is printed once. The first start
 pulls the images and takes a few minutes; `docker compose logs -f init` ends

@@ -10,7 +10,8 @@
 #   ./configure.sh --domain 203-0-113-10.sslip.io --admin-email ops@example.com --yes
 #
 # Answers (flag, or env ETHORA_SETUP_<NAME>, or prompt):
-#   --domain ROOT            root domain: api./app./xmpp./files./secure-files. derive from it
+#   --domain ROOT            root domain: api./app./xmpp./files./secure-files. derive from it;
+#                            `auto` = <this server's public IP with dashes>.sslip.io
 #   --public-url URL         one origin instead: https://chat.example.com, or
 #                            http://<LAN address>:<port> (sets HTTP_PORT)
 #   --api/--web/--xmpp/--files HOST   explicit host overrides
@@ -114,6 +115,23 @@ valid_email() { [[ "$1" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] ||
 valid_key() { [[ "$1" =~ ^ETHORA1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$ ]]; }
 
 is_tty() { [ -t 0 ] && [ -t 1 ]; }
+# This server's public IPv4 (an echo service, else the first global address
+# of the host), or nothing. sslip.io resolves <a-b-c-d>.sslip.io to a.b.c.d,
+# so a server without a domain gets five working hosts and real certificates.
+public_ip() {
+  local ip=""
+  if command -v curl >/dev/null 2>&1; then
+    for u in https://api.ipify.org https://ifconfig.me/ip https://icanhazip.com; do
+      ip="$(curl -fsS -4 -m 4 "$u" 2>/dev/null | tr -d '[:space:]')"
+      [[ "$ip" =~ ^[0-9]+(\.[0-9]+){3}$ ]] && break; ip=""
+    done
+  fi
+  if [ -z "$ip" ] && command -v ip >/dev/null 2>&1; then
+    ip="$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | grep -vE '^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)' | head -n 1)"
+  fi
+  printf '%s' "$ip"
+}
+sslip_domain() { local ip; ip="$(public_ip)"; [ -n "$ip" ] && printf '%s.sslip.io' "$(printf '%s' "$ip" | tr . -)"; }
 prompt() { # prompt VAR "question" "default": only when interactive and VAR is empty
   local var="$1" q="$2" def="${3:-}" ans
   [ -n "${!var}" ] && return 0
@@ -171,11 +189,18 @@ else
     echo "Ethora Core, compose bundle. Two questions; everything else is derived or generated."
     echo "Root domain: the five service hosts derive from it, e.g. chat.example.com ->"
     echo "  api., app., xmpp., files. and secure-files.chat.example.com"
-    echo "No domain yet? Use <server IP with dashes>.sslip.io, e.g. 203-0-113-10.sslip.io."
-    echo "(One address instead of five hosts: re-run with --public-url.)"
+    echo "No domain yet? Press Enter for <this server's IP>.sslip.io: it resolves"
+    echo "everywhere and gets real certificates. (One address instead of five hosts:"
+    echo "re-run with --public-url.)"
     echo
+    SUGGESTED_DOMAIN="$(sslip_domain || true)"
   fi
-  prompt A_DOMAIN "Root domain" ""
+  prompt A_DOMAIN "Root domain" "${SUGGESTED_DOMAIN:-}"
+  if [ "$A_DOMAIN" = auto ]; then
+    A_DOMAIN="$(sslip_domain || true)"
+    [ -n "$A_DOMAIN" ] || die "--domain auto: could not find this server's public IP; pass --domain"
+    log "--domain auto: $A_DOMAIN"
+  fi
   A_DOMAIN="$(norm_host "$A_DOMAIN")"
   [ -n "$A_DOMAIN" ] || die "a root domain is required (--domain chat.example.com), or --public-url"
   [ "$A_DOMAIN" != "localhost" ] || die "the compose bundle needs a public domain (Caddy obtains certificates for it); try <IP with dashes>.sslip.io, or --public-url http://localhost:8420"

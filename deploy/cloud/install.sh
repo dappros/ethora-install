@@ -8,12 +8,18 @@
 #   deploy/cloud/install.sh --domain chat.example.com --admin-email ops@example.com
 #
 # Answers (flag, or env ETHORA_SETUP_<NAME>):
-#   --domain ROOT            root domain; api./app./xmpp./files./secure-files. derive from it
+#   --domain ROOT            root domain; api./app./xmpp./files./secure-files. derive from it;
+#                            `auto` = <public IP with dashes>.sslip.io
 #   --admin-email EMAIL      platform admin, base app owner, Let's Encrypt contact
 #   --admin-password PASS    default: generated, printed once
 #   --display-name NAME      product name in the web app (default: Ethora)
 #   --license-key KEY        Enterprise key; empty = Ethora Core (free)
 #   --secure-files off       keep chat attachments in the public files bucket (four hosts)
+#   --modules LIST           Enterprise modules (ai,push,playground,mcp,uptime,calls); needs a
+#                            licence key; their private images are pulled with the licence's
+#                            registry credential
+#   --ai-api-key KEY         ai module: key of the OpenAI-compatible provider
+#   -- ...                   anything after -- goes to configure.sh as is
 #   --no-verify              skip the end-to-end check at the end
 #   --dry-run                resolve the answers, write and start nothing
 #
@@ -38,6 +44,7 @@ die() { echo "[cloud-install] ERROR: $*" >&2; exit 1; }
 A_DOMAIN="${ETHORA_SETUP_DOMAIN:-}"; A_EMAIL="${ETHORA_SETUP_ADMIN_EMAIL:-}"
 A_PASSWORD="${ETHORA_SETUP_ADMIN_PASSWORD:-}"; A_NAME="${ETHORA_SETUP_DISPLAY_NAME:-}"
 A_KEY="${ETHORA_SETUP_LICENSE_KEY:-}"; A_SECURE="${ETHORA_SETUP_SECURE_FILES:-}"
+A_MODULES="${ETHORA_SETUP_MODULES:-}"; A_AI_KEY="${ETHORA_SETUP_AI_API_KEY:-}"; EXTRA=()
 VERIFY=true; DRY_RUN=false
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -47,6 +54,9 @@ while [ $# -gt 0 ]; do
     --display-name) A_NAME="$2"; shift 2 ;;
     --license-key) A_KEY="$2"; shift 2 ;;
     --secure-files) A_SECURE="$2"; shift 2 ;;
+    --modules) A_MODULES="$2"; shift 2 ;;
+    --ai-api-key) A_AI_KEY="$2"; shift 2 ;;
+    --) shift; EXTRA=("$@"); break ;;
     --no-verify) VERIFY=false; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
     -h|--help) sed -n '2,/^set -uo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -64,13 +74,18 @@ args=(--domain "$A_DOMAIN" --admin-email "$A_EMAIL" --yes)
 [ -n "$A_NAME" ] && args+=(--display-name "$A_NAME")
 [ -n "$A_KEY" ] && args+=(--license-key "$A_KEY")
 [ -n "$A_SECURE" ] && args+=(--secure-files "$A_SECURE")
+[ -n "${A_MODULES:-}" ] && args+=(--modules "$A_MODULES")
+[ -n "${A_AI_KEY:-}" ] && args+=(--ai-api-key "$A_AI_KEY")
 [ "$DRY_RUN" = true ] && args+=(--dry-run)
+args+=(${EXTRA[@]+"${EXTRA[@]}"})
 
 cd "$BUNDLE" || die "cannot enter $BUNDLE"
 log "$(date -u +%FT%TZ) configure: root domain $A_DOMAIN, admin $A_EMAIL$([ -n "$A_KEY" ] && echo ', license key given' || echo ', Ethora Core (free)')"
 # configure.sh prints the generated admin password once; it is kept in .env.
-./configure.sh "${args[@]}" || die "configure.sh failed"
+./configure.sh "${args[@]}" || die "configure.sh failed (the lines above say why)"
 if [ "$DRY_RUN" = true ]; then log "dry run: nothing written, nothing started"; exit 0; fi
+# --domain auto: the domain configure.sh resolved.
+d="$(sed -n 's/^ROOT_DOMAIN=//p' .env | tr -d "'\"" | head -n 1)"; [ -n "$d" ] && A_DOMAIN="$d"
 
 log "$(date -u +%FT%TZ) starting the stack (docker compose up -d)"
 docker compose up -d || die "docker compose up failed"

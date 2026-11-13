@@ -12,7 +12,7 @@ ok()   { PASS=$((PASS+1)); echo "  ok   $1"; }
 fail() { FAIL=$((FAIL+1)); echo "  FAIL $1"; [ -n "${2:-}" ] && echo "       $2"; }
 
 echo "# scripts parse"
-for f in deploy/cloud/install.sh deploy/cloud/provision.sh deploy/setup-web/install-setup-web.sh deploy/vultr/packer/ethora.sh deploy/linode/ethora-core.stackscript.sh; do
+for f in deploy/compose/get.sh deploy/cloud/install.sh deploy/cloud/provision.sh deploy/setup-web/install-setup-web.sh deploy/vultr/packer/ethora.sh deploy/linode/ethora-core.stackscript.sh; do
   bash -n "$ROOT/$f" && ok "bash -n $f" || fail "bash -n $f"
 done
 node --check "$ROOT/deploy/setup-web/server.js" && ok "server.js parses" || fail "server.js parses"
