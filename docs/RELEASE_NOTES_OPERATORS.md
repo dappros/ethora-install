@@ -14,6 +14,23 @@ default is not what you want.
 
 ## 2610 (development line, September 2026)
 
+**Agents no longer invent prices, policies or links, on by default.** An
+agent now takes facts about the business it serves (prices, fees and
+minimum amounts, delivery terms, policies such as returns or account
+deletion, company and product names, contact details, health information,
+links) only from its instructions and its knowledge. When the answer is not
+there it says so, in the visitor's language, instead of guessing; before,
+an agent whose knowledge search found nothing answered from the model's
+general knowledge. Links that are not in its instructions, its knowledge
+excerpts or the conversation are removed from replies, and the AI service
+logs each one (`[grounding] removed links`), which shows pages missing from
+the agent's knowledge. This applies to every agent, existing ones included,
+in rooms, the AI widget, heartbeat messages and the agent reply API. Nothing
+to do on update. Agents that should talk from general knowledge (a
+character in a group chat, a post writer) can be switched back on the
+agent's Instructions tab ("Answer business facts only from instructions and
+knowledge") or with `grounding: "off"` in `PUT /v2/agents/:idOrAddress`.
+
 **Daily AI spend caps per App, on by default.** Every App now has two daily
 caps, counted per UTC day. Conversations: 2,000,000 tokens (agent replies,
 reply checks, heartbeat messages, flow answers, the agent reply API and
