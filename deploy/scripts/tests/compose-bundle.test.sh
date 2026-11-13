@@ -422,7 +422,7 @@ else
   ! grep -q 'handle /widget' "$R7/config/caddy/Caddyfile" && ok "one origin without the module: no /widget/ route" || fail "widget route without the module"
 
   # push, playground, mcp, uptime: off by default, on with their profiles.
-  for kv in PUSH_ENABLED=false PLAYGROUND_ENABLED=false MCP_ENABLED=false UPTIME_ENABLED=false 'OAUTH_ISSUER=' 'PUSH_SERVER_URL=http://push:8098' 'ETHORA_PUBLIC_MCP_URL=' 'PUSH_INTERNAL_URL='; do
+  for kv in ETHORA_MODULES=none PUSH_ENABLED=false PLAYGROUND_ENABLED=false MCP_ENABLED=false UPTIME_ENABLED=false 'OAUTH_ISSUER=' 'PUSH_SERVER_URL=http://push:8098' 'ETHORA_PUBLIC_MCP_URL=' 'PUSH_INTERNAL_URL='; do
     grep -qxF "$kv" "$be" && ok "modules off, backend.env: $kv" || fail "modules off, backend.env: $kv" "$(grep "^${kv%%=*}=" "$be")"
   done
   grep -qxF 'VITE_MCP_PUBLIC_URL=' "$fe" && ! grep -q 'handle /push' "$R/config/caddy/Caddyfile" && ! grep -qE '^(playground|mcp|uptime)\.' "$R/config/caddy/Caddyfile" \

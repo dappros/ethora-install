@@ -280,6 +280,8 @@ ETHORA_MODULES=""
 for _m in ai:$AI_MODULE push:$PUSH_MODULE playground:$PLAYGROUND_MODULE mcp:$MCP_MODULE uptime:$UPTIME_MODULE calls:$CALLS_MODULE; do
   [ "${_m#*:}" != true ] || ETHORA_MODULES="$ETHORA_MODULES${ETHORA_MODULES:+,}${_m%%:*}"
 done
+# `none` (not empty): this install reports that it runs no module.
+[ -n "$ETHORA_MODULES" ] || ETHORA_MODULES=none
 export ETHORA_MODULES
 export MCP_INTERNAL_URL=""; [ "$MCP_MODULE" != true ] || MCP_INTERNAL_URL="${ETHORA_MCP_URL:-http://mcp:3030}"
 export PLAYGROUND_INTERNAL_URL=""; [ "$PLAYGROUND_MODULE" != true ] || PLAYGROUND_INTERNAL_URL="${ETHORA_PLAYGROUND_URL:-http://playground:3020}"
