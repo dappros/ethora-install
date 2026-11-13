@@ -80,7 +80,7 @@ args=(--domain "$A_DOMAIN" --admin-email "$A_EMAIL" --yes)
 args+=(${EXTRA[@]+"${EXTRA[@]}"})
 
 cd "$BUNDLE" || die "cannot enter $BUNDLE"
-log "$(date -u +%FT%TZ) configure: root domain $A_DOMAIN, admin $A_EMAIL$([ -n "$A_KEY" ] && echo ', license key given' || echo ', Ethora Core (free)')"
+log "$(date -u +%FT%TZ) configure: root domain $([ "$A_DOMAIN" = auto ] && echo "<public IP>.sslip.io (auto)" || echo "$A_DOMAIN"), admin $A_EMAIL$([ -n "$A_KEY" ] && echo ', license key given' || echo ', Ethora Core (free)')"
 # configure.sh prints the generated admin password once; it is kept in .env.
 ./configure.sh "${args[@]}" || die "configure.sh failed (the lines above say why)"
 if [ "$DRY_RUN" = true ]; then log "dry run: nothing written, nothing started"; exit 0; fi
