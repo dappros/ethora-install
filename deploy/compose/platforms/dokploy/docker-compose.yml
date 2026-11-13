@@ -16,7 +16,7 @@ x-logging: &logging
       max-file: "5"
 
 x-api: &api
-  image: ${ETHORA_API_IMAGE:-docker.io/dappros/ethora-api:2610}
+  image: ${ETHORA_API_IMAGE:-docker.io/dappros/ethora-api:${ETHORA_TAG:-2610}}
   entrypoint: ["tini", "--", "bash", "/ethora/config/scripts/api-entrypoint.sh"]
   volumes:
     - config:/ethora/config:ro
@@ -25,7 +25,7 @@ x-api: &api
 services:
   # ---------------------------------------------------------------- config --
   config:
-    image: ${ETHORA_XMPP_IMAGE:-docker.io/dappros/ethora-xmpp:2610}
+    image: ${ETHORA_XMPP_IMAGE:-docker.io/dappros/ethora-xmpp:${ETHORA_TAG:-2610}}
     user: "0:0"
     entrypoint: ["/bin/sh", "/ethora/scripts/render-config.sh"]
     # Every value in .env reaches the renderer, so any variable of the
@@ -60,6 +60,7 @@ services:
       SECRET_FOR_FILES_ENCRYPTION: ${SECRET_FOR_FILES_ENCRYPTION:-}
       XMPP_ADMIN_PASSWORD: ${XMPP_ADMIN_PASSWORD:-}
       INTERNAL_REQUESTS_SECRET: ${INTERNAL_REQUESTS_SECRET:-}
+      UPDATER_SECRET: ${UPDATER_SECRET:-}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
@@ -194,7 +195,7 @@ services:
 
   # ------------------------------------------------------------------ xmpp --
   xmpp:
-    image: ${ETHORA_XMPP_IMAGE:-docker.io/dappros/ethora-xmpp:2610}
+    image: ${ETHORA_XMPP_IMAGE:-docker.io/dappros/ethora-xmpp:${ETHORA_TAG:-2610}}
     # The xmpp host and admin password come from the rendered config.
     entrypoint: ["/bin/sh", "/ethora/config/scripts/xmpp-start.sh"]
     volumes:
@@ -280,7 +281,7 @@ services:
 
   # -------------------------------------------------------------- frontend --
   frontend:
-    image: ${ETHORA_FRONTEND_IMAGE:-docker.io/dappros/ethora-frontend:2610}
+    image: ${ETHORA_FRONTEND_IMAGE:-docker.io/dappros/ethora-frontend:${ETHORA_TAG:-2610}}
     entrypoint: ["/bin/sh", "/ethora/config/scripts/frontend-start.sh"]
     command: ["serve"]
     volumes:
@@ -324,7 +325,7 @@ services:
   ai-init:
     # Creates the pgvector extension and the documents table (idempotent):
     # the host installer's ensure_ai_postgres_schema, in the AI image.
-    image: ${ETHORA_AI_IMAGE:-docker.io/dappros/ethora-ai:2610}
+    image: ${ETHORA_AI_IMAGE:-docker.io/dappros/ethora-ai:${ETHORA_TAG:-2610}}
     profiles: ["ai"]
     entrypoint: ["tini", "--", "sh", "/ethora/config/scripts/ai-start.sh"]
     command: ["pg-schema"]
@@ -340,7 +341,7 @@ services:
     <<: *logging
 
   ai-service:
-    image: ${ETHORA_AI_IMAGE:-docker.io/dappros/ethora-ai:2610}
+    image: ${ETHORA_AI_IMAGE:-docker.io/dappros/ethora-ai:${ETHORA_TAG:-2610}}
     profiles: ["ai"]
     entrypoint: ["tini", "--", "sh", "/ethora/config/scripts/ai-start.sh"]
     command: ["ai-service"]
@@ -365,7 +366,7 @@ services:
     <<: *logging
 
   docs-parse:
-    image: ${ETHORA_AI_IMAGE:-docker.io/dappros/ethora-ai:2610}
+    image: ${ETHORA_AI_IMAGE:-docker.io/dappros/ethora-ai:${ETHORA_TAG:-2610}}
     profiles: ["ai"]
     entrypoint: ["tini", "--", "sh", "/ethora/config/scripts/ai-start.sh"]
     command: ["docs-parse"]
@@ -386,7 +387,7 @@ services:
   widget-export:
     # Renders the widget bundle for this install into the `widget` volume
     # (the URLs of widget.env), on every start; the widget service serves it.
-    image: ${ETHORA_AI_IMAGE:-docker.io/dappros/ethora-ai:2610}
+    image: ${ETHORA_AI_IMAGE:-docker.io/dappros/ethora-ai:${ETHORA_TAG:-2610}}
     profiles: ["ai"]
     user: "0:0"
     entrypoint: ["tini", "--", "sh", "/ethora/config/scripts/ai-start.sh"]
@@ -420,7 +421,7 @@ services:
   # to the server; mobile apps reach it at api.<root>/push/ through the proxy.
   # Uploaded platform keys live in the push-uploads volume.
   push:
-    image: ${ETHORA_PUSH_IMAGE:-docker.io/dappros/ethora-push:2610}
+    image: ${ETHORA_PUSH_IMAGE:-docker.io/dappros/ethora-push:${ETHORA_TAG:-2610}}
     profiles: ["push"]
     entrypoint: ["tini", "--", "sh", "/ethora/config/scripts/module-start.sh"]
     command: ["push", "server"]
@@ -444,7 +445,7 @@ services:
     <<: *logging
 
   push-worker:
-    image: ${ETHORA_PUSH_IMAGE:-docker.io/dappros/ethora-push:2610}
+    image: ${ETHORA_PUSH_IMAGE:-docker.io/dappros/ethora-push:${ETHORA_TAG:-2610}}
     profiles: ["push"]
     entrypoint: ["tini", "--", "sh", "/ethora/config/scripts/module-start.sh"]
     command: ["push", "worker"]
@@ -466,7 +467,7 @@ services:
   # its first start for this install (about 1.5 GB of RAM for a few minutes)
   # and keeps the build in the playground-next volume.
   playground:
-    image: ${ETHORA_PLAYGROUND_IMAGE:-docker.io/dappros/ethora-playground:2610}
+    image: ${ETHORA_PLAYGROUND_IMAGE:-docker.io/dappros/ethora-playground:${ETHORA_TAG:-2610}}
     profiles: ["playground"]
     entrypoint: ["tini", "--", "sh", "/ethora/config/scripts/module-start.sh"]
     command: ["playground"]
@@ -489,7 +490,7 @@ services:
   # Profile `mcp`: the hosted MCP server on mcp.<root>; the API serves the
   # OAuth authorization server on api.<root> when the module is on.
   mcp:
-    image: ${ETHORA_MCP_IMAGE:-docker.io/dappros/ethora-mcp:2610}
+    image: ${ETHORA_MCP_IMAGE:-docker.io/dappros/ethora-mcp:${ETHORA_TAG:-2610}}
     profiles: ["mcp"]
     entrypoint: ["sh", "/ethora/config/scripts/module-start.sh"]
     command: ["mcp"]
@@ -534,7 +535,7 @@ services:
     <<: *logging
 
   uptime:
-    image: ${ETHORA_UPTIME_IMAGE:-docker.io/dappros/ethora-uptime:2610}
+    image: ${ETHORA_UPTIME_IMAGE:-docker.io/dappros/ethora-uptime:${ETHORA_TAG:-2610}}
     profiles: ["uptime"]
     entrypoint: ["sh", "/ethora/config/scripts/module-start.sh"]
     command: ["uptime"]

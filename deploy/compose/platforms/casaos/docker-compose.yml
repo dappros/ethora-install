@@ -227,7 +227,7 @@ services:
       - |
         f=/ethora/config/uptime/auth-password
         if [ -s "$$f" ]; then UPTIME_AUTH_HASH="$$(caddy hash-password --plaintext "$$(cat "$$f")")"; export UPTIME_AUTH_HASH; fi
-        exec caddy run --config /ethora/config/caddy/Caddyfile --adapter caddyfile
+        exec caddy run --config /ethora/config/caddy/Caddyfile --adapter caddyfile --watch
     ports:
       - target: 80
         published: "8456"

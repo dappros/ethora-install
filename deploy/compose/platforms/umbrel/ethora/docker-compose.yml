@@ -245,7 +245,7 @@ services:
       - |
         f=/ethora/config/uptime/auth-password
         if [ -s "$$f" ]; then UPTIME_AUTH_HASH="$$(caddy hash-password --plaintext "$$(cat "$$f")")"; export UPTIME_AUTH_HASH; fi
-        exec caddy run --config /ethora/config/caddy/Caddyfile --adapter caddyfile
+        exec caddy run --config /ethora/config/caddy/Caddyfile --adapter caddyfile --watch
     volumes:
       - ${APP_DATA_DIR}/data/config:/ethora/config:ro
       - ${APP_DATA_DIR}/data/caddy-data:/data

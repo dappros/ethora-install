@@ -84,7 +84,8 @@ for m in c["mounts"]:
 env = dict(l.split("=", 1) for l in c["env"])
 example = [l.split("=", 1)[0] for l in open(bundle + "/.env.example") if re.match(r"^[A-Z0-9_]+=", l)]
 skipped = {"API_DOMAIN", "WEB_DOMAIN", "XMPP_DOMAIN", "FILES_DOMAIN", "SECURE_FILES_DOMAIN", "WIDGET_DOMAIN", "PLAYGROUND_DOMAIN", "MCP_DOMAIN", "UPTIME_DOMAIN", "TURN_DOMAIN", "LIVEKIT_DOMAIN", "ACME_EMAIL", "CADDY_GLOBAL_OPTIONS", "HTTP_PORT", "HTTPS_PORT",
-           "PUBLIC_URL", "ETHORA_COMPOSE_INIT_IMAGE"}  # hosts routed by Traefik; the dev form renders with the xmpp image
+           "PUBLIC_URL", "ETHORA_COMPOSE_INIT_IMAGE",  # hosts routed by Traefik; the dev form renders with the xmpp image
+           "ETHORA_TAG", "ETHORA_UPDATER_IMAGE", "ETHORA_UPDATER", "UPDATER_SECRET", "ETHORA_HOST_ROOT", "ETHORA_BUNDLE_DIR", "ETHORA_DOCKER_CONFIG"}  # the updater needs a bundle checkout
 assert [k for k in example if k not in skipped] == list(env), list(env)
 assert env["COMPOSE_PROFILES"] == "" and env["ROOT_DOMAIN"] == "${root_domain}"
 secrets = [k for k in env if k.endswith(("_SECRET", "_PASSWORD", "_KEY")) and k not in ("ETHORA_LICENSE_KEY", "AI_API_KEY", "PLAYGROUND_APP_SECRET")] + ["MINIO_ROOT_USER"]
@@ -581,7 +582,7 @@ else
 fi
 
 echo "# compose files"
-keys_env_example="$(grep -oE '^[A-Z0-9_]+=' "$BUNDLE/.env.example" | tr -d = | grep -vE '^(ETHORA_[A-Z_]*_IMAGE|HTTP_PORT|HTTPS_PORT)$' | sort)"
+keys_env_example="$(grep -oE '^[A-Z0-9_]+=' "$BUNDLE/.env.example" | tr -d = | grep -vE '^(ETHORA_[A-Z_]*_IMAGE|HTTP_PORT|HTTPS_PORT|ETHORA_TAG|ETHORA_UPDATER|ETHORA_HOST_ROOT|ETHORA_BUNDLE_DIR|ETHORA_DOCKER_CONFIG)$' | sort)"
 keys_config="$(sed -n '/^  config:/,/^  [a-z]/p' "$BUNDLE/docker-compose.yml" | sed -n 's/^      \([A-Z0-9_]*\): .*/\1/p' | sort)"
 [ "$keys_env_example" = "$keys_config" ] && ok "config lists every .env.example setting (platforms without a .env)" \
   || fail "config environment differs from .env.example" "$(diff <(echo "$keys_env_example") <(echo "$keys_config") | head -5)"
@@ -718,6 +719,58 @@ bad=""; for c in $(sed -n 's/^command=//p' "$CL/supervisor/ethora.conf" | grep -
   [ -f "$BUNDLE/scripts/${c##*/}" ] || bad="$bad $c"; done
 [ -z "$bad" ] && ok "supervisor programs run the bundle's scripts" || fail "supervisor programs name missing scripts:$bad"
 grep -rn $'\xe2\x80\x94' "$CL" >/dev/null && fail "em dash in deploy/cloudron" || ok "no em dashes in deploy/cloudron"
+
+echo "# updater (profile updater, update.sh, updater/server.js)"
+B3="$T/b3"; cp -r "$BUNDLE" "$B3"; rm -rf "$B3/.env" "$B3/.update"
+cfg3() { "$B3/configure.sh" --yes --no-registry-check "$@" >"$T/u.out" 2>"$T/u.err"; }
+cfg3 --domain chat.example.com --admin-email ops@example.com \
+  && grep -qx 'ETHORA_UPDATER=off' "$B3/.env" && ! grep -q '^COMPOSE_PROFILES=.*updater' "$B3/.env" \
+  && ok "updater off unless asked for (until its image is published)" || fail "updater default" "$(grep -E '^(ETHORA_UPDATER|COMPOSE_PROFILES)=' "$B3/.env"; cat "$T/u.err")"
+cfg3 --updater && grep -qx 'COMPOSE_PROFILES=caddy,updater' "$B3/.env" && grep -qx 'ETHORA_UPDATER=on' "$B3/.env" \
+  && grep -qE '^UPDATER_SECRET=[A-Za-z0-9]{32}$' "$B3/.env" && grep -qx "ETHORA_BUNDLE_DIR=$B3" "$B3/.env" && grep -q '^ETHORA_HOST_ROOT=/' "$B3/.env" \
+  && ok "--updater: profile, secret and the host paths it mounts" || fail "--updater" "$(grep -E '^(ETHORA_UPDATER|COMPOSE_PROFILES|ETHORA_BUNDLE_DIR|ETHORA_HOST_ROOT)=' "$B3/.env")"
+s1="$(grep '^UPDATER_SECRET=' "$B3/.env")"
+printf 'ETHORA_API_IMAGE=docker.io/dappros/ethora-api:2610\nETHORA_XMPP_IMAGE=registry.example.com/mirror/ethora-xmpp:2610\n' >> "$B3/.env"
+cfg3 && grep -qx 'COMPOSE_PROFILES=caddy,updater' "$B3/.env" && [ "$(grep '^UPDATER_SECRET=' "$B3/.env")" = "$s1" ] \
+  && ok "re-run keeps the updater and its secret" || fail "re-run keeps the updater"
+grep -qx 'ETHORA_API_IMAGE=' "$B3/.env" && grep -qx 'ETHORA_XMPP_IMAGE=registry.example.com/mirror/ethora-xmpp:2610' "$B3/.env" \
+  && ok "stock image on the line tag emptied (follows ETHORA_TAG), a mirror kept" || fail "image settings" "$(grep -E '^ETHORA_(API|XMPP)_IMAGE=' "$B3/.env")"
+cfg3 --no-updater && grep -qx 'COMPOSE_PROFILES=caddy' "$B3/.env" && ok "--no-updater" || fail "--no-updater"
+grep -q 'dappros/ethora-api:${ETHORA_TAG:-2610}}' "$BUNDLE/docker-compose.yml" && grep -q 'ethora-updater:2610}' "$BUNDLE/docker-compose.yml" \
+  && ok "images follow ETHORA_TAG; the updater follows the line" || fail "ETHORA_TAG in docker-compose.yml"
+if [ -d "$T/dist" ]; then
+  for p in "caddy,updater:ETHORA_UPDATER_URL=http://updater:8090" "caddy:ETHORA_UPDATER_URL="; do
+    o="$T/ur-${p%%:*}"; mkdir -p "$o"
+    env -i PATH="$PATH" TMPDIR="$T" TEMPLATES_DIR="$BUNDLE/templates" XMPP_DIST_DIR="$T/dist" CADDYFILE_TEMPLATE="$BUNDLE/Caddyfile" \
+      CONFIG_OUT_DIR="$o/config" MYSQL_INITDB_DIR="$o/initdb" SECRETS_DIR="$o/secrets" ROOT_DOMAIN=chat.example.com ADMIN_EMAIL=ops@example.com \
+      COMPOSE_PROFILES="${p%%:*}" UPDATER_SECRET=updsecret sh "$BUNDLE/scripts/render-config.sh" >/dev/null 2>&1
+    grep -qx "${p#*:}" "$o/config/api/backend.env" && ok "backend.env with profiles ${p%%:*}: ${p#*:}" || fail "updater URL for ${p%%:*}" "$(grep UPDATER "$o/config/api/backend.env")"
+  done
+  grep -qx 'ETHORA_UPDATER_SECRET=updsecret' "$T/ur-caddy,updater/config/api/backend.env" && ok "backend.env carries the updater secret" || fail "updater secret in backend.env"
+fi
+bash -n "$BUNDLE/update.sh" && ok "update.sh parses" || fail "update.sh syntax"
+B4="$T/b4"; mkdir -p "$B4"; cp "$BUNDLE/update.sh" "$B4/"
+if command -v flock >/dev/null 2>&1; then
+  ( cd "$B4" && bash ./update.sh --yes --to 2610.9 >/dev/null 2>&1 ); rc=$?
+  [ "$rc" = 1 ] && grep -q '"state":"failed"' "$B4/.update/state.json" && grep -q 'no .env' "$B4/.update/state.json" \
+    && ok "update.sh without .env: fails and says so in state.json" || fail "update.sh without .env" "rc=$rc $(cat "$B4/.update/state.json" 2>/dev/null)"
+else skip "update.sh run (flock not available)"; fi
+if command -v node >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
+  port=$(( 20000 + RANDOM % 20000 ))
+  ETHORA_BUNDLE_DIR="$B4" UPDATER_SECRET=s3cret UPDATER_IMAGE=x PORT="$port" node "$BUNDLE/updater/server.js" >"$T/upd.log" 2>&1 & upid=$!
+  for i in $(seq 1 30); do curl -fsS "http://127.0.0.1:$port/healthz" >/dev/null 2>&1 && break; sleep 0.2; done
+  hc() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+  [ "$(hc "http://127.0.0.1:$port/healthz")" = 200 ] && ok "updater: /healthz without a secret" || fail "updater healthz" "$(cat "$T/upd.log")"
+  [ "$(hc "http://127.0.0.1:$port/v1/status")" = 401 ] && [ "$(hc -H 'X-Updater-Secret: wrong' "http://127.0.0.1:$port/v1/status")" = 401 ] \
+    && ok "updater: 401 without the right secret" || fail "updater auth"
+  [ "$(hc -X POST -H 'X-Updater-Secret: s3cret' -d '{"target":"latest"}' "http://127.0.0.1:$port/v1/update")" = 400 ] \
+    && [ "$(hc -X POST -H 'X-Updater-Secret: s3cret' -d '{"target":"2610.9","notBefore":"2099-01-01T00:00:00Z"}' "http://127.0.0.1:$port/v1/update")" = 400 ] \
+    && ok "updater: rejects a bad target and a far notBefore" || fail "updater validation"
+  [ "$(hc -X POST -H 'X-Updater-Secret: s3cret' "http://127.0.0.1:$port/v1/rollback")" = 409 ] && ok "updater: rollback with no previous build is 409" || fail "updater rollback 409"
+  kill "$upid" 2>/dev/null; wait "$upid" 2>/dev/null
+else skip "updater server (node or curl not available)"; fi
+grep -qxF '!deploy/compose/updater/' "$DEPLOY/../.dockerignore" && grep -q 'updater.Dockerfile' "$DEPLOY/../.github/workflows/release-images.yml" \
+  && ok "release-images.yml builds ethora-updater (context allowlisted)" || fail "updater image build"
 
 echo "# installer compose files publish on loopback only"
 for f in docker-compose.enterprise.yml docker-compose.ai.yml docker-compose.uptime.yml; do

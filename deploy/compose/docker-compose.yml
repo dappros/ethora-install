@@ -31,6 +31,8 @@
 #   uptime      uptime-db (Postgres), uptime (dashboard on uptime.<root>, basic auth)
 #   calls       livekit (group calls, signalling on livekit.<root>), coturn (STUN/TURN
 #               for peer-to-peer calls on turn.<root>); public images, no licence feature
+# and, for every install that wants it (configure.sh --updater):
+#   updater     Update now / Roll back in the admin panel (updater/README.md)
 #
 # Only caddy publishes ports (80, 443), plus the calls module's media ports
 # (coturn 3478 and its relay range, livekit 7881/tcp and its UDP range). Data lives in named volumes
@@ -47,7 +49,7 @@ x-logging: &logging
       max-file: "5"
 
 x-api: &api
-  image: ${ETHORA_API_IMAGE:-docker.io/dappros/ethora-api:2610}
+  image: ${ETHORA_API_IMAGE:-docker.io/dappros/ethora-api:${ETHORA_TAG:-2610}}
   entrypoint: ["tini", "--", "bash", "/ethora/config/scripts/api-entrypoint.sh"]
   volumes:
     - config:/ethora/config:ro
@@ -56,7 +58,7 @@ x-api: &api
 services:
   # ---------------------------------------------------------------- config --
   config:
-    image: ${ETHORA_XMPP_IMAGE:-docker.io/dappros/ethora-xmpp:2610}
+    image: ${ETHORA_XMPP_IMAGE:-docker.io/dappros/ethora-xmpp:${ETHORA_TAG:-2610}}
     user: "0:0"
     entrypoint: ["/bin/sh", "/ethora/scripts/render-config.sh"]
     # Every value in .env reaches the renderer, so any variable of the
@@ -91,6 +93,7 @@ services:
       SECRET_FOR_FILES_ENCRYPTION: ${SECRET_FOR_FILES_ENCRYPTION:-}
       XMPP_ADMIN_PASSWORD: ${XMPP_ADMIN_PASSWORD:-}
       INTERNAL_REQUESTS_SECRET: ${INTERNAL_REQUESTS_SECRET:-}
+      UPDATER_SECRET: ${UPDATER_SECRET:-}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
@@ -226,7 +229,7 @@ services:
 
   # ------------------------------------------------------------------ xmpp --
   xmpp:
-    image: ${ETHORA_XMPP_IMAGE:-docker.io/dappros/ethora-xmpp:2610}
+    image: ${ETHORA_XMPP_IMAGE:-docker.io/dappros/ethora-xmpp:${ETHORA_TAG:-2610}}
     # The xmpp host and admin password come from the rendered config.
     entrypoint: ["/bin/sh", "/ethora/config/scripts/xmpp-start.sh"]
     volumes:
@@ -312,7 +315,7 @@ services:
 
   # -------------------------------------------------------------- frontend --
   frontend:
-    image: ${ETHORA_FRONTEND_IMAGE:-docker.io/dappros/ethora-frontend:2610}
+    image: ${ETHORA_FRONTEND_IMAGE:-docker.io/dappros/ethora-frontend:${ETHORA_TAG:-2610}}
     entrypoint: ["/bin/sh", "/ethora/config/scripts/frontend-start.sh"]
     command: ["serve"]
     volumes:
@@ -356,7 +359,7 @@ services:
   ai-init:
     # Creates the pgvector extension and the documents table (idempotent):
     # the host installer's ensure_ai_postgres_schema, in the AI image.
-    image: ${ETHORA_AI_IMAGE:-docker.io/dappros/ethora-ai:2610}
+    image: ${ETHORA_AI_IMAGE:-docker.io/dappros/ethora-ai:${ETHORA_TAG:-2610}}
     profiles: ["ai"]
     entrypoint: ["tini", "--", "sh", "/ethora/config/scripts/ai-start.sh"]
     command: ["pg-schema"]
@@ -372,7 +375,7 @@ services:
     <<: *logging
 
   ai-service:
-    image: ${ETHORA_AI_IMAGE:-docker.io/dappros/ethora-ai:2610}
+    image: ${ETHORA_AI_IMAGE:-docker.io/dappros/ethora-ai:${ETHORA_TAG:-2610}}
     profiles: ["ai"]
     entrypoint: ["tini", "--", "sh", "/ethora/config/scripts/ai-start.sh"]
     command: ["ai-service"]
@@ -397,7 +400,7 @@ services:
     <<: *logging
 
   docs-parse:
-    image: ${ETHORA_AI_IMAGE:-docker.io/dappros/ethora-ai:2610}
+    image: ${ETHORA_AI_IMAGE:-docker.io/dappros/ethora-ai:${ETHORA_TAG:-2610}}
     profiles: ["ai"]
     entrypoint: ["tini", "--", "sh", "/ethora/config/scripts/ai-start.sh"]
     command: ["docs-parse"]
@@ -418,7 +421,7 @@ services:
   widget-export:
     # Renders the widget bundle for this install into the `widget` volume
     # (the URLs of widget.env), on every start; the widget service serves it.
-    image: ${ETHORA_AI_IMAGE:-docker.io/dappros/ethora-ai:2610}
+    image: ${ETHORA_AI_IMAGE:-docker.io/dappros/ethora-ai:${ETHORA_TAG:-2610}}
     profiles: ["ai"]
     user: "0:0"
     entrypoint: ["tini", "--", "sh", "/ethora/config/scripts/ai-start.sh"]
@@ -452,7 +455,7 @@ services:
   # to the server; mobile apps reach it at api.<root>/push/ through the proxy.
   # Uploaded platform keys live in the push-uploads volume.
   push:
-    image: ${ETHORA_PUSH_IMAGE:-docker.io/dappros/ethora-push:2610}
+    image: ${ETHORA_PUSH_IMAGE:-docker.io/dappros/ethora-push:${ETHORA_TAG:-2610}}
     profiles: ["push"]
     entrypoint: ["tini", "--", "sh", "/ethora/config/scripts/module-start.sh"]
     command: ["push", "server"]
@@ -476,7 +479,7 @@ services:
     <<: *logging
 
   push-worker:
-    image: ${ETHORA_PUSH_IMAGE:-docker.io/dappros/ethora-push:2610}
+    image: ${ETHORA_PUSH_IMAGE:-docker.io/dappros/ethora-push:${ETHORA_TAG:-2610}}
     profiles: ["push"]
     entrypoint: ["tini", "--", "sh", "/ethora/config/scripts/module-start.sh"]
     command: ["push", "worker"]
@@ -498,7 +501,7 @@ services:
   # its first start for this install (about 1.5 GB of RAM for a few minutes)
   # and keeps the build in the playground-next volume.
   playground:
-    image: ${ETHORA_PLAYGROUND_IMAGE:-docker.io/dappros/ethora-playground:2610}
+    image: ${ETHORA_PLAYGROUND_IMAGE:-docker.io/dappros/ethora-playground:${ETHORA_TAG:-2610}}
     profiles: ["playground"]
     entrypoint: ["tini", "--", "sh", "/ethora/config/scripts/module-start.sh"]
     command: ["playground"]
@@ -521,7 +524,7 @@ services:
   # Profile `mcp`: the hosted MCP server on mcp.<root>; the API serves the
   # OAuth authorization server on api.<root> when the module is on.
   mcp:
-    image: ${ETHORA_MCP_IMAGE:-docker.io/dappros/ethora-mcp:2610}
+    image: ${ETHORA_MCP_IMAGE:-docker.io/dappros/ethora-mcp:${ETHORA_TAG:-2610}}
     profiles: ["mcp"]
     entrypoint: ["sh", "/ethora/config/scripts/module-start.sh"]
     command: ["mcp"]
@@ -566,7 +569,7 @@ services:
     <<: *logging
 
   uptime:
-    image: ${ETHORA_UPTIME_IMAGE:-docker.io/dappros/ethora-uptime:2610}
+    image: ${ETHORA_UPTIME_IMAGE:-docker.io/dappros/ethora-uptime:${ETHORA_TAG:-2610}}
     profiles: ["uptime"]
     entrypoint: ["sh", "/ethora/config/scripts/module-start.sh"]
     command: ["uptime"]
@@ -649,6 +652,36 @@ services:
       start_period: 15s
     <<: *logging
 
+  # --------------------------------------------------------------- updater --
+  # Profile `updater` (on by default, configure.sh --no-updater turns it off):
+  # "Update now" and "Roll back" in the admin panel. The API asks it over the
+  # compose network (http://updater:8090, X-Updater-Secret = UPDATER_SECRET);
+  # it publishes no port. It runs update.sh in a one-off container of its own
+  # image, so the update survives this service being recreated. It holds the
+  # Docker socket, which is root on this host: that is the price of updating
+  # from the browser. See updater/README.md.
+  updater:
+    image: ${ETHORA_UPDATER_IMAGE:-docker.io/dappros/ethora-updater:2610}
+    profiles: ["updater"]
+    environment:
+      UPDATER_SECRET: ${UPDATER_SECRET:-}
+      UPDATER_IMAGE: ${ETHORA_UPDATER_IMAGE:-docker.io/dappros/ethora-updater:2610}
+      # The install as the host sees it, mounted at the same path so docker
+      # compose resolves every relative path of this file the same way.
+      ETHORA_HOST_ROOT: ${ETHORA_HOST_ROOT:-/opt/ethora}
+      ETHORA_BUNDLE_DIR: ${ETHORA_BUNDLE_DIR:-/opt/ethora/deploy/compose}
+      ETHORA_DOCKER_CONFIG: ${ETHORA_DOCKER_CONFIG:-/root/.docker}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${ETHORA_HOST_ROOT:-/opt/ethora}:${ETHORA_HOST_ROOT:-/opt/ethora}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8090/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *logging
+
   # ----------------------------------------------------------------- caddy --
   caddy:
     image: caddy:2.10-alpine
@@ -656,12 +689,14 @@ services:
     # The Caddyfile is rendered by the config service (hosts or one origin).
     # The uptime module's dashboard password is hashed here (bcrypt, which the
     # renderer cannot produce) and reaches the Caddyfile as UPTIME_AUTH_HASH.
+    # --watch: the config service rewrites the Caddyfile on every
+    # `docker compose up`; Caddy reloads it without a restart.
     entrypoint: ["sh", "-c"]
     command:
       - |
         f=/ethora/config/uptime/auth-password
         if [ -s "$$f" ]; then UPTIME_AUTH_HASH="$$(caddy hash-password --plaintext "$$(cat "$$f")")"; export UPTIME_AUTH_HASH; fi
-        exec caddy run --config /ethora/config/caddy/Caddyfile --adapter caddyfile
+        exec caddy run --config /ethora/config/caddy/Caddyfile --adapter caddyfile --watch
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"

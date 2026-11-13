@@ -17,7 +17,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUNDLE="$(cd "$HERE/.." && pwd)"
 SRC="$BUNDLE/docker-compose.yml"
 OUT="$HERE/docker-compose.yml"
-INIT_IMAGE_LINE='    image: ${ETHORA_COMPOSE_INIT_IMAGE:-docker.io/dappros/ethora-compose-init:2610}'
+INIT_IMAGE_LINE='    image: ${ETHORA_COMPOSE_INIT_IMAGE:-docker.io/dappros/ethora-compose-init:${ETHORA_TAG:-2610}}'
 
 render() {
   cat <<'HDR'
@@ -45,10 +45,16 @@ render() {
 # Guide: https://github.com/dappros/ethora-install/tree/main/deploy/compose
 
 HDR
+  # The updater service is left out: it updates a bundle checkout, which a
+  # single-file install does not have (pull a newer file instead).
   awk -v img="$INIT_IMAGE_LINE" '
     /^name:/ { body = 1 }
     !body { next }
-    /^  [a-z][a-z0-9-]*:$/ { svc = $1 }
+    /^  # / || /^  #$/ { held = held $0 "\n"; next }
+    /^  [a-z][a-z0-9-]*:$/ { svc = $1; if (svc == "updater:") held = "" }
+    /^[a-z]/ { svc = "" }
+    svc == "updater:" { next }
+    { printf "%s", held; held = "" }
     svc == "config:" && /^    image:/ { print img; next }
     svc == "config:" && /^      - \.\/(scripts|templates|Caddyfile)[:\/]/ { next }
     svc == "caddy:" && /^    profiles:/ { next }

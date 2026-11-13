@@ -163,15 +163,45 @@ not exposed; web, mobile and SDK clients use `wss://xmpp.<root>/ws`.
 
 ## Update
 
+From the admin panel: **Server settings > System > Status** shows "Update
+available" when Docker Hub has a newer build of this release line. With the
+updater on (`./configure.sh --updater`), **Update now** downloads it while
+everything keeps running, restarts the services at the time you pick (now,
+or in 1, 5 or 15 minutes; every signed-in user sees a notice with the
+countdown), checks them and offers **Roll back** to the build that ran
+before. The API is unavailable for about a minute and chat reconnects by
+itself.
+
+From a shell, the same steps:
+
 ```bash
-docker compose pull && docker compose up -d
+sudo ./update.sh                  # the newest build of this release line
+sudo ./update.sh --to 2610.80     # a given build
+sudo ./update.sh --rollback       # back to the build before the last update
 ```
 
-The image tags in `.env` (`...:2610`) follow a release line, so a pull picks
-up that line's fixes. To move to a newer line, change the three
-`ETHORA_*_IMAGE` tags in `.env` (or take this directory from the newer
-release) and run the same command. When nothing was published, the update
-changes nothing.
+`update.sh` pins the build in `.env` (`ETHORA_TAG=2610.80`), updates these
+files (`git pull`), re-runs `./configure.sh --yes` (keeps every answer and
+secret, refreshes the registry login), pulls, restarts and checks. A failure
+before the restart changes nothing that runs. Take a backup first if the
+server holds data you care about: database migrations run forward when the
+new build starts, and a rollback after one is not guaranteed to work.
+
+Without `ETHORA_TAG` the images follow the release line tag (`2610`), and
+`docker compose pull && docker compose up -d` also updates. Moving to a newer
+release line is a manual upgrade: take this directory from the newer release
+and read its release notes.
+
+### The updater
+
+The `updater` service (profile `updater`, image `dappros/ethora-updater`) is
+what the admin panel's buttons talk to. It publishes no port: only the API
+reaches it, over the compose network, with the shared `UPDATER_SECRET`. It
+holds the Docker socket, which is root on this host, and mounts this install
+directory; that is what updating from a browser needs. Turn it off with
+`./configure.sh --no-updater && docker compose up -d --remove-orphans`; the
+admin panel then shows the `update.sh` command instead. Details and the API:
+`updater/README.md`.
 
 ## Change a setting
 

@@ -36,6 +36,8 @@
 #   --widget HOST            ai module: widget host (default widget.<root>)
 #   --no-caddy               no bundled proxy; the platform routes the five hosts
 #   --caddy                  bundled proxy back on (the default on a fresh install)
+#   --updater / --no-updater "Update now" in the admin panel (profile `updater`): a
+#                            service that holds the Docker socket and runs ./update.sh
 #   --local-certs            Caddy issues self-signed certificates (LAN tests)
 #   --out FILE               default: .env next to this script
 #   --force                  start over: regenerate every secret (fresh installs only)
@@ -68,6 +70,10 @@ A_AI_API_KEY="${ETHORA_SETUP_AI_API_KEY:-}"; A_AI_API_URL="${ETHORA_SETUP_AI_API
 A_REG_USER="${ETHORA_SETUP_REGISTRY_USER:-}"; A_REG_TOKEN="${ETHORA_SETUP_REGISTRY_TOKEN:-}"
 REGISTRY_CHECK="${ETHORA_SETUP_REGISTRY_CHECK:-true}"
 A_CADDY=""; A_LOCAL_CERTS=false
+A_UPDATER="${ETHORA_SETUP_UPDATER:-}"
+# The updater's default for installs that never chose: off until the
+# ethora-updater image is published for this release line.
+UPDATER_DEFAULT="${ETHORA_UPDATER_DEFAULT:-off}"
 FORCE=false; YES=false; DRY_RUN=false
 
 usage() { sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; }
@@ -95,6 +101,8 @@ while [ $# -gt 0 ]; do
     --no-registry-check) REGISTRY_CHECK=false; shift ;;
     --no-caddy) A_CADDY="off"; shift ;;
     --caddy) A_CADDY="on"; shift ;;
+    --updater) A_UPDATER="on"; shift ;;
+    --no-updater) A_UPDATER="off"; shift ;;
     --local-certs) A_LOCAL_CERTS=true; shift ;;
     --out) OUT_FILE="$2"; shift 2 ;;
     --force) FORCE=true; shift ;;
@@ -273,6 +281,10 @@ else
 fi
 PROFILES=""; [ "$CADDY_ON" != true ] || PROFILES="caddy"
 for m in $MODULES; do PROFILES="$PROFILES${PROFILES:+,}$m"; done
+# The updater: the answer, else the previous choice, else the default.
+UPDATER="$A_UPDATER"; [ -n "$UPDATER" ] || UPDATER="$(old ETHORA_UPDATER)"; [ -n "$UPDATER" ] || UPDATER="$UPDATER_DEFAULT"
+case "$UPDATER" in on|off) ;; *) die "ETHORA_UPDATER must be on or off (got: $UPDATER)" ;; esac
+[ "$UPDATER" != on ] || PROFILES="$PROFILES${PROFILES:+,}updater"
 AI_ON=false; case " $MODULES " in *" ai "*) AI_ON=true ;; esac
 [ -z "$A_AI_API_KEY" ] && A_AI_API_KEY="$(old AI_API_KEY)"
 [ -z "$A_AI_API_URL" ] && A_AI_API_URL="$(old AI_API_URL)"
@@ -319,6 +331,7 @@ if [ -n "$MODULES" ]; then
 else
   echo "  Modules:         none (Ethora Core)"
 fi
+echo "  Updater:         $([ "$UPDATER" = on ] && echo "on (Update now in the admin panel; it holds the Docker socket)" || echo "off (update with ./update.sh)")"
 echo "  Proxy:           $([ -n "$PROFILES" ] && echo "bundled Caddy (ports ${PORT_FROM_URL:-$(old HTTP_PORT | grep . || echo 80)}/$(old HTTPS_PORT | grep . || echo 443))${CADDY_OPTS:+, $CADDY_OPTS}" || echo "none (route the five hosts yourself)")"
 echo "  Output:          $OUT_FILE"
 echo
@@ -345,6 +358,17 @@ set_new ADMIN_EMAIL "$A_ADMIN_EMAIL"; set_new ADMIN_PASSWORD "$A_ADMIN_PASSWORD"
 set_new BASE_APP_DISPLAY_NAME "$A_DISPLAY_NAME"
 set_new ETHORA_LICENSE_KEY "$A_LICENSE_KEY"; set_new ETHORA_LICENSE_CALL_HOME "$A_CALL_HOME"
 set_new COMPOSE_PROFILES "$PROFILES"; set_new CADDY_GLOBAL_OPTIONS "$CADDY_OPTS"
+set_new ETHORA_UPDATER "$UPDATER"
+# Where the install lives on this host: the updater mounts it at the same path.
+set_new ETHORA_BUNDLE_DIR "$SCRIPT_DIR"
+set_new ETHORA_HOST_ROOT "$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR")"
+v="$(old ETHORA_DOCKER_CONFIG)"; set_new ETHORA_DOCKER_CONFIG "${v:-${DOCKER_CONFIG:-${HOME:-/root}/.docker}}"
+# Images: a stock image on the bare release line tag is what an empty setting
+# means anyway, and an empty one follows ETHORA_TAG (update.sh pins builds).
+for k in ETHORA_API_IMAGE ETHORA_FRONTEND_IMAGE ETHORA_XMPP_IMAGE ETHORA_AI_IMAGE ETHORA_PUSH_IMAGE \
+         ETHORA_PLAYGROUND_IMAGE ETHORA_MCP_IMAGE ETHORA_UPTIME_IMAGE ETHORA_COMPOSE_INIT_IMAGE ETHORA_UPDATER_IMAGE; do
+  [[ "$(old "$k")" =~ ^docker\.io/dappros/ethora-[a-z-]+:[0-9]{4}$ ]] && set_new "$k" ""
+done
 # Secrets: kept when present, generated otherwise. Lengths follow what the
 # host installer generates (64 for signing keys, 32 for the rest).
 secret() { local v; v="$(old "$1")"; [ -n "$v" ] || v="${3:-}$(rand "$2")"; set_new "$1" "$v"; }
@@ -368,6 +392,7 @@ secret MINIO_ROOT_PASSWORD 32
 # on later. WIDGET_SCRIPT_VERSION is the widget URL's version suffix: fixed
 # the first time (year and month) and kept, since pages embed that URL.
 secret AI_SERVICE_SECRET 32
+secret UPDATER_SECRET 32
 secret DOCS_PARSE_SECRET 32
 secret AI_POSTGRES_PASSWORD 32
 secret B2B_PUSH_SECRET 32

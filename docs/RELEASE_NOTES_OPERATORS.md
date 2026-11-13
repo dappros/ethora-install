@@ -14,6 +14,21 @@ default is not what you want.
 
 ## 2610 (development line, September 2026)
 
+**Update and restart from the admin panel (compose bundle).** Server
+settings > System > Status gets **Update now** (download first, restart at a
+chosen time, check, **Roll back**) and **Restart services** with a time
+(now, in 1, 5 or 15 minutes). Every signed-in user of the web app sees a
+notice with the countdown (public `GET /v2/server-notice`). Updates go
+through the new `updater` service (profile `updater`, image
+`dappros/ethora-updater`, holds the Docker socket, no published port), off
+until `./configure.sh --updater`; `./update.sh` does the same from a shell
+on any compose install. Images are now pinned by `ETHORA_TAG` in `.env`
+(`update.sh` sets it; empty = the release line tag as before), and
+`configure.sh` empties `ETHORA_*_IMAGE` settings that only repeat the stock
+image. Caddy now reloads its configuration when `docker compose up -d`
+re-renders it (it kept the old one until a restart). Host installs keep
+`deploy/scripts/update.sh`.
+
 **Retry codes during a restart or update.** While the API restarts (from the
 admin panel's Server settings, `docker compose up -d` or `update.sh`) it
 answers new requests with `503` and `{"code":"SERVER_RESTARTING"}`, and while

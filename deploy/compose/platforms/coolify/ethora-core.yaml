@@ -1144,6 +1144,14 @@ x-file-render-config: &file-render-config
       echo "PUSH_INTERNAL_URL=$push_internal_url"
       echo "UPTIME_AUTH_USER=$UPTIME_AUTH_USER"
       echo "UPTIME_AUTH_PASSWORD=$UPTIME_AUTH_PASSWORD"
+      echo "# The updater (profile updater): Update now / Roll back in the admin panel. Empty when off."
+      if has_profile updater && [ -n "${UPDATER_SECRET:-}" ]; then
+        echo "ETHORA_UPDATER_URL=${ETHORA_UPDATER_URL:-http://updater:8090}"
+        echo "ETHORA_UPDATER_SECRET=$UPDATER_SECRET"
+      else
+        echo "ETHORA_UPDATER_URL="
+        echo "ETHORA_UPDATER_SECRET="
+      fi
       if [ "$CALLS_MODULE" = true ]; then
         echo "# Calls module: LiveKit for group calls (WEBRTC_HOST, WEBRTC_API_KEY and WEBRTC_API_SECRET are above)"
         echo "# and coturn for peer-to-peer calls. Absent without the module."
