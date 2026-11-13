@@ -14,6 +14,15 @@ default is not what you want.
 
 ## 2610 (development line, September 2026)
 
+**Retry codes during a restart or update.** While the API restarts (from the
+admin panel's Server settings, `docker compose up -d` or `update.sh`) it
+answers new requests with `503` and `{"code":"SERVER_RESTARTING"}`, and while
+it is down the proxy (Caddy in the compose bundle, nginx on host installs)
+answers `503` with `{"code":"SERVER_UNAVAILABLE"}` instead of a bare 502 page.
+Both carry `Retry-After`. The admin panel and the MCP server retry reads by
+themselves; backend integrations should retry idempotent requests after
+`Retry-After` and treat writes as not applied.
+
 **Agents no longer invent prices, policies or links, on by default.** An
 agent now takes facts about the business it serves (prices, fees and
 minimum amounts, delivery terms, policies such as returns or account

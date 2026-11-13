@@ -27,10 +27,23 @@
 	}
 }
 
+# While an upstream restarts or updates and Caddy cannot reach it, API and MCP
+# clients get a JSON 503 they can act on (code SERVER_UNAVAILABLE, Retry-After)
+# instead of a bare 502. The API's own 503 SERVER_RESTARTING (sent while it
+# shuts down cleanly) is a normal response and passes through unchanged.
+(unavailable_json) {
+	handle_errors 502 503 {
+		header Content-Type "application/json"
+		header Retry-After "15"
+		respond `{"error":"The server is restarting or updating; retry in a few seconds","code":"SERVER_UNAVAILABLE"}` 503
+	}
+}
+
 # API (api.conf.template). With the push module, mobile apps reach the push
 # service at api.<root>/push/ (ETHORA_PUSH_ROUTE is empty without it).
 (api) {
 	import security_headers
+	import unavailable_json
 	# Prometheus metrics stay internal.
 	@metrics path /metrics
 	respond @metrics 404
@@ -75,6 +88,7 @@
 # or ?ft=) and answering 404 for anything that is not <bucket>/<key>. The
 # referrer policy keeps a tokenised URL out of other sites' logs.
 (secure_files) {
+	import unavailable_json
 	header Referrer-Policy "no-referrer"
 	reverse_proxy {$UPSTREAM_API}
 }
@@ -98,6 +112,7 @@
 # server behind it is the API host.
 (mcp) {
 	import security_headers
+	import unavailable_json
 	reverse_proxy {$UPSTREAM_MCP}
 }
 
@@ -126,6 +141,15 @@
 	@api path /v1 /v1/* /v2 /v2/* /api-docs /api-docs/* /oauth /oauth/* /.well-known/*
 	handle @api {
 		reverse_proxy {$UPSTREAM_API}
+	}
+	# The JSON 503 for API paths only; the web app keeps Caddy's default page.
+	handle_errors 502 503 {
+		@api_down path /v1 /v1/* /v2 /v2/* /oauth /oauth/*
+		handle @api_down {
+			header Content-Type "application/json"
+			header Retry-After "15"
+			respond `{"error":"The server is restarting or updating; retry in a few seconds","code":"SERVER_UNAVAILABLE"}` 503
+		}
 	}
 	{$ETHORA_PUSH_ROUTE}
 	{$ETHORA_WIDGET_ROUTE}
