@@ -23,13 +23,15 @@ log() { echo "[dev-setup] $*"; }
   exit 1
 }
 
-# playground stays off: it needs an app created in the admin panel first.
+# playground stays off: it needs an app created in the admin panel first. No
+# updater: these images are built from this checkout, not pulled.
 ETHORA_SETUP_REGISTRY_CHECK=false "$SCRIPT_DIR/configure.sh" \
   --domain ethora.localhost \
   --admin-email admin@example.test \
   --display-name "Ethora Local" \
   --modules ai,push,mcp,uptime,calls \
   --local-certs \
+  --no-updater \
   --yes "$@"
 
 set_env() { # set_env KEY value: replaces the line, or adds one

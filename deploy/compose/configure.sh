@@ -36,8 +36,8 @@
 #   --widget HOST            ai module: widget host (default widget.<root>)
 #   --no-caddy               no bundled proxy; the platform routes the five hosts
 #   --caddy                  bundled proxy back on (the default on a fresh install)
-#   --updater / --no-updater "Update now" in the admin panel (profile `updater`): a
-#                            service that holds the Docker socket and runs ./update.sh
+#   --updater / --no-updater "Update now" in the admin panel (profile `updater`, on by
+#                            default): a service that holds the Docker socket and runs ./update.sh
 #   --local-certs            Caddy issues self-signed certificates (LAN tests)
 #   --out FILE               default: .env next to this script
 #   --force                  start over: regenerate every secret (fresh installs only)
@@ -71,9 +71,8 @@ A_REG_USER="${ETHORA_SETUP_REGISTRY_USER:-}"; A_REG_TOKEN="${ETHORA_SETUP_REGIST
 REGISTRY_CHECK="${ETHORA_SETUP_REGISTRY_CHECK:-true}"
 A_CADDY=""; A_LOCAL_CERTS=false
 A_UPDATER="${ETHORA_SETUP_UPDATER:-}"
-# The updater's default for installs that never chose: off until the
-# ethora-updater image is published for this release line.
-UPDATER_DEFAULT="${ETHORA_UPDATER_DEFAULT:-off}"
+# The updater's default for installs that never chose (--no-updater turns it off).
+UPDATER_DEFAULT="${ETHORA_UPDATER_DEFAULT:-on}"
 FORCE=false; YES=false; DRY_RUN=false
 
 usage() { sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; }

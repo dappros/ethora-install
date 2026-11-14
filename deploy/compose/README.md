@@ -165,7 +165,7 @@ not exposed; web, mobile and SDK clients use `wss://xmpp.<root>/ws`.
 
 From the admin panel: **Server settings > System > Status** shows "Update
 available" when Docker Hub has a newer build of this release line. With the
-updater on (`./configure.sh --updater`), **Update now** downloads it while
+updater (on by default), **Update now** downloads it while
 everything keeps running, restarts the services at the time you pick (now,
 or in 1, 5 or 15 minutes; every signed-in user sees a notice with the
 countdown), checks them and offers **Roll back** to the build that ran
@@ -195,7 +195,7 @@ and read its release notes.
 ### The updater
 
 The `updater` service (profile `updater`, image `dappros/ethora-updater`) is
-what the admin panel's buttons talk to. It publishes no port: only the API
+what the admin panel's buttons talk to (on unless `./configure.sh --no-updater`). It publishes no port: only the API
 reaches it, over the compose network, with the shared `UPDATER_SECRET`. It
 holds the Docker socket, which is root on this host, and mounts this install
 directory; that is what updating from a browser needs. Turn it off with

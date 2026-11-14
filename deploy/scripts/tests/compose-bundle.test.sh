@@ -115,7 +115,7 @@ done
 [ -z "$missing" ] && ok "every secret generated" || fail "secrets not generated:$missing"
 [ "$(envval JWT_SECRET "$E" | tr -d "\n" | wc -c)" -ge 64 ] && ok "signing keys are 64 chars" || fail "JWT_SECRET length"
 pw="$(envval ADMIN_PASSWORD "$E")"; grep -q "$pw" "$T/out" && ok "generated admin password printed" || fail "admin password printed"
-[ "$(envval COMPOSE_PROFILES "$E")" = "caddy" ] && ok "caddy profile on" || fail "caddy profile"
+[ "$(envval COMPOSE_PROFILES "$E")" = "caddy,updater" ] && ok "caddy profile on" || fail "caddy profile"
 keys_example="$(grep -oE '^[A-Z0-9_]+=' "$BUNDLE/.env.example" | sort)"; keys_env="$(grep -oE '^[A-Z0-9_]+=' "$E" | sort)"
 [ "$keys_example" = "$keys_env" ] && ok "same keys as .env.example" || fail "keys differ from .env.example" "$(diff <(echo "$keys_example") <(echo "$keys_env") | head -5)"
 
@@ -129,7 +129,7 @@ done; ok "re-run keeps secrets and the admin password"
 [ "$(envval ROOT_DOMAIN "$E")" = "chat.example.com" ] && ok "unanswered domain kept" || fail "domain kept"
 cfg --api api-x.example.com --no-caddy --yes
 [ "$(envval API_DOMAIN "$E")" = "api-x.example.com" ] && ok "explicit host override" || fail "host override"
-[ -z "$(envval COMPOSE_PROFILES "$E")" ] && ok "--no-caddy clears COMPOSE_PROFILES" || fail "--no-caddy"
+[ "$(envval COMPOSE_PROFILES "$E")" = "updater" ] && ok "--no-caddy drops the caddy profile" || fail "--no-caddy"
 cfg --force --domain chat.example.com --admin-email ops@example.com --yes
 [ "$(envval JWT_SECRET "$E")" != "$(envval JWT_SECRET "$T/first.env")" ] && ok "--force regenerates secrets" || fail "--force"
 rm -f "$E"
@@ -141,22 +141,22 @@ cfg --domain chat.example.com --admin-email a@b.co --license-key bogus --yes && 
 cfg --domain chat.example.com --admin-email a@b.co --dry-run --yes; [ ! -f "$E" ] && ok "--dry-run writes nothing" || fail "--dry-run wrote"
 echo "# configure.sh: modules"
 cfg --domain chat.example.com --admin-email ops@example.com --modules ai --ai-api-key sk-test --yes
-[ "$(envval COMPOSE_PROFILES "$E")" = "caddy,ai" ] && ok "--modules ai adds the profile" || fail "--modules ai" "$(envval COMPOSE_PROFILES "$E")"
+[ "$(envval COMPOSE_PROFILES "$E")" = "caddy,ai,updater" ] && ok "--modules ai adds the profile" || fail "--modules ai" "$(envval COMPOSE_PROFILES "$E")"
 [ "$(envval AI_API_KEY "$E")" = "sk-test" ] && [ "$(envval AI_API_URL "$E")" = "https://api.openai.com/v1" ] && ok "AI provider key and default URL written" || fail "AI_API_*" "$(grep '^AI_API' "$E")"
 grep -qE '^WIDGET_SCRIPT_VERSION=[0-9]{4}$' "$E" && ok "widget script version generated (YYMM)" || fail "WIDGET_SCRIPT_VERSION" "$(grep WIDGET_SCRIPT "$E")"
 for k in AI_SERVICE_SECRET DOCS_PARSE_SECRET AI_POSTGRES_PASSWORD; do v="$(envval "$k" "$E")"; [ ${#v} -ge 32 ] || fail "$k generated"; done; ok "ai module secrets generated"
 grep -q 'needs a licence key' "$T/err" && grep -q 'docker compose pull' "$T/out" && ok "warns about the missing licence key, says to pull first" || fail "ai module warnings" "$(cat "$T/err")"
 cp "$E" "$T/ai.env"
 cfg --display-name "Acme" --yes
-[ "$(envval COMPOSE_PROFILES "$E")" = "caddy,ai" ] && [ "$(envval WIDGET_SCRIPT_VERSION "$E")" = "$(envval WIDGET_SCRIPT_VERSION "$T/ai.env")" ] && [ "$(envval AI_API_KEY "$E")" = "sk-test" ] \
+[ "$(envval COMPOSE_PROFILES "$E")" = "caddy,ai,updater" ] && [ "$(envval WIDGET_SCRIPT_VERSION "$E")" = "$(envval WIDGET_SCRIPT_VERSION "$T/ai.env")" ] && [ "$(envval AI_API_KEY "$E")" = "sk-test" ] \
   && ok "re-run keeps the modules, the widget version and the provider key" || fail "re-run with modules" "$(grep -E '^(COMPOSE_PROFILES|WIDGET_SCRIPT_VERSION|AI_API_KEY)=' "$E")"
 cfg --modules none --no-caddy --yes
-[ -z "$(envval COMPOSE_PROFILES "$E")" ] && ok "--modules none --no-caddy empties the profiles" || fail "--modules none" "$(envval COMPOSE_PROFILES "$E")"
+[ "$(envval COMPOSE_PROFILES "$E")" = "updater" ] && ok "--modules none --no-caddy leaves only the updater" || fail "--modules none" "$(envval COMPOSE_PROFILES "$E")"
 cfg --modules ai --yes
-[ "$(envval COMPOSE_PROFILES "$E")" = "ai" ] && ok "modules without caddy" || fail "modules without caddy" "$(envval COMPOSE_PROFILES "$E")"
+[ "$(envval COMPOSE_PROFILES "$E")" = "ai,updater" ] && ok "modules without caddy" || fail "modules without caddy" "$(envval COMPOSE_PROFILES "$E")"
 cfg --modules nope --yes && fail "unknown module refused" || ok "unknown module refused"
 cfg --modules ai,push,playground,mcp,uptime --caddy --yes
-[ "$(envval COMPOSE_PROFILES "$E")" = "caddy,ai,push,playground,mcp,uptime" ] && ok "every module as a profile, --caddy turns the proxy back on" || fail "all modules" "$(envval COMPOSE_PROFILES "$E")"
+[ "$(envval COMPOSE_PROFILES "$E")" = "caddy,ai,push,playground,mcp,uptime,updater" ] && ok "every module as a profile, --caddy turns the proxy back on" || fail "all modules" "$(envval COMPOSE_PROFILES "$E")"
 for k in B2B_PUSH_SECRET UPTIME_POSTGRES_PASSWORD UPTIME_AUTH_PASSWORD; do v="$(envval "$k" "$E")"; [ ${#v} -ge 24 ] || fail "$k generated"; done; ok "push and uptime secrets generated"
 grep -q 'uptime: https://uptime.chat.example.com' "$T/out" && grep -q 'mcp: https://mcp.chat.example.com/mcp' "$T/out" && ok "report names the module hosts" || fail "module hosts in the report" "$(grep -E 'uptime|mcp' "$T/out")"
 cfg --widget chat-widget.example.com --modules ai --yes
@@ -167,15 +167,15 @@ cfg --public-url https://chat.example.com --admin-email a@b.co --modules ai,push
 rm -f "$E"
 cfg --public-url https://chat.example.com --admin-email a@b.co --modules calls --yes && fail "calls on one origin refused" || { grep -q 'calls module needs a host of its own' "$T/err" && ok "calls refused on a one-origin install (needs a host of its own)" || fail "calls on one origin message" "$(cat "$T/err")"; }
 cfg --domain chat.example.com --admin-email ops@example.com --modules calls --yes
-[ "$(envval COMPOSE_PROFILES "$E")" = "caddy,calls" ] && ok "--modules calls adds the profile" || fail "--modules calls" "$(envval COMPOSE_PROFILES "$E")"
+[ "$(envval COMPOSE_PROFILES "$E")" = "caddy,calls,updater" ] && ok "--modules calls adds the profile" || fail "--modules calls" "$(envval COMPOSE_PROFILES "$E")"
 grep -qE '^LIVEKIT_API_KEY=API[A-Za-z0-9]{16}$' "$E" && ok "LiveKit API key generated (API + 16)" || fail "LIVEKIT_API_KEY" "$(grep '^LIVEKIT_API_KEY' "$E")"
 for k in LIVEKIT_API_SECRET TURN_SECRET; do v="$(envval "$k" "$E")"; [ ${#v} -ge 48 ] || fail "$k generated"; done; ok "LiveKit secret and TURN secret generated"
 grep -q 'calls: wss://livekit.chat.example.com and turn.chat.example.com:3478' "$T/out" && grep -q '3478 udp+tcp, 49160-49200/udp, 7881/tcp, 50000-50100/udp' "$T/out" && ok "report names the calls hosts and the ports to open" || fail "calls in the report" "$(grep calls "$T/out")"
 cp "$E" "$T/calls.env"; cfg --display-name Acme --yes
-[ "$(envval TURN_SECRET "$E")" = "$(envval TURN_SECRET "$T/calls.env")" ] && [ "$(envval LIVEKIT_API_KEY "$E")" = "$(envval LIVEKIT_API_KEY "$T/calls.env")" ] && [ "$(envval COMPOSE_PROFILES "$E")" = "caddy,calls" ] \
+[ "$(envval TURN_SECRET "$E")" = "$(envval TURN_SECRET "$T/calls.env")" ] && [ "$(envval LIVEKIT_API_KEY "$E")" = "$(envval LIVEKIT_API_KEY "$T/calls.env")" ] && [ "$(envval COMPOSE_PROFILES "$E")" = "caddy,calls,updater" ] \
   && ok "re-run keeps the calls module and its secrets" || fail "calls re-run"
 cfg --modules ai,calls --yes
-[ "$(envval COMPOSE_PROFILES "$E")" = "caddy,ai,calls" ] && ok "calls alongside another module" || fail "ai,calls" "$(envval COMPOSE_PROFILES "$E")"
+[ "$(envval COMPOSE_PROFILES "$E")" = "caddy,ai,calls,updater" ] && ok "calls alongside another module" || fail "ai,calls" "$(envval COMPOSE_PROFILES "$E")"
 rm -f "$E"
 
 echo "# configure.sh: registry"
@@ -724,8 +724,8 @@ echo "# updater (profile updater, update.sh, updater/server.js)"
 B3="$T/b3"; cp -r "$BUNDLE" "$B3"; rm -rf "$B3/.env" "$B3/.update"
 cfg3() { "$B3/configure.sh" --yes --no-registry-check "$@" >"$T/u.out" 2>"$T/u.err"; }
 cfg3 --domain chat.example.com --admin-email ops@example.com \
-  && grep -qx 'ETHORA_UPDATER=off' "$B3/.env" && ! grep -q '^COMPOSE_PROFILES=.*updater' "$B3/.env" \
-  && ok "updater off unless asked for (until its image is published)" || fail "updater default" "$(grep -E '^(ETHORA_UPDATER|COMPOSE_PROFILES)=' "$B3/.env"; cat "$T/u.err")"
+  && grep -qx 'ETHORA_UPDATER=on' "$B3/.env" && grep -qx 'COMPOSE_PROFILES=caddy,updater' "$B3/.env" \
+  && ok "updater on by default" || fail "updater default" "$(grep -E '^(ETHORA_UPDATER|COMPOSE_PROFILES)=' "$B3/.env"; cat "$T/u.err")"
 cfg3 --updater && grep -qx 'COMPOSE_PROFILES=caddy,updater' "$B3/.env" && grep -qx 'ETHORA_UPDATER=on' "$B3/.env" \
   && grep -qE '^UPDATER_SECRET=[A-Za-z0-9]{32}$' "$B3/.env" && grep -qx "ETHORA_BUNDLE_DIR=$B3" "$B3/.env" && grep -q '^ETHORA_HOST_ROOT=/' "$B3/.env" \
   && ok "--updater: profile, secret and the host paths it mounts" || fail "--updater" "$(grep -E '^(ETHORA_UPDATER|COMPOSE_PROFILES|ETHORA_BUNDLE_DIR|ETHORA_HOST_ROOT)=' "$B3/.env")"

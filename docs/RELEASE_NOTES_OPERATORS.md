@@ -20,9 +20,10 @@ chosen time, check, **Roll back**) and **Restart services** with a time
 (now, in 1, 5 or 15 minutes). Every signed-in user of the web app sees a
 notice with the countdown (public `GET /v2/server-notice`). Updates go
 through the new `updater` service (profile `updater`, image
-`dappros/ethora-updater`, holds the Docker socket, no published port), off
-until `./configure.sh --updater`; `./update.sh` does the same from a shell
-on any compose install. Images are now pinned by `ETHORA_TAG` in `.env`
+`dappros/ethora-updater`, holds the Docker socket, no published port), on by
+default for new installs and for existing ones on their next
+`./configure.sh` run (`--no-updater` keeps it off); `./update.sh` does the
+same from a shell on any compose install. Images are now pinned by `ETHORA_TAG` in `.env`
 (`update.sh` sets it; empty = the release line tag as before), and
 `configure.sh` empties `ETHORA_*_IMAGE` settings that only repeat the stock
 image. Caddy now reloads its configuration when `docker compose up -d`
