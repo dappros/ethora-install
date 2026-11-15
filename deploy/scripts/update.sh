@@ -1603,6 +1603,30 @@ if [ "${UPTIME_ENABLED:-false}" == "true" ] && [ -f "$RUNTIME_DEPLOY_DIR/docker-
   compose -f "$RUNTIME_DEPLOY_DIR/docker-compose.uptime.yml" up -d --force-recreate uptime
 fi
 
+# Moderation service (Trust & Safety detection): built and (re)started when
+# services.moderation.enabled, removed when switched off. `up --build` reuses
+# the cached layers, so an unchanged service costs seconds; recreated when its
+# rendered env changed.
+if [ -f "$RUNTIME_DEPLOY_DIR/docker-compose.moderation.yml" ]; then
+  # Build from the deployed backend tree (the compose file's own default is
+  # relative to the deploy dir, which may be the source checkout).
+  export MODERATION_DIR="${MODERATION_DIR:-${BACKEND_DIR:-$ROOT_DIR/ethora-backend}/services/moderation}"
+  if [ "${MODERATION_ENABLED:-false}" == "true" ]; then
+    log "Starting/refreshing the moderation service..."
+    moderation_stamp="$STATE_DIR/moderation-env.sha256"
+    moderation_hash="$(sha256sum "$RUNTIME_DEPLOY_DIR/generated/moderation/moderation.env" 2>/dev/null | awk '{print $1}')"
+    if [ -n "$moderation_hash" ] && [ "$(cat "$moderation_stamp" 2>/dev/null || echo '')" != "$moderation_hash" ]; then
+      compose -f "$RUNTIME_DEPLOY_DIR/docker-compose.moderation.yml" up -d --build --force-recreate || log "[WARN] moderation service did not start (non-fatal)"
+      echo "$moderation_hash" >"$moderation_stamp" 2>/dev/null || true
+    else
+      compose -f "$RUNTIME_DEPLOY_DIR/docker-compose.moderation.yml" up -d --build || log "[WARN] moderation service did not start (non-fatal)"
+    fi
+  elif [ -n "$(docker ps -aq --filter "name=^moderation$" 2>/dev/null)" ]; then
+    log "The moderation service is off in deploy.yml; removing its container..."
+    compose -f "$RUNTIME_DEPLOY_DIR/docker-compose.moderation.yml" down || log "[WARN] could not remove the moderation service (non-fatal)"
+  fi
+fi
+
 # coturn (STUN/TURN for peer-to-peer calls): up when services.coturn.enabled,
 # recreated when its rendered config changed (a bind-mounted file, which
 # compose does not notice), removed when it was switched off.

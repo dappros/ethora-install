@@ -92,6 +92,14 @@ services:
     port: 8000
     # Crawler -> backend callback. Empty = http://host.docker.internal:<backend port>/v1/sources/site-crawl/internal-for-crawler
     callback_url: ""
+  # Trust & Safety detection (docs/TRUST_AND_SAFETY.md): local CPU models for
+  # nudity in images and video, toxicity, PII and PHI, run as the "moderation"
+  # container (built from ethora-backend/services/moderation, about 2-3 GB RAM).
+  # The policy itself is set on the admin panel (Server settings > Trust & Safety).
+  moderation:
+    enabled: false
+    port: 8030
+    text_model: original     # original (English) or multilingual
   uptime:
     enabled: true
     port: 8099

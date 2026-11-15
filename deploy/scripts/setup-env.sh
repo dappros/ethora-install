@@ -501,6 +501,8 @@ replace_template() {
     replace_literal "{{BASE_APP_START_BALANCE}}" "${BASE_APP_START_BALANCE:-1000000}"
     replace_literal "{{AI_SERVICE_PORT}}" "${AI_SERVICE_PORT:-8013}"
     replace_literal "{{AI_SERVICE_SECRET}}" "${AI_SERVICE_SECRET:-}"
+    replace_literal "{{MODERATION_URL}}" "${MODERATION_URL:-}"
+    replace_literal "{{MODERATION_SECRET}}" "${MODERATION_SECRET:-}"
     replace_literal "{{DOCS_PARSE_PORT}}" "${DOCS_PARSE_PORT:-8201}"
     replace_literal "{{DOCS_PARSE_SECRET}}" "${DOCS_PARSE_SECRET:-}"
     replace_literal "{{POSTMARK_TOKEN}}" "${POSTMARK_TOKEN:-}"
@@ -1123,6 +1125,9 @@ if command -v yq >/dev/null 2>&1 && [ -f "$CONFIG_FILE" ]; then
     # init-services.sh pushes this into Mongo, where get-config reads it.
     export TRANSLATE_LANGUAGES="$(yq eval '.translate.languages // ""' "$CONFIG_FILE" 2>/dev/null || echo "")"
     [ "${TRANSLATE_LANGUAGES}" = "null" ] && TRANSLATE_LANGUAGES=""
+    export MODERATION_ENABLED="$(yq eval '.services.moderation.enabled // "false"' "$CONFIG_FILE" 2>/dev/null || echo "false")"
+    export MODERATION_PORT="$(yq eval '.services.moderation.port // 8030' "$CONFIG_FILE" 2>/dev/null || echo "8030")"
+    export MODERATION_TEXT_MODEL="$(yq eval '.services.moderation.text_model // "original"' "$CONFIG_FILE" 2>/dev/null || echo "original")"
     export AI_SERVICE_ENABLED="$(yq eval '.services.ai_service.enabled // "false"' "$CONFIG_FILE" 2>/dev/null || echo "false")"
     export AI_SERVICE_PORT="$(yq eval '.services.ai_service.port // 8013' "$CONFIG_FILE" 2>/dev/null || echo "8013")"
     export DOCS_PARSE_ENABLED="$(yq eval '.services.docs_parse_service.enabled // "false"' "$CONFIG_FILE" 2>/dev/null || echo "false")"
@@ -1303,6 +1308,27 @@ if [ -z "${AI_SERVICE_SECRET:-}" ] || [ "${AI_SERVICE_SECRET:-}" == "null" ]; th
     export AI_SERVICE_SECRET="$(openssl rand -base64 32)"
 fi
 persist_env_var "AI_SERVICE_SECRET" "${AI_SERVICE_SECRET:-}"
+
+# Moderation service secret (services.moderation): stable across updates, like
+# the AI secrets above. The URL is empty while the service is off, which the
+# API reads as "no detection".
+if [ -z "${MODERATION_SECRET:-}" ] || [ "${MODERATION_SECRET:-}" == "null" ]; then
+    export MODERATION_SECRET="$(openssl rand -hex 32)"
+fi
+persist_env_var "MODERATION_SECRET" "${MODERATION_SECRET:-}"
+if [ -z "${MODERATION_PORT:-}" ] || [ "${MODERATION_PORT:-}" == "null" ]; then export MODERATION_PORT="8030"; fi
+persist_env_var "MODERATION_ENABLED" "${MODERATION_ENABLED:-false}"
+persist_env_var "MODERATION_PORT" "${MODERATION_PORT:-8030}"
+if [ "${MODERATION_ENABLED:-false}" == "true" ]; then
+    export MODERATION_URL="http://127.0.0.1:${MODERATION_PORT}"
+    mkdir -p "$DEPLOY_DIR/generated/moderation" 2>/dev/null || true
+    umask_prev="$(umask)"; umask 077
+    printf 'MODERATION_SECRET=%s\nPORT=8030\nMODERATION_TEXT_MODEL=%s\n' "$MODERATION_SECRET" "${MODERATION_TEXT_MODEL:-original}" \
+        >"$DEPLOY_DIR/generated/moderation/moderation.env"
+    umask "$umask_prev"
+else
+    export MODERATION_URL=""
+fi
 
 if [ -z "${DOCS_PARSE_SECRET:-}" ] || [ "${DOCS_PARSE_SECRET:-}" == "null" ]; then
     export DOCS_PARSE_SECRET="$(openssl rand -base64 32)"

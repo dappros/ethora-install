@@ -2099,6 +2099,15 @@ EOF
     ensure_runtime_tree_owned_by_deploy_user
     "$SCRIPT_DIR/setup-env.sh" || error "Environment setup failed after init-services"
 
+    # Moderation service (Trust & Safety detection, services.moderation): its env
+    # was rendered by setup-env.sh above. The first build downloads the models
+    # (a few minutes); later builds are cached.
+    if [ "${MODERATION_ENABLED:-false}" == "true" ] && [ -f "$DEPLOY_DIR/docker-compose.moderation.yml" ]; then
+        log "Building and starting the moderation service..."
+        export MODERATION_DIR="${MODERATION_DIR:-${BACKEND_DIR:-$ROOT_DIR/ethora-backend}/services/moderation}"
+        docker-compose -f "$DEPLOY_DIR/docker-compose.moderation.yml" up -d --build || warn "Failed to start the moderation service"
+    fi
+
     # coturn (STUN/TURN for peer-to-peer calls): its config was rendered by setup-env.sh above.
     if [ "${COTURN_ENABLED:-false}" == "true" ] && [ -f "$DEPLOY_DIR/docker-compose.coturn.yml" ]; then
         log "Starting coturn (STUN/TURN for peer-to-peer calls)..."

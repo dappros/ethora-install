@@ -1,0 +1,27 @@
+# Ethora moderation (optional): local CPU models for Trust & Safety checks
+# (nudity in images and video, toxicity, PII, PHI). docs/TRUST_AND_SAFETY.md.
+# Started by install.sh / update.sh when services.moderation.enabled is true in
+# deploy.yml; built from ethora-backend/services/moderation. Listens on
+# localhost only: the API calls it with MODERATION_SECRET. Models are baked into
+# the image, so it needs no internet access at run time.
+services:
+  moderation:
+    build:
+      context: ${MODERATION_DIR:-../ethora-backend/services/moderation}
+      dockerfile: Dockerfile
+      network: host
+    image: ${MODERATION_IMAGE:-ethora-moderation:local}
+    container_name: moderation
+    restart: always
+    env_file:
+      - ./generated/moderation/moderation.env
+    ports:
+      - "127.0.0.1:${MODERATION_PORT:-8030}:8030"
+    mem_limit: ${MODERATION_MEM_LIMIT:-3g}
+    networks:
+      - ethora-network
+
+networks:
+  ethora-network:
+    external: true
+    name: ${COMPOSE_PROJECT_NAME:-deploy}_ethora-network

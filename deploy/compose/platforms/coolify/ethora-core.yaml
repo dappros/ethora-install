@@ -1967,6 +1967,10 @@ x-file-backend-template: &file-backend-template
     AI_SERVICE_URL=http://localhost:{{AI_SERVICE_PORT}}
     AI_SERVICE_SECRET={{AI_SERVICE_SECRET}}
 
+    # Trust & Safety detection service (services.moderation); empty when off.
+    MODERATION_URL={{MODERATION_URL}}
+    MODERATION_SECRET={{MODERATION_SECRET}}
+
     CRAWLER_URL={{CRAWLER_URL}}
     # Shared secret the crawler presents on its result callback to
     # /v1/sources/site-crawl/internal-for-crawler/:appId, which has no authMw.
