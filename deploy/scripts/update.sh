@@ -905,6 +905,8 @@ reload_config_from_deploy_yml() {
   export STRIPE_SECRET=$(yq eval '.integrations.stripe.secret // ""' "$cfg")
   export STRIPE_PUBLIC=$(yq eval '.integrations.stripe.public // ""' "$cfg")
   export STRIPE_PLAN=$(yq eval '.integrations.stripe.plan // ""' "$cfg")
+  export STRIPE_WEBHOOK_SECRET=$(yq eval '.integrations.stripe.webhook_secret // ""' "$cfg")
+  export STRIPE_RETURN_URL=$(yq eval '.integrations.stripe.return_url // ""' "$cfg")
   export POSTMARK_TOKEN=$(yq eval '.integrations.postmark.token // ""' "$cfg")
   export POSTMARK_FROM_EMAIL=$(yq eval '.integrations.postmark.from_email // "noreply@ethoramail.com"' "$cfg")
   export POSTMARK_FROM_NAME=$(yq eval '.integrations.postmark.from_name // "Ethora Platform"' "$cfg")

@@ -711,6 +711,8 @@ replace_template() {
     replace_literal "{{STRIPE_SECRET}}" "${STRIPE_SECRET:-}"
     replace_literal "{{STRIPE_PUBLIC}}" "${STRIPE_PUBLIC:-}"
     replace_literal "{{STRIPE_PLAN}}" "${STRIPE_PLAN:-}"
+    replace_literal "{{STRIPE_WEBHOOK_SECRET}}" "${STRIPE_WEBHOOK_SECRET:-}"
+    replace_literal "{{BILLING_RETURN_URL}}" "${STRIPE_RETURN_URL:-https://${WEB_DOMAIN}}"
 
     # Optional: IAP + Firebase
     replace_literal "{{IAP_ENABLED}}" "${IAP_ENABLED:-false}"

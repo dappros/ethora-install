@@ -1270,6 +1270,8 @@ parse_config() {
     export STRIPE_SECRET=$(yq eval '.integrations.stripe.secret // ""' "$CONFIG_FILE")
     export STRIPE_PUBLIC=$(yq eval '.integrations.stripe.public // ""' "$CONFIG_FILE")
     export STRIPE_PLAN=$(yq eval '.integrations.stripe.plan // ""' "$CONFIG_FILE")
+    export STRIPE_WEBHOOK_SECRET=$(yq eval '.integrations.stripe.webhook_secret // ""' "$CONFIG_FILE")
+    export STRIPE_RETURN_URL=$(yq eval '.integrations.stripe.return_url // ""' "$CONFIG_FILE")
     export POSTMARK_TOKEN=$(yq eval '.integrations.postmark.token // ""' "$CONFIG_FILE")
     export POSTMARK_FROM_EMAIL=$(yq eval '.integrations.postmark.from_email // "noreply@ethoramail.com"' "$CONFIG_FILE")
     export POSTMARK_FROM_NAME=$(yq eval '.integrations.postmark.from_name // "Ethora Platform"' "$CONFIG_FILE")
@@ -1562,6 +1564,8 @@ export ALERT_RECIPIENTS="${ALERT_RECIPIENTS:-}"
 export STRIPE_SECRET="${STRIPE_SECRET:-}"
 export STRIPE_PUBLIC="${STRIPE_PUBLIC:-}"
 export STRIPE_PLAN="${STRIPE_PLAN:-}"
+export STRIPE_WEBHOOK_SECRET="${STRIPE_WEBHOOK_SECRET:-}"
+export STRIPE_RETURN_URL="${STRIPE_RETURN_URL:-}"
 export IAP_ENABLED="${IAP_ENABLED:-false}"
 export FIREBASE_ENABLED="${FIREBASE_ENABLED:-false}"
 export FIREBASE_PROJECT_NAME="${FIREBASE_PROJECT_NAME:-}"

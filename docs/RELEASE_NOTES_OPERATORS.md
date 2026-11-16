@@ -14,6 +14,18 @@ default is not what you want.
 
 ## 2610 (development line, September 2026)
 
+**Paid plans through Stripe (hosted service only).** With
+`features.stripe: true` the admin Billing page sells plans per App through
+Stripe Checkout and links to the Stripe Customer Portal. Two new keys under
+`integrations.stripe`: `webhook_secret` (signing secret of the endpoint
+`https://<api>/v1/stripe/webhook`, events `checkout.session.completed`,
+`customer.subscription.*`, `invoice.paid`, `invoice.payment_failed`) and
+`return_url` (default `https://<web domain>`). Prices are read from Stripe by
+lookup key: `ethora_ai_assistant_monthly`, `ethora_ai_assistant_annual`,
+`ethora_small_business_monthly`, `ethora_small_business_annual`. A plan with no
+price is not offered. Self-hosted installs keep `features.stripe: false` and
+see no change. The webhook signing secret is no longer built into the API.
+
 **Update and restart from the admin panel (compose bundle).** Server
 settings > System > Status gets **Update now** (download first, restart at a
 chosen time, check, **Roll back**) and **Restart services** with a time

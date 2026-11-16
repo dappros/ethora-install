@@ -513,11 +513,16 @@ integrations:
     secret: ""                     # coturn static-auth-secret (TURN REST API credentials)
     credential_ttl_seconds: 86400  # lifetime of the credentials the API hands to callers
 
-  # Stripe (optional)
+  # Stripe (optional). Paid plans of Ethora's own hosted service; leave
+  # features.stripe false on self-hosted installs. With it on, the admin
+  # Billing page sells the plans whose Stripe Prices carry the lookup keys
+  # ethora_{ai_assistant,small_business}_{monthly,annual}.
   stripe:
     secret: ""
     public: ""
     plan: ""
+    webhook_secret: ""    # signing secret of the endpoint https://<api>/v1/stripe/webhook
+    return_url: ""        # where Checkout returns; default https://<web domain>
 
   # Postmark (optional)
   postmark:
