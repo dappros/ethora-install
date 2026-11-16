@@ -287,6 +287,7 @@ export MCP_INTERNAL_URL=""; [ "$MCP_MODULE" != true ] || MCP_INTERNAL_URL="${ETH
 export PLAYGROUND_INTERNAL_URL=""; [ "$PLAYGROUND_MODULE" != true ] || PLAYGROUND_INTERNAL_URL="${ETHORA_PLAYGROUND_URL:-http://playground:3020}"
 export UPTIME_INTERNAL_URL=""; [ "$UPTIME_MODULE" != true ] || UPTIME_INTERNAL_URL="${ETHORA_UPTIME_URL:-http://uptime:8099}"
 export TRANSLATE_URL="${TRANSLATE_URL:-}"
+export TRANSLATE_TIMEOUT_MS="${TRANSLATE_TIMEOUT_MS:-}"
 if [ -n "$PUBLIC_URL" ] && { [ "$PLAYGROUND_MODULE" = true ] || [ "$MCP_MODULE" = true ] || [ "$UPTIME_MODULE" = true ] || [ "$CALLS_MODULE" = true ]; }; then
   die "the playground, mcp, uptime and calls modules need hosts of their own (ROOT_DOMAIN), not a one-origin install (PUBLIC_URL)"
 fi
@@ -759,6 +760,24 @@ sed -i "s|/cert/[^\" ]*\\.pem|/cert/$E_XMPP_DOMAIN.pem|g" "$cfg"
 # translate_url (only when set)
 if [ -n "${TRANSLATE_URL:-}" ]; then
   sed -i "s|^\([[:space:]]*\)translate_url:.*|\1translate_url: \"$E_TRANSLATE_URL\"|" "$cfg"
+fi
+# translate_timeout in ms (only when set): the repo config has no such line, so
+# add one after the active translate_url, same indent; replace it when present.
+if [ -n "${TRANSLATE_TIMEOUT_MS:-}" ]; then
+  case "$TRANSLATE_TIMEOUT_MS" in
+    *[!0-9]*|'') die "TRANSLATE_TIMEOUT_MS must be a whole number of milliseconds (got '$TRANSLATE_TIMEOUT_MS')" ;;
+  esac
+  if grep -qE '^[[:space:]]*translate_timeout:' "$cfg"; then
+    sed -i "s|^\([[:space:]]*\)translate_timeout:.*|\1translate_timeout: $TRANSLATE_TIMEOUT_MS|" "$cfg"
+  else
+    awk -v t="$TRANSLATE_TIMEOUT_MS" '
+      { print }
+      /^[[:space:]]*translate_url:/ && !done {
+        match($0, /^[[:space:]]*/)
+        print substr($0, 1, RLENGTH) "translate_timeout: " t
+        done = 1
+      }' "$cfg" > "$cfg.tmp" && cat "$cfg.tmp" > "$cfg" && rm -f "$cfg.tmp"
+  fi
 fi
 # JWT SASL auth
 k="$(printf '%s' "$XMPP_JWT_SECRET" | base64 | tr -d '\n' | tr '+/' '-_' | tr -d '=')"

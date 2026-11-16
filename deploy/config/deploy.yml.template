@@ -333,6 +333,11 @@ services:
     message_audit_url: ""
     # Optional: mod_translate endpoint. Set per-install; empty keeps the repo default.
     translate_url: ""
+    # Optional: how long mod_translate waits for one message's translation before
+    # delivering the message untranslated, in milliseconds. Empty keeps the module
+    # default (8000). Raise it per install when the translation service is slow;
+    # the sender's next messages wait behind it.
+    translate_timeout_ms: ""
 
 # Feature Flags (for future modularity)
 features:

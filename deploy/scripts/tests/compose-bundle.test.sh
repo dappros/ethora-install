@@ -655,9 +655,15 @@ if have_docker; then
         caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >"$T/cv" 2>&1 \
         && ok "rendered Caddyfile validates ($r)" || fail "Caddyfile $r" "$(tail -n 3 "$T/cv")"
     done
-    docker run --rm -v "$T/ra/config/widget/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.10-alpine \
-      caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >"$T/cv" 2>&1 \
-      && ok "widget static server Caddyfile validates" || fail "widget Caddyfile" "$(tail -n 3 "$T/cv")"
+    # Without the ai render there is no file to mount: Docker would create a
+    # root-owned directory in its place and the mount would fail.
+    if [ -f "$T/ra/config/widget/Caddyfile" ]; then
+      docker run --rm -v "$T/ra/config/widget/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.10-alpine \
+        caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >"$T/cv" 2>&1 \
+        && ok "widget static server Caddyfile validates" || fail "widget Caddyfile" "$(tail -n 3 "$T/cv")"
+    else
+      skip "widget Caddyfile (not rendered)"
+    fi
   else
     skip "Caddyfile validation (no caddy image)"
   fi

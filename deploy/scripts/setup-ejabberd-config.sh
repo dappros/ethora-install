@@ -270,6 +270,42 @@ update_translate_url() {
     grep -n "translate_url:" "$cfg" 2>/dev/null || true
 }
 
+update_translate_timeout() {
+    local cfg="$1"
+    if [ -z "${TRANSLATE_TIMEOUT_MS:-}" ]; then
+        return 0
+    fi
+    if [ ! -f "$cfg" ]; then
+        return 0
+    fi
+    case "$TRANSLATE_TIMEOUT_MS" in
+        *[!0-9]*|'')
+            warn "TRANSLATE_TIMEOUT_MS must be a whole number of milliseconds (got '${TRANSLATE_TIMEOUT_MS}'); keeping the module default"
+            return 0 ;;
+    esac
+    if grep -qE '^[[:space:]]*translate_timeout:' "$cfg"; then
+        # Replace only the active (non-commented) line, preserving indent.
+        sed_i "s|^\([[:space:]]*\)translate_timeout:.*|\1translate_timeout: ${TRANSLATE_TIMEOUT_MS}|" "$cfg" \
+          || warn "Failed to update translate_timeout in $cfg"
+    elif grep -qE '^[[:space:]]*translate_url:' "$cfg"; then
+        # The repo config has no translate_timeout line: add one right after the
+        # active translate_url, same indent, so it stays in the mod_translate block.
+        awk -v t="$TRANSLATE_TIMEOUT_MS" '
+            { print }
+            /^[[:space:]]*translate_url:/ && !done {
+                match($0, /^[[:space:]]*/)
+                print substr($0, 1, RLENGTH) "translate_timeout: " t
+                done = 1
+            }' "$cfg" > "$cfg.tmp" && cat "$cfg.tmp" > "$cfg" && rm -f "$cfg.tmp" \
+          || warn "Failed to add translate_timeout to $cfg"
+    else
+        warn "mod_translate is not active in $cfg; translate_timeout not set"
+        return 0
+    fi
+    log "Updated ejabberd translate_timeout"
+    grep -n "translate_timeout:" "$cfg" 2>/dev/null || true
+}
+
 update_certfiles_path() {
     local cfg="$1"
     if [ ! -f "$cfg" ]; then
@@ -352,6 +388,7 @@ if [ "$XMPP_DOMAIN" == "localhost" ]; then
         update_offline_post_urls_and_secret "$EJABBERD_CONFIG"
         update_certfiles_path "$EJABBERD_CONFIG"
         update_translate_url "$EJABBERD_CONFIG"
+        update_translate_timeout "$EJABBERD_CONFIG"
         update_jwt_auth "$EJABBERD_CONFIG"
         update_redis_server "$EJABBERD_CONFIG"
     else
@@ -374,6 +411,7 @@ else
         update_offline_post_urls_and_secret "$EJABBERD_CONFIG"
         update_certfiles_path "$EJABBERD_CONFIG"
         update_translate_url "$EJABBERD_CONFIG"
+        update_translate_timeout "$EJABBERD_CONFIG"
         update_jwt_auth "$EJABBERD_CONFIG"
         update_redis_server "$EJABBERD_CONFIG"
     else
@@ -388,6 +426,7 @@ else
             update_offline_post_urls_and_secret "$EJABBERD_CONFIG"
             update_certfiles_path "$EJABBERD_CONFIG"
             update_translate_url "$EJABBERD_CONFIG"
+            update_translate_timeout "$EJABBERD_CONFIG"
         update_jwt_auth "$EJABBERD_CONFIG"
         update_redis_server "$EJABBERD_CONFIG"
         else
