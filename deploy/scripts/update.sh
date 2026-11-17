@@ -1617,11 +1617,32 @@ if [ -f "$RUNTIME_DEPLOY_DIR/docker-compose.moderation.yml" ]; then
     log "Starting/refreshing the moderation service..."
     moderation_stamp="$STATE_DIR/moderation-env.sha256"
     moderation_hash="$(sha256sum "$RUNTIME_DEPLOY_DIR/generated/moderation/moderation.env" 2>/dev/null | awk '{print $1}')"
+    # Build the image only when its source changed. The build exports several
+    # models (torch, ONNX) and needs several GB of RAM for minutes, which a
+    # small host serving traffic cannot spare; an unchanged source would only
+    # produce the same image again. An image loaded from elsewhere (docker
+    # load) carries no build cache, so without this stamp every update rebuilt
+    # it from scratch. No stamp yet means one build, as before.
+    moderation_src_stamp="$STATE_DIR/moderation-src.sha256"
+    moderation_src_hash="$(hash_tree_sha256 "$MODERATION_DIR")"
+    moderation_build=(--build)
+    if [ -n "$moderation_src_hash" ] \
+      && [ "$(cat "$moderation_src_stamp" 2>/dev/null || echo '')" = "$moderation_src_hash" ] \
+      && docker image inspect "${MODERATION_IMAGE:-ethora-moderation:local}" >/dev/null 2>&1; then
+      moderation_build=(--no-build)
+      log "Moderation source unchanged; reusing the image"
+    fi
+    moderation_ok="true"
     if [ -n "$moderation_hash" ] && [ "$(cat "$moderation_stamp" 2>/dev/null || echo '')" != "$moderation_hash" ]; then
-      compose -f "$RUNTIME_DEPLOY_DIR/docker-compose.moderation.yml" up -d --build --force-recreate || log "[WARN] moderation service did not start (non-fatal)"
+      compose -f "$RUNTIME_DEPLOY_DIR/docker-compose.moderation.yml" up -d "${moderation_build[@]}" --force-recreate \
+        || { moderation_ok="false"; log "[WARN] moderation service did not start (non-fatal)"; }
       echo "$moderation_hash" >"$moderation_stamp" 2>/dev/null || true
     else
-      compose -f "$RUNTIME_DEPLOY_DIR/docker-compose.moderation.yml" up -d --build || log "[WARN] moderation service did not start (non-fatal)"
+      compose -f "$RUNTIME_DEPLOY_DIR/docker-compose.moderation.yml" up -d "${moderation_build[@]}" \
+        || { moderation_ok="false"; log "[WARN] moderation service did not start (non-fatal)"; }
+    fi
+    if [ "$moderation_ok" = "true" ] && [ -n "$moderation_src_hash" ]; then
+      echo "$moderation_src_hash" >"$moderation_src_stamp" 2>/dev/null || true
     fi
   elif [ -n "$(docker ps -aq --filter "name=^moderation$" 2>/dev/null)" ]; then
     log "The moderation service is off in deploy.yml; removing its container..."
