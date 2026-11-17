@@ -140,6 +140,19 @@ update_env_var "HUBSPOT_FORM_ID_SIGNUP" "$hubspot_form_id_signup"
 update_env_var "HUBSPOT_FORM_ID_TUTORIAL" "$hubspot_form_id_tutorial"
 update_env_var "HUBSPOT_REGION" "$hubspot_region"
 
+# Stripe (hosted plans, modules/billing). Same rationale as HubSpot above:
+# the .deploy.env snapshot from install time would otherwise keep
+# STRIPE_ENABLED=false after the operator turns features.stripe on, because
+# setup-env.sh sources it over what update.sh re-read from deploy.yml. Empty
+# keys keep the stored value; features.stripe=false is enough to switch
+# billing off.
+update_env_var "STRIPE_ENABLED" "$(read_config '.features.stripe // "false"')"
+update_env_var "STRIPE_SECRET" "$(read_config '.integrations.stripe.secret // ""')"
+update_env_var "STRIPE_PUBLIC" "$(read_config '.integrations.stripe.public // ""')"
+update_env_var "STRIPE_PLAN" "$(read_config '.integrations.stripe.plan // ""')"
+update_env_var "STRIPE_WEBHOOK_SECRET" "$(read_config '.integrations.stripe.webhook_secret // ""')"
+update_env_var "STRIPE_RETURN_URL" "$(read_config '.integrations.stripe.return_url // ""')"
+
 # Postmark + analytics email reports (same rationale as HubSpot above).
 postmark_enabled="$(read_config '.features.postmark // "false"')"
 postmark_token="$(read_config '.integrations.postmark.token // ""')"
