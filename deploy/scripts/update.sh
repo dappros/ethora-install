@@ -1177,7 +1177,10 @@ else
   # Sync targets: "label|relative-path|comma-separated extra excludes"
   SYNC_TARGETS=(
     "backend|ethora-backend|"
-    "frontend|ethora-app-reactjs|"
+    # public/widget/ is written by the frontend's prebuild (copy-widget.mjs) and
+    # is never in the source mirror: without this the prune would delete the
+    # served widget bundle.
+    "frontend|ethora-app-reactjs|public/widget"
     "chat component|ethora-chat-component|"
     "widget|ethora-ai-chat-widget|.env.production.local"
     "SDK playground|ethora-sdk-playground|.env.local"

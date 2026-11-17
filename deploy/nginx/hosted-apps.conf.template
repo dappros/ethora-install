@@ -34,6 +34,14 @@ server {
         add_header Cache-Control "no-store, must-revalidate";
     }
 
+    # The AI widget embed bundle: same rule as web.conf.template (an App's own
+    # host can appear in an embed snippet too).
+    location ~ ^/widget/assistant(-[A-Za-z0-9_.-]+)?\.js$ {
+        try_files $uri /widget/assistant.js =404;
+        add_header Cache-Control "public, max-age=300" always;
+        add_header X-Content-Type-Options "nosniff" always;
+    }
+
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
         expires 1y;
         add_header Cache-Control "public, immutable";

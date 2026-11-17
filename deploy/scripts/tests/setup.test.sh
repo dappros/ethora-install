@@ -154,6 +154,23 @@ ETHORA_SETUP_DOMAIN=chat.env.com ETHORA_SETUP_ADMIN_EMAIL=env@x.co run --yes --o
 ETHORA_SETUP_DOMAIN=chat.env.com run --domain chat.flag.com --admin-email a@b.co --yes --out "$T/env2.yml"
 [ "$(y .domains.api "$T/env2.yml")" = "api.chat.flag.com" ] && ok "flag beats env" || fail "flag beats env"
 
+echo "# widget embed: old hashed names keep working"
+D="$(cd "$(dirname "$0")/../.." && pwd)"
+for f in web hosted-apps; do
+  c="$D/nginx/$f.conf.template"
+  w=$(grep -n 'location ~ \^/widget/assistant' "$c" | head -1 | cut -d: -f1)
+  g=$(grep -n 'location ~\* \\.(js|css' "$c" | head -1 | cut -d: -f1)
+  if [ -n "$w" ] && [ -n "$g" ] && [ "$w" -lt "$g" ] \
+     && sed -n "${w},\$p" "$c" | grep -m1 -q 'try_files \$uri /widget/assistant.js =404;' \
+     && sed -n "${w},\$p" "$c" | grep -m1 -q 'max-age=300'; then
+    ok "$f.conf.template answers /widget/assistant-<hash>.js with the stable bundle, before the static rule"
+  else
+    fail "$f.conf.template widget alias" "widget line ${w:-none}, static line ${g:-none}"
+  fi
+done
+grep -q '"frontend|ethora-app-reactjs|public/widget"' "$D/scripts/update.sh" \
+  && ok "update.sh never prunes the frontend's generated public/widget/" || fail "public/widget prune exclude"
+
 echo
 echo "passed $PASS, failed $FAIL"
 [ "$FAIL" -eq 0 ]
