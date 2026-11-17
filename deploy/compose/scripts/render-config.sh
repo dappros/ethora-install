@@ -288,6 +288,7 @@ export PLAYGROUND_INTERNAL_URL=""; [ "$PLAYGROUND_MODULE" != true ] || PLAYGROUN
 export UPTIME_INTERNAL_URL=""; [ "$UPTIME_MODULE" != true ] || UPTIME_INTERNAL_URL="${ETHORA_UPTIME_URL:-http://uptime:8099}"
 export TRANSLATE_URL="${TRANSLATE_URL:-}"
 export TRANSLATE_TIMEOUT_MS="${TRANSLATE_TIMEOUT_MS:-}"
+export TRANSLATE_MODE="${TRANSLATE_MODE:-}"
 if [ -n "$PUBLIC_URL" ] && { [ "$PLAYGROUND_MODULE" = true ] || [ "$MCP_MODULE" = true ] || [ "$UPTIME_MODULE" = true ] || [ "$CALLS_MODULE" = true ]; }; then
   die "the playground, mcp, uptime and calls modules need hosts of their own (ROOT_DOMAIN), not a one-origin install (PUBLIC_URL)"
 fi
@@ -775,6 +776,27 @@ if [ -n "${TRANSLATE_TIMEOUT_MS:-}" ]; then
       /^[[:space:]]*translate_url:/ && !done {
         match($0, /^[[:space:]]*/)
         print substr($0, 1, RLENGTH) "translate_timeout: " t
+        done = 1
+      }' "$cfg" > "$cfg.tmp" && cat "$cfg.tmp" > "$cfg" && rm -f "$cfg.tmp"
+  fi
+fi
+# translate_mode (only when set): sync or async. Added after the active
+# translate_url when the config has no such line, replaced when present. The
+# xmpp image must know the option (ejabberd-docker with the async mode), or
+# ejabberd refuses to start.
+if [ -n "${TRANSLATE_MODE:-}" ]; then
+  case "$TRANSLATE_MODE" in
+    sync|async) ;;
+    *) die "TRANSLATE_MODE must be sync or async (got '$TRANSLATE_MODE')" ;;
+  esac
+  if grep -qE '^[[:space:]]*translate_mode:' "$cfg"; then
+    sed -i "s|^\([[:space:]]*\)translate_mode:.*|\1translate_mode: $TRANSLATE_MODE|" "$cfg"
+  else
+    awk -v m="$TRANSLATE_MODE" '
+      { print }
+      /^[[:space:]]*translate_url:/ && !done {
+        match($0, /^[[:space:]]*/)
+        print substr($0, 1, RLENGTH) "translate_mode: " m
         done = 1
       }' "$cfg" > "$cfg.tmp" && cat "$cfg.tmp" > "$cfg" && rm -f "$cfg.tmp"
   fi

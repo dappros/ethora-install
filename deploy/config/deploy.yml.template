@@ -338,6 +338,13 @@ services:
     # default (8000). Raise it per install when the translation service is slow;
     # the sender's next messages wait behind it.
     translate_timeout_ms: ""
+    # Optional: mod_translate mode, sync or async. Empty keeps what the ejabberd
+    # config has (the module default is sync: a room message is delivered once
+    # its translation is ready). async delivers it at once and adds the
+    # translation when it is ready; readers need the web and RN SDK versions
+    # that apply <translation-update/>, and the ejabberd image must know the
+    # option (ejabberd-docker with the async mode). Set sync to switch back.
+    translate_mode: ""
 
 # Feature Flags (for future modularity)
 features:

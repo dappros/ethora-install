@@ -507,6 +507,8 @@ message_audit_url="$(read_config '.services.ejabberd.message_audit_url // ""')"
 translate_url="$(read_config '.services.ejabberd.translate_url // ""')"
 # Optional mod_translate timeout in milliseconds; empty keeps the module default.
 translate_timeout_ms="$(read_config '.services.ejabberd.translate_timeout_ms // ""')"
+# Optional mod_translate mode (sync|async); empty keeps what the config has.
+translate_mode="$(read_config '.services.ejabberd.translate_mode // ""')"
 # localhost branches below use host.docker.internal, not localhost: ejabberd runs
 # in a container, where "localhost" is the container itself, so a plain localhost
 # URL is unreachable from the module. Matches what install.sh derives, so a
@@ -561,6 +563,7 @@ update_env_var "TRACK_PRESENCE_URL" "$track_presence_url"
 update_env_var "MESSAGE_AUDIT_URL" "$message_audit_url"
 update_env_var "TRANSLATE_URL" "$translate_url"
 update_env_var "TRANSLATE_TIMEOUT_MS" "$translate_timeout_ms"
+update_env_var "TRANSLATE_MODE" "$translate_mode"
 
 # Ejabberd config file selection (for docker compose mount).
 if [ -n "$xmpp_domain" ] && [ "$xmpp_domain" != "localhost" ]; then

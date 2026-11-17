@@ -306,6 +306,51 @@ update_translate_timeout() {
     grep -n "translate_timeout:" "$cfg" 2>/dev/null || true
 }
 
+update_translate_mode() {
+    local cfg="$1"
+    if [ -z "${TRANSLATE_MODE:-}" ]; then
+        return 0
+    fi
+    if [ ! -f "$cfg" ]; then
+        return 0
+    fi
+    case "$TRANSLATE_MODE" in
+        sync|async) ;;
+        *)
+            warn "TRANSLATE_MODE must be sync or async (got '${TRANSLATE_MODE}'); leaving the config as it is"
+            return 0 ;;
+    esac
+    # An ejabberd that does not know the option refuses to start, so the line
+    # is only written when the mod_translate source here has the mode
+    # (image-only installs have no source and are not checked).
+    local src="$EJABBERD_DIR/docker/custom_modules/mod_translate/src/mod_translate.erl"
+    if [ -f "$src" ] && ! grep -q "translate_mode" "$src"; then
+        warn "mod_translate in $EJABBERD_DIR has no translate_mode option; leaving the config as it is"
+        return 0
+    fi
+    if grep -qE '^[[:space:]]*translate_mode:' "$cfg"; then
+        # Replace only the active (non-commented) line, preserving indent.
+        sed_i "s|^\([[:space:]]*\)translate_mode:.*|\1translate_mode: ${TRANSLATE_MODE}|" "$cfg" \
+          || warn "Failed to update translate_mode in $cfg"
+    elif grep -qE '^[[:space:]]*translate_url:' "$cfg"; then
+        # No active translate_mode line: add one right after the active
+        # translate_url, same indent, so it stays in the mod_translate block.
+        awk -v m="$TRANSLATE_MODE" '
+            { print }
+            /^[[:space:]]*translate_url:/ && !done {
+                match($0, /^[[:space:]]*/)
+                print substr($0, 1, RLENGTH) "translate_mode: " m
+                done = 1
+            }' "$cfg" > "$cfg.tmp" && cat "$cfg.tmp" > "$cfg" && rm -f "$cfg.tmp" \
+          || warn "Failed to add translate_mode to $cfg"
+    else
+        warn "mod_translate is not active in $cfg; translate_mode not set"
+        return 0
+    fi
+    log "Updated ejabberd translate_mode"
+    grep -n "translate_mode:" "$cfg" 2>/dev/null || true
+}
+
 update_certfiles_path() {
     local cfg="$1"
     if [ ! -f "$cfg" ]; then
@@ -389,6 +434,7 @@ if [ "$XMPP_DOMAIN" == "localhost" ]; then
         update_certfiles_path "$EJABBERD_CONFIG"
         update_translate_url "$EJABBERD_CONFIG"
         update_translate_timeout "$EJABBERD_CONFIG"
+        update_translate_mode "$EJABBERD_CONFIG"
         update_jwt_auth "$EJABBERD_CONFIG"
         update_redis_server "$EJABBERD_CONFIG"
     else
@@ -412,6 +458,7 @@ else
         update_certfiles_path "$EJABBERD_CONFIG"
         update_translate_url "$EJABBERD_CONFIG"
         update_translate_timeout "$EJABBERD_CONFIG"
+        update_translate_mode "$EJABBERD_CONFIG"
         update_jwt_auth "$EJABBERD_CONFIG"
         update_redis_server "$EJABBERD_CONFIG"
     else
@@ -427,6 +474,7 @@ else
             update_certfiles_path "$EJABBERD_CONFIG"
             update_translate_url "$EJABBERD_CONFIG"
             update_translate_timeout "$EJABBERD_CONFIG"
+            update_translate_mode "$EJABBERD_CONFIG"
         update_jwt_auth "$EJABBERD_CONFIG"
         update_redis_server "$EJABBERD_CONFIG"
         else
