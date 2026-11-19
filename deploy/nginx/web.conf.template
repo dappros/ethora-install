@@ -1,3 +1,11 @@
+# "Try it on your site" demo links (/try/<site>/<token>) carry a token in the
+# path. The access log keeps only its first 6 characters.
+map $request_uri $ethora_try_logged_uri {
+    "~^(/try/[^/?]+/)([A-Za-z0-9_-]{6})[A-Za-z0-9_-]*(.*)$" "$1$2...$3";
+    default $request_uri;
+}
+log_format ethora_try '$remote_addr - $remote_user [$time_local] "$request_method $ethora_try_logged_uri $server_protocol" $status $body_bytes_sent "-" "$http_user_agent"';
+
 server {
     listen 80;
     server_name {{WEB_DOMAIN}};
@@ -38,6 +46,21 @@ server {
     # headers, hence the security headers repeated below.
     location = /index.html {
         add_header Cache-Control "no-cache" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header X-Robots-Tag "noindex, nofollow" always;
+    }
+
+    # "Try it on your site" demo pages (ethora-app-reactjs pages/Try): the SPA,
+    # never cached, no referrer leaves the page (its address carries a token,
+    # and the first asset requests go out before the app can set a meta tag),
+    # not indexed, logged without the token.
+    location ^~ /try/ {
+        try_files /index.html =404;
+        access_log /var/log/nginx/access.log ethora_try;
+        add_header Cache-Control "no-cache" always;
+        add_header Referrer-Policy "no-referrer" always;
         add_header X-Frame-Options "SAMEORIGIN" always;
         add_header X-Content-Type-Options "nosniff" always;
         add_header X-XSS-Protection "1; mode=block" always;
