@@ -57,7 +57,9 @@ server {
     # and the first asset requests go out before the app can set a meta tag),
     # not indexed, logged without the token.
     location ^~ /try/ {
-        try_files /index.html =404;
+        # try.html: index.html whose CSP may frame any https site (the demo
+        # frames the named website); index.html for builds without it.
+        try_files /try.html /index.html =404;
         access_log /var/log/nginx/access.log ethora_try;
         add_header Cache-Control "no-cache" always;
         add_header Referrer-Policy "no-referrer" always;

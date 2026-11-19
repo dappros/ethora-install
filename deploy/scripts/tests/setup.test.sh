@@ -172,7 +172,8 @@ grep -q '"frontend|ethora-app-reactjs|public/widget"' "$D/scripts/update.sh" \
   && ok "update.sh never prunes the frontend's generated public/widget/" || fail "public/widget prune exclude"
 c="$D/nginx/web.conf.template"
 if grep -q 'location ^~ /try/' "$c" && sed -n '/location ^~ \/try\//,/}/p' "$c" | grep -q 'Referrer-Policy "no-referrer"' \
-   && sed -n '/location ^~ \/try\//,/}/p' "$c" | grep -q 'access_log .* ethora_try;' && grep -q 'map $request_uri $ethora_try_logged_uri' "$c"; then
+   && sed -n '/location ^~ \/try\//,/}/p' "$c" | grep -q 'access_log .* ethora_try;' \
+   && sed -n '/location ^~ \/try\//,/}/p' "$c" | grep -q 'try_files /try.html /index.html =404;' && grep -q 'map $request_uri $ethora_try_logged_uri' "$c"; then
   ok "web.conf.template: /try/ pages send no referrer and are logged without their token"
 else
   fail "web.conf.template /try/ location"
