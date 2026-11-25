@@ -16,3 +16,7 @@ deploy.log
 *.bak
 *~
 
+
+# Compose bundle: the install's answers and secrets, and the updater's job state.
+compose/.env
+compose/.update/
