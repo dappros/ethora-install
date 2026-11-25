@@ -523,6 +523,28 @@ translate_url="$(read_config '.services.ejabberd.translate_url // ""')"
 translate_timeout_ms="$(read_config '.services.ejabberd.translate_timeout_ms // ""')"
 # Optional mod_translate mode (sync|async); empty keeps what the config has.
 translate_mode="$(read_config '.services.ejabberd.translate_mode // ""')"
+# Optional WiredTiger cache cap (databases.mongo.cache_gb, see deploy.yml.template):
+# a number of GB from 0.25 up, decimals allowed; anything else is ignored with a
+# warning. Always written, so removing the key restores the mongod default at the
+# next update.
+mongo_cache_gb="$(read_config '.databases.mongo.cache_gb // ""')"
+mongo_cache_args=""
+if [ -n "$mongo_cache_gb" ]; then
+  if printf '%s' "$mongo_cache_gb" | grep -qE '^[0-9]+(\.[0-9]+)?$' \
+     && awk -v v="$mongo_cache_gb" 'BEGIN { exit !(v + 0 >= 0.25) }'; then
+    mongo_cache_args="--wiredTigerCacheSizeGB $mongo_cache_gb"
+  else
+    echo "[WARN] databases.mongo.cache_gb must be a number of GB from 0.25 up (got '$mongo_cache_gb'); mongod keeps its default cache" >&2
+  fi
+fi
+# Optional databases.mysql.performance_schema: false switches MySQL's instrumentation
+# off (a few hundred MB); anything else keeps the MySQL default. Always written, so
+# removing the key switches it back on at the next update.
+mysql_perf_schema="$(read_config '.databases.mysql.performance_schema // ""')"
+mysql_extra_args=""
+if [ "$mysql_perf_schema" = "false" ]; then
+  mysql_extra_args="--performance-schema=OFF"
+fi
 # localhost branches below use host.docker.internal, not localhost: ejabberd runs
 # in a container, where "localhost" is the container itself, so a plain localhost
 # URL is unreachable from the module. Matches what install.sh derives, so a
@@ -578,6 +600,8 @@ update_env_var "MESSAGE_AUDIT_URL" "$message_audit_url"
 update_env_var "TRANSLATE_URL" "$translate_url"
 update_env_var "TRANSLATE_TIMEOUT_MS" "$translate_timeout_ms"
 update_env_var "TRANSLATE_MODE" "$translate_mode"
+force_update_env_var "MONGO_CACHE_ARGS" "$mongo_cache_args"
+force_update_env_var "MYSQL_EXTRA_ARGS" "$mysql_extra_args"
 
 # Ejabberd config file selection (for docker compose mount).
 if [ -n "$xmpp_domain" ] && [ "$xmpp_domain" != "localhost" ]; then

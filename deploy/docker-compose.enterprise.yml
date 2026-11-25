@@ -5,7 +5,10 @@ services:
   # MongoDB - Main database for backend
   mongo:
     image: mongo:6.0.8
-    command: mongod --replSet rs0 --bind_ip localhost,mongo
+    # MONGO_CACHE_ARGS comes from .deploy.env (databases.mongo.cache_gb in
+    # deploy.yml, written by refresh-deploy-env.sh): "--wiredTigerCacheSizeGB <gb>",
+    # or empty for the mongod default of half the host RAM minus 1 GB.
+    command: mongod --replSet rs0 --bind_ip localhost,mongo ${MONGO_CACHE_ARGS:-}
     restart: always
     ports:
       - "127.0.0.1:${MONGO_PORT:-27017}:27017"
@@ -146,7 +149,10 @@ services:
   # MySQL - Database for Ejabberd
   mysql:
     image: mysql:8.1.0
-    command: --default-authentication-plugin=mysql_native_password
+    # MYSQL_EXTRA_ARGS comes from .deploy.env (databases.mysql.performance_schema
+    # in deploy.yml, written by refresh-deploy-env.sh): "--performance-schema=OFF"
+    # or empty.
+    command: --default-authentication-plugin=mysql_native_password ${MYSQL_EXTRA_ARGS:-}
     # mysql2.sql is ejabberd-docker source (not data); keep EJABBERD_DIR for it.
     # /var/lib/mysql is the live database state: use MYSQL_DATA_DIR which
     # setup-env.sh resolves to a clearer location ($ROOT_DIR/data/mysql for

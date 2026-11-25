@@ -70,6 +70,12 @@ databases:
   mongo:
     port: 27017
     database: ethora_prod
+    # WiredTiger cache cap in GB (mongod --wiredTigerCacheSizeGB). Unset, mongod
+    # takes half of the host RAM minus 1 GB, which a host shared with ejabberd,
+    # MySQL and the Node services pays in swap. 1 on a 4 GB host, 2 on 8 GB;
+    # 0.25 is the minimum. Applied by the next update, which recreates the
+    # mongo container (a few seconds without the database).
+    # cache_gb: 1
   minio:
     # MinIO withdrew its public images; this is our unmodified copy of the
     # release every install runs. Point at a private mirror if you keep one.
@@ -77,6 +83,11 @@ databases:
   mysql:
     port: 3306
     root_password: # Auto-generated if not provided
+    # MySQL's performance_schema is instrumentation nobody here reads; it costs a
+    # few hundred MB. false switches it off (--performance-schema=OFF) at the next
+    # update, which recreates the mysql container (a few seconds without the
+    # database, so ejabberd cannot archive during them). Unset keeps it on.
+    # performance_schema: false
   redis:
     port: 6379
 

@@ -1904,6 +1904,12 @@ main() {
     # Start Docker services
     # Re-load: setup-env.sh has now persisted the authoritative data dirs.
     load_data_dir_env
+    # The same refresh wrote MONGO_CACHE_ARGS (databases.mongo.cache_gb) for the
+    # mongo command below; pick it up so the first start already has the cap.
+    MONGO_CACHE_ARGS="$(sed -n -E 's/^export MONGO_CACHE_ARGS="(.*)"$/\1/p' "$DEPLOY_DIR/.deploy.env" 2>/dev/null | tail -1)"
+    export MONGO_CACHE_ARGS
+    MYSQL_EXTRA_ARGS="$(sed -n -E 's/^export MYSQL_EXTRA_ARGS="(.*)"$/\1/p' "$DEPLOY_DIR/.deploy.env" 2>/dev/null | tail -1)"
+    export MYSQL_EXTRA_ARGS
     log "Starting Docker services..."
     # Change to root directory for docker-compose (volumes are relative to where docker-compose is run)
     cd "$ROOT_DIR"
