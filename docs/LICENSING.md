@@ -130,10 +130,16 @@ written to `.env` like any other; `ETHORA_LICENSE_SOURCE=aws-marketplace`
 makes every later `configure.sh` run (and so every `update.sh`) activate
 again, which also follows a change of domain.
 
-The API checks the claim: on start and every 6 hours it reads the instance
-id from instance metadata and compares it with the key. Another instance
-id restricts the install (`aws_instance_mismatch`); metadata that cannot be
-reached for 72 hours does the same (`aws_instance_unverified`). The key
+The API checks the claim: on start, after a key change and every 6 hours
+it reads the instance id from instance metadata and compares it with the
+key. Another instance id makes the key invalid, so the install falls back
+to Ethora Core (state `unlicensed`, reason `aws_instance_mismatch`);
+metadata that cannot be reached for 72 hours after the last confirmation
+does the same (`aws_instance_unverified`). `GET /v2/license` and the Server
+settings status say `channel: "aws-marketplace"` for such a key, and the
+License page shows "Licensed through AWS Marketplace" instead of the key
+form. A renewed key from the heartbeat (stored in Mongo) wins over the older
+one in `.env` when both belong to the same AWS licence and instance. The key
 lasts 30 days and the daily heartbeat moves it forward, so a running,
 billed instance never handles a key, and a key copied off the instance
 stops working there. The module images come with the licence's registry
