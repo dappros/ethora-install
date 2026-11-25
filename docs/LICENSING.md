@@ -114,6 +114,33 @@ license:
 `deploy/scripts/validate.sh` refuses a key that does not look like a key, a
 `key_file` that does not exist, and a non-URL `server_url`.
 
+### Ethora Enterprise through AWS Marketplace
+
+The paid AWS listing has no key to type. AWS bills the buyer by the hour (or
+per year) for every instance started from the Enterprise AMI, which carries
+our Marketplace product code. On that image the setup page (or
+`configure.sh --aws-marketplace`) reads the instance identity document and
+its signature from instance metadata (IMDSv2) and sends them to
+`POST https://license.ethora.com/v1/aws/activate` with the install's domain.
+The licence server verifies AWS's signature with AWS's published certificate
+for the region, checks that the document lists the paid product code, and
+issues a key of tier `enterprise` (licence id `AWS-<instance id>`) bound to
+the domain and carrying `aws: { instanceId, accountId, region }`. The key is
+written to `.env` like any other; `ETHORA_LICENSE_SOURCE=aws-marketplace`
+makes every later `configure.sh` run (and so every `update.sh`) activate
+again, which also follows a change of domain.
+
+The API checks the claim: on start and every 6 hours it reads the instance
+id from instance metadata and compares it with the key. Another instance
+id restricts the install (`aws_instance_mismatch`); metadata that cannot be
+reached for 72 hours does the same (`aws_instance_unverified`). The key
+lasts 30 days and the daily heartbeat moves it forward, so a running,
+billed instance never handles a key, and a key copied off the instance
+stops working there. The module images come with the licence's registry
+credential as for any Enterprise key. Licence server settings:
+`AWS_PAID_PRODUCT_CODES` (the listing's product code), `AWS_KEY_DAYS`,
+`AWS_FEATURES`, `AWS_LIMITS`, `AWS_REGISTRY_USERNAME` / `AWS_REGISTRY_TOKEN`.
+
 ## What operators see
 
 - **Admin panel.** A banner at the top of every page for admins on the base

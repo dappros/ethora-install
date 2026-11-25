@@ -2,6 +2,8 @@
 #
 #   packer init  deploy/aws/packer
 #   packer build -var install_ref=main deploy/aws/packer
+#   packer build -var install_ref=main -var edition=aws-marketplace \
+#     -var registry_user=... -var registry_token=... deploy/aws/packer   (Ethora Enterprise, paid through AWS)
 #
 # What the image contains: Ubuntu 24.04 with security updates applied,
 # Docker (with the compose plugin), Node 24 (for the first-boot page), the
@@ -64,17 +66,46 @@ variable "volume_size_gb" {
   type    = number
   default = 40
 }
+# core = the free Ethora Core listing; aws-marketplace = Ethora Enterprise paid
+# through AWS Marketplace (every module image on the image, the setup page
+# activates the instance with the licence server, no key). The Enterprise
+# module images are private: registry_user / registry_token log in for the
+# pulls during the bake only (removed before the image is sealed).
+variable "edition" {
+  type    = string
+  default = "core"
+  validation {
+    condition     = contains(["core", "aws-marketplace"], var.edition)
+    error_message = "The edition must be core or aws-marketplace."
+  }
+}
+variable "registry_user" {
+  type    = string
+  default = ""
+}
+variable "registry_token" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
 
 locals {
   ts       = formatdate("YYYYMMDD-hhmm", timestamp())
-  ami_name = "${var.ami_name_prefix}-core-${var.install_ref}-${local.ts}"
+  product  = var.edition == "core" ? "core" : "enterprise"
+  # The Enterprise images take about 10 GB more.
+  volume   = var.edition == "core" ? var.volume_size_gb : max(var.volume_size_gb, 60)
+  ami_name = "${var.ami_name_prefix}-${local.product}-${var.install_ref}-${local.ts}"
 }
 
 source "amazon-ebs" "ethora" {
   region          = var.region
   instance_type   = var.instance_type
   ami_name        = local.ami_name
-  ami_description = "Ethora Core (${var.install_ref}): self-hosted chat server with API, web chat, admin panel and XMPP. Open http://<ip>:8888 after launch (user admin, password = instance id)."
+  ami_description = var.edition == "core" ? "Ethora Core (${var.install_ref}): self-hosted chat server with API, web chat, admin panel and XMPP. Open http://<ip>:8888 after launch (user admin, password = instance id)." : "Ethora Enterprise (${var.install_ref}): chat server with AI agents, push, MCP and every Enterprise module, licensed through AWS Marketplace. Open http://<ip>:8888 after launch (user admin, password = instance id)."
+  # IMDSv2 only, and a hop limit of 2 for instances launched from this AMI:
+  # the API checks from its container that it runs on the instance its
+  # AWS Marketplace licence was issued for.
+  imds_support = "v2.0"
   ssh_username    = "ubuntu"
   ssh_keep_alive_interval     = "10s"
   vpc_id                      = var.vpc_id
@@ -93,7 +124,7 @@ source "amazon-ebs" "ethora" {
 
   launch_block_device_mappings {
     device_name           = "/dev/sda1"
-    volume_size           = var.volume_size_gb
+    volume_size           = local.volume
     volume_type           = "gp3"
     delete_on_termination = true
   }
@@ -103,6 +134,7 @@ source "amazon-ebs" "ethora" {
   tags = {
     Name          = local.ami_name
     ethora_ref    = var.install_ref
+    ethora_edition = var.edition
     base_ami_name = "{{ .SourceAMIName }}"
   }
 }
@@ -122,7 +154,7 @@ build {
   provisioner "shell" {
     script           = "${path.root}/../../cloud/provision.sh"
     execute_command  = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E {{ .Path }}"
-    environment_vars = ["ETHORA_STEP=pull-start", "ETHORA_USER=ubuntu", "ETHORA_HOME=/home/ubuntu", "PULL_RUNNER=nohup"]
+    environment_vars = ["ETHORA_STEP=pull-start", "ETHORA_USER=ubuntu", "ETHORA_HOME=/home/ubuntu", "PULL_RUNNER=nohup", "ETHORA_EDITION=${var.edition}", "REGISTRY_USER=${var.registry_user}", "REGISTRY_TOKEN=${var.registry_token}"]
   }
   provisioner "shell" {
     script            = "${path.root}/../../cloud/provision.sh"
@@ -135,7 +167,7 @@ build {
     script           = "${path.root}/../../cloud/provision.sh"
     execute_command  = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E {{ .Path }}"
     pause_before     = "10s"
-    environment_vars = ["ETHORA_STEP=finish", "ETHORA_USER=ubuntu", "ETHORA_HOME=/home/ubuntu", "ETHORA_SWAP=2G"]
+    environment_vars = ["ETHORA_STEP=finish", "ETHORA_USER=ubuntu", "ETHORA_HOME=/home/ubuntu", "ETHORA_SWAP=2G", "ETHORA_EDITION=${var.edition}"]
   }
   provisioner "shell" {
     script           = "${path.root}/../../cloud/provision.sh"

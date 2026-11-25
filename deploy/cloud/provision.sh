@@ -16,13 +16,18 @@
 #   clean       credentials, caches, logs and history; never the identity or
 #               the SSH setup (cloud specific, done in the template)
 #
-# Variables: INSTALL_REF (main), INSTALL_REPO, ETHORA_USER (ubuntu|root),
+# Variables: ETHORA_EDITION (core | aws-marketplace: Ethora Enterprise paid through AWS
+# Marketplace, every module image on the image and /etc/ethora/edition read by
+# the setup page; the private images need REGISTRY_USER / REGISTRY_TOKEN for
+# the pulls, removed again in the clean step), INSTALL_REF (main), INSTALL_REPO, ETHORA_USER (ubuntu|root),
 # ETHORA_HOME (/home/ubuntu|/root), ETHORA_SWAP (e.g. 2G, empty = none),
 # ETHORA_UFW (yes|no), PULL_RUNNER (nohup|systemd-run), PULL_TIMEOUT (seconds).
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1
 
 STEP="${ETHORA_STEP:-base}"
+EDITION="${ETHORA_EDITION:-core}"
+case "$EDITION" in core|aws-marketplace) ;; *) echo "unknown ETHORA_EDITION: $EDITION" >&2; exit 2 ;; esac
 INSTALL_REF="${INSTALL_REF:-main}"
 INSTALL_REPO="${INSTALL_REPO:-https://github.com/dappros/ethora-install.git}"
 ETHORA_USER="${ETHORA_USER:-ubuntu}"
@@ -76,7 +81,13 @@ pull-start)
   # Every image the bundle runs, from the compose file itself (including the
   # caddy and verify profiles), so the list never drifts from the bundle.
   cd "$BUNDLE"
-  docker compose --profile caddy --profile verify config --images | sort -u > /tmp/ethora-images
+  profiles=(--profile caddy --profile verify --profile updater)
+  if [ "$EDITION" = aws-marketplace ]; then
+    for m in ai push playground mcp uptime calls; do profiles+=(--profile "$m"); done
+    [ -n "${REGISTRY_TOKEN:-}" ] || { echo "aws-marketplace: REGISTRY_USER / REGISTRY_TOKEN are needed for the module images" >&2; exit 1; }
+    printf '%s' "$REGISTRY_TOKEN" | docker login -u "${REGISTRY_USER:?}" --password-stdin docker.io >/dev/null
+  fi
+  docker compose "${profiles[@]}" config --images | sort -u > /tmp/ethora-images
   log "images: $(tr '\n' ' ' < /tmp/ethora-images)"
   rm -f "$PULL_DONE" "$PULL_LOG"
   script='for i in $(cat /tmp/ethora-images); do echo "== $i"; docker pull "$i" || echo "PULL FAILED: $i"; done; echo done > '"$PULL_DONE"
@@ -101,6 +112,9 @@ finish)
   for i in $(cat /tmp/ethora-images); do docker image inspect "$i" >/dev/null || { echo "missing image: $i"; exit 1; }; done
   docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}'
   rm -f "$PULL_DONE" "$PULL_LOG" /tmp/ethora-images
+  docker logout docker.io >/dev/null 2>&1 || true
+  mkdir -p /etc/ethora
+  [ "$EDITION" = core ] || echo "$EDITION" > /etc/ethora/edition
   # First-boot setup page, compose mode, single use; enabled, not started.
   "$SRC/deploy/setup-web/install-setup-web.sh" --mode compose --no-enable
   systemctl enable ethora-setup.service

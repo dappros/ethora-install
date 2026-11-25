@@ -85,7 +85,8 @@ env = dict(l.split("=", 1) for l in c["env"])
 example = [l.split("=", 1)[0] for l in open(bundle + "/.env.example") if re.match(r"^[A-Z0-9_]+=", l)]
 skipped = {"API_DOMAIN", "WEB_DOMAIN", "XMPP_DOMAIN", "FILES_DOMAIN", "SECURE_FILES_DOMAIN", "WIDGET_DOMAIN", "PLAYGROUND_DOMAIN", "MCP_DOMAIN", "UPTIME_DOMAIN", "TURN_DOMAIN", "LIVEKIT_DOMAIN", "ACME_EMAIL", "CADDY_GLOBAL_OPTIONS", "HTTP_PORT", "HTTPS_PORT",
            "PUBLIC_URL", "ETHORA_COMPOSE_INIT_IMAGE",  # hosts routed by Traefik; the dev form renders with the xmpp image
-           "ETHORA_TAG", "ETHORA_UPDATER_IMAGE", "ETHORA_UPDATER", "UPDATER_SECRET", "ETHORA_HOST_ROOT", "ETHORA_BUNDLE_DIR", "ETHORA_DOCKER_CONFIG"}  # the updater needs a bundle checkout
+           "ETHORA_TAG", "ETHORA_UPDATER_IMAGE", "ETHORA_UPDATER", "UPDATER_SECRET", "ETHORA_HOST_ROOT", "ETHORA_BUNDLE_DIR", "ETHORA_DOCKER_CONFIG",  # the updater needs a bundle checkout
+           "ETHORA_LICENSE_SOURCE"}  # AWS Marketplace activation runs in configure.sh, on EC2
 assert [k for k in example if k not in skipped] == list(env), list(env)
 assert env["COMPOSE_PROFILES"] == "" and env["ROOT_DOMAIN"] == "${root_domain}"
 secrets = [k for k in env if k.endswith(("_SECRET", "_PASSWORD", "_KEY")) and k not in ("ETHORA_LICENSE_KEY", "AI_API_KEY", "PLAYGROUND_APP_SECRET", "APPLE_SIGNIN_PRIVATE_KEY")] + ["MINIO_ROOT_USER"]
@@ -582,7 +583,7 @@ else
 fi
 
 echo "# compose files"
-keys_env_example="$(grep -oE '^[A-Z0-9_]+=' "$BUNDLE/.env.example" | tr -d = | grep -vE '^(ETHORA_[A-Z_]*_IMAGE|HTTP_PORT|HTTPS_PORT|ETHORA_TAG|ETHORA_UPDATER|ETHORA_HOST_ROOT|ETHORA_BUNDLE_DIR|ETHORA_DOCKER_CONFIG)$' | sort)"
+keys_env_example="$(grep -oE '^[A-Z0-9_]+=' "$BUNDLE/.env.example" | tr -d = | grep -vE '^(ETHORA_[A-Z_]*_IMAGE|HTTP_PORT|HTTPS_PORT|ETHORA_TAG|ETHORA_UPDATER|ETHORA_HOST_ROOT|ETHORA_BUNDLE_DIR|ETHORA_DOCKER_CONFIG|ETHORA_LICENSE_SOURCE)$' | sort)"
 keys_config="$(sed -n '/^  config:/,/^  [a-z]/p' "$BUNDLE/docker-compose.yml" | sed -n 's/^      \([A-Z0-9_]*\): .*/\1/p' | sort)"
 [ "$keys_env_example" = "$keys_config" ] && ok "config lists every .env.example setting (platforms without a .env)" \
   || fail "config environment differs from .env.example" "$(diff <(echo "$keys_env_example") <(echo "$keys_config") | head -5)"
@@ -777,6 +778,34 @@ if command -v node >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
 else skip "updater server (node or curl not available)"; fi
 grep -qxF '!deploy/compose/updater/' "$DEPLOY/../.dockerignore" && grep -q 'updater.Dockerfile' "$DEPLOY/../.github/workflows/release-images.yml" \
   && ok "release-images.yml builds ethora-updater (context allowlisted)" || fail "updater image build"
+
+echo "# configure.sh --aws-marketplace (stub IMDS + licence server)"
+if command -v python3 >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
+  AW="$T/aws"; mkdir -p "$AW"; B5="$T/b5"; cp -r "$BUNDLE" "$B5"; rm -rf "$B5/.env" "$B5/.update"
+  printf '{\n  "accountId" : "123456789012",\n  "instanceId" : "i-0abc",\n  "marketplaceProductCodes" : [ "paidcode" ],\n  "region" : "us-east-1"\n}' > "$AW/document.json"
+  aport=$(( 20000 + RANDOM % 20000 ))
+  python3 "$DEPLOY/scripts/tests/fixtures/aws-stub.py" "$aport" "$AW" & spid=$!
+  for i in $(seq 1 30); do curl -s -o /dev/null -X PUT "http://127.0.0.1:$aport/latest/api/token" && break; sleep 0.2; done
+  aws_cfg() { ETHORA_IMDS_URL="http://127.0.0.1:$aport" ETHORA_LICENSE_SERVER_URL="http://127.0.0.1:$aport" "$B5/configure.sh" --yes --no-registry-check "$@" >"$T/aw.out" 2>"$T/aw.err"; }
+  aws_cfg --domain chat.example.com --admin-email ops@example.com --aws-marketplace \
+    && grep -qx 'ETHORA_LICENSE_KEY=ETHORA1.eyJsaWQiOiJBV1MifQ.c2ln' "$B5/.env" && grep -qx 'ETHORA_LICENSE_SOURCE=aws-marketplace' "$B5/.env" \
+    && ok "--aws-marketplace: activates and writes the key and the source" || fail "--aws-marketplace activation" "$(cat "$T/aw.err")"
+  python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert r["domain"]=="chat.example.com" and r["email"]=="ops@example.com" and r["signature"]=="c2ln\nbmF0dXJl" and r["pkcs7"].startswith("MIAG")' "$AW/request.json" 2>"$T/aw.py" \
+    && ok "activation request: valid JSON, document byte for byte, signature, domain, e-mail" || fail "activation request" "$(cat "$T/aw.py")"
+  rm -f "$AW/request.json"
+  aws_cfg --domain chat2.example.com && python3 -c 'import json,sys; assert json.load(open(sys.argv[1]))["domain"]=="chat2.example.com"' "$AW/request.json" \
+    && ok "re-run re-activates (kept in .env) with the new domain" || fail "re-activation on re-run" "$(cat "$T/aw.err")"
+  printf '{"instanceId":"i-0abc","marketplaceProductCodes":["other"],"region":"us-east-1"}' > "$AW/document.json"
+  kill "$spid" 2>/dev/null; wait "$spid" 2>/dev/null
+  python3 "$DEPLOY/scripts/tests/fixtures/aws-stub.py" "$aport" "$AW" & spid=$!
+  for i in $(seq 1 30); do curl -s -o /dev/null -X PUT "http://127.0.0.1:$aport/latest/api/token" && break; sleep 0.2; done
+  cp "$B5/.env" "$T/aw.env"
+  ! aws_cfg && grep -q 'does not run the paid product' "$T/aw.err" && cmp -s "$B5/.env" "$T/aw.env" \
+    && ok "a refused activation stops configure.sh and leaves .env untouched" || fail "refused activation" "$(cat "$T/aw.err")"
+  kill "$spid" 2>/dev/null; wait "$spid" 2>/dev/null
+  ETHORA_IMDS_URL="http://127.0.0.1:9" "$B5/configure.sh" --yes --no-registry-check >/dev/null 2>"$T/aw.err"; grep -q 'not look like an EC2 instance' "$T/aw.err" \
+    && ok "--aws-marketplace off EC2: a clear error" || fail "off-EC2 error" "$(cat "$T/aw.err")"
+else skip "configure.sh --aws-marketplace (python3 or curl not available)"; fi
 
 echo "# installer compose files publish on loopback only"
 for f in docker-compose.enterprise.yml docker-compose.ai.yml docker-compose.uptime.yml; do

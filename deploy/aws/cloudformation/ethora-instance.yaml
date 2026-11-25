@@ -11,7 +11,7 @@ Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
       - Label: { default: "Ethora setup (leave RootDomain empty to use the web page)" }
-        Parameters: [RootDomain, AdminEmail, LicenseKey, DisplayName]
+        Parameters: [RootDomain, AdminEmail, LicenseKey, Modules, DisplayName]
       - Label: { default: "Instance" }
         Parameters: [AmiId, InstanceType, KeyName, VpcId, SubnetId, VolumeSizeGb, AdminCidr, ElasticIpAllocationId]
 
@@ -53,7 +53,12 @@ Parameters:
     Type: String
     Default: ""
     NoEcho: true
-    Description: ETHORA1.… key. Empty = 14-day trial with every feature.
+    Description: ETHORA1.… key for an Ethora Core image. Ignored on the Ethora Enterprise image from AWS Marketplace (licensed through your AWS subscription).
+  Modules:
+    Type: String
+    Default: ""
+    AllowedPattern: '^[a-z,]*$'
+    Description: Enterprise modules, e.g. ai,push,mcp,uptime (empty = ai,push,mcp,uptime on the Enterprise image, none on Core)
   DisplayName:
     Type: String
     Default: Ethora
@@ -126,7 +131,7 @@ Resources:
               exit 0
             fi
             systemctl disable --now ethora-setup.service || true
-            export ETHORA_SETUP_LICENSE_KEY='${LicenseKey}'
+            export ETHORA_SETUP_LICENSE_KEY='${LicenseKey}' ETHORA_SETUP_MODULES='${Modules}'
             bash "$SRC/deploy/cloud/install.sh" \
               --domain '${RootDomain}' --admin-email '${AdminEmail}' --display-name '${DisplayName}'
             rc=$?

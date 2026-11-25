@@ -19,6 +19,9 @@
 #                            licence key; their private images are pulled with the licence's
 #                            registry credential
 #   --ai-api-key KEY         ai module: key of the OpenAI-compatible provider
+#   --aws-marketplace        Ethora Enterprise paid through AWS Marketplace: no key, the
+#                            instance is activated with the licence server (default on the
+#                            paid AWS image, whose /etc/ethora/edition says aws-marketplace)
 #   -- ...                   anything after -- goes to configure.sh as is
 #   --no-verify              skip the end-to-end check at the end
 #   --dry-run                resolve the answers, write and start nothing
@@ -45,6 +48,7 @@ A_DOMAIN="${ETHORA_SETUP_DOMAIN:-}"; A_EMAIL="${ETHORA_SETUP_ADMIN_EMAIL:-}"
 A_PASSWORD="${ETHORA_SETUP_ADMIN_PASSWORD:-}"; A_NAME="${ETHORA_SETUP_DISPLAY_NAME:-}"
 A_KEY="${ETHORA_SETUP_LICENSE_KEY:-}"; A_SECURE="${ETHORA_SETUP_SECURE_FILES:-}"
 A_MODULES="${ETHORA_SETUP_MODULES:-}"; A_AI_KEY="${ETHORA_SETUP_AI_API_KEY:-}"; EXTRA=()
+A_AWS=false; [ "$(head -n 1 /etc/ethora/edition 2>/dev/null)" = aws-marketplace ] && A_AWS=true
 VERIFY=true; DRY_RUN=false
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -56,6 +60,7 @@ while [ $# -gt 0 ]; do
     --secure-files) A_SECURE="$2"; shift 2 ;;
     --modules) A_MODULES="$2"; shift 2 ;;
     --ai-api-key) A_AI_KEY="$2"; shift 2 ;;
+    --aws-marketplace) A_AWS=true; shift ;;
     --) shift; EXTRA=("$@"); break ;;
     --no-verify) VERIFY=false; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
@@ -72,7 +77,9 @@ A_DOMAIN="$(printf '%s' "$A_DOMAIN" | tr 'A-Z' 'a-z' | sed -E 's#^https?://##; s
 args=(--domain "$A_DOMAIN" --admin-email "$A_EMAIL" --yes)
 [ -n "$A_PASSWORD" ] && args+=(--admin-password "$A_PASSWORD")
 [ -n "$A_NAME" ] && args+=(--display-name "$A_NAME")
-[ -n "$A_KEY" ] && args+=(--license-key "$A_KEY")
+if [ "$A_AWS" = true ]; then args+=(--aws-marketplace); elif [ -n "$A_KEY" ]; then args+=(--license-key "$A_KEY"); fi
+# The paid AWS image includes every module: a first install without a choice gets the usual set.
+[ "$A_AWS" = true ] && [ -z "${A_MODULES:-}" ] && [ ! -f "$BUNDLE/.env" ] && A_MODULES="ai,push,mcp,uptime"
 [ -n "$A_SECURE" ] && args+=(--secure-files "$A_SECURE")
 [ -n "${A_MODULES:-}" ] && args+=(--modules "$A_MODULES")
 [ -n "${A_AI_KEY:-}" ] && args+=(--ai-api-key "$A_AI_KEY")
@@ -80,7 +87,7 @@ args=(--domain "$A_DOMAIN" --admin-email "$A_EMAIL" --yes)
 args+=(${EXTRA[@]+"${EXTRA[@]}"})
 
 cd "$BUNDLE" || die "cannot enter $BUNDLE"
-log "$(date -u +%FT%TZ) configure: root domain $([ "$A_DOMAIN" = auto ] && echo "<public IP>.sslip.io (auto)" || echo "$A_DOMAIN"), admin $A_EMAIL$([ -n "$A_KEY" ] && echo ', license key given' || echo ', Ethora Core (free)')"
+log "$(date -u +%FT%TZ) configure: root domain $([ "$A_DOMAIN" = auto ] && echo "<public IP>.sslip.io (auto)" || echo "$A_DOMAIN"), admin $A_EMAIL$([ "$A_AWS" = true ] && echo ', Ethora Enterprise through AWS Marketplace' || { [ -n "$A_KEY" ] && echo ', license key given' || echo ', Ethora Core (free)'; })"
 # configure.sh prints the generated admin password once; it is kept in .env.
 ./configure.sh "${args[@]}" || die "configure.sh failed (the lines above say why)"
 if [ "$DRY_RUN" = true ]; then log "dry run: nothing written, nothing started"; exit 0; fi
@@ -134,9 +141,9 @@ if [ -d /etc/update-motd.d ] && [ ! -f /etc/update-motd.d/99-one-click ] && [ -w
 #!/bin/sh
 cat <<EOM
 ********************************************************************************
-Ethora Core is installed. Web app and admin panel: $APP_URL
+Ethora $([ "$A_AWS" = true ] && echo Enterprise || echo Core) is installed. Web app and admin panel: $APP_URL
 Settings: $BUNDLE/.env (then: docker compose up -d --force-recreate)
-Update:   cd $BUNDLE && git -C $ROOT pull && docker compose pull && docker compose up -d
+Update:   admin panel, Server settings > System, or: cd $BUNDLE && sudo ./update.sh
 Data:     Docker volumes ethora_mongo, ethora_mysql, ethora_minio, ethora_redis,
           ethora_caddy-data, ethora_secrets (backup steps: $BUNDLE/README.md)
 Docs:     https://github.com/dappros/ethora-install

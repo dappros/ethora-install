@@ -62,6 +62,26 @@ pairs) and CloudFormation rights for the launch. `iam/ami-builder-policy.json`
 is a scoped policy for a dedicated `ethora-ami-builder` user or role; attach
 it rather than using an admin or a backup-scoped user.
 
+### Ethora Enterprise, paid through AWS Marketplace
+
+```bash
+packer build -var region=us-east-2 -var install_ref=main -var edition=aws-marketplace \
+  -var registry_user=<Docker Hub user> -var registry_token=<read-only token> deploy/aws/packer
+```
+
+The same image with every Enterprise module's image pre-pulled (ai, push,
+playground, mcp, uptime, calls; the private ones with the registry login
+given, which is logged out and deleted before the image is sealed), a
+60 GB volume, and `/etc/ethora/edition` = `aws-marketplace`. On that image
+the setup page has no key field: it activates the instance with the licence
+server (`configure.sh --aws-marketplace`, see docs/LICENSING.md, "Ethora
+Enterprise through AWS Marketplace") and defaults to the ai, push, mcp and
+uptime modules. Every AMI is registered IMDSv2-only with a metadata hop
+limit of 2, so the API can check from its container which instance it runs
+on. The listing is a separate Marketplace product with hourly and annual
+pricing; its product code goes into the licence server's
+`AWS_PAID_PRODUCT_CODES` before the first buyer activates.
+
 ## Launch
 
 Console: CloudFormation → create stack → upload `ethora-instance.yaml`, fill

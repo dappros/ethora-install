@@ -21,6 +21,10 @@
 #   --display-name NAME      base app display name (default: Ethora)
 #   --license-key KEY        ETHORA1.<payload>.<signature>; empty = Ethora Core
 #   --no-call-home           air-gapped install (needs an offline key)
+#   --aws-marketplace        Ethora Enterprise paid through AWS Marketplace: the key comes
+#                            from the licence server, which checks this EC2 instance's
+#                            AWS-signed identity (the instance must run the paid AMI);
+#                            kept in .env (ETHORA_LICENSE_SOURCE), so every re-run renews it
 #   --modules LIST           modules to run, comma-separated (ai, push, playground,
 #                            mcp, uptime, calls), or `none`; each one is a compose
 #                            profile. The Enterprise modules' images are private:
@@ -65,6 +69,7 @@ A_ADMIN_PASSWORD="${ETHORA_SETUP_ADMIN_PASSWORD:-}"
 A_DISPLAY_NAME="${ETHORA_SETUP_DISPLAY_NAME:-}"
 A_LICENSE_KEY="${ETHORA_SETUP_LICENSE_KEY:-}"
 A_CALL_HOME="${ETHORA_SETUP_CALL_HOME:-}"
+A_LICENSE_SOURCE="${ETHORA_SETUP_LICENSE_SOURCE:-}"
 A_MODULES="${ETHORA_SETUP_MODULES:-}"
 A_AI_API_KEY="${ETHORA_SETUP_AI_API_KEY:-}"; A_AI_API_URL="${ETHORA_SETUP_AI_API_URL:-}"; A_WIDGET="${ETHORA_SETUP_WIDGET:-}"
 A_REG_USER="${ETHORA_SETUP_REGISTRY_USER:-}"; A_REG_TOKEN="${ETHORA_SETUP_REGISTRY_TOKEN:-}"
@@ -91,6 +96,7 @@ while [ $# -gt 0 ]; do
     --display-name) A_DISPLAY_NAME="$2"; shift 2 ;;
     --license-key) A_LICENSE_KEY="$2"; shift 2 ;;
     --no-call-home) A_CALL_HOME="false"; shift ;;
+    --aws-marketplace) A_LICENSE_SOURCE="aws-marketplace"; shift ;;
     --modules) A_MODULES="$2"; shift 2 ;;
     --ai-api-key) A_AI_API_KEY="$2"; shift 2 ;;
     --ai-api-url) A_AI_API_URL="$2"; shift 2 ;;
@@ -259,6 +265,42 @@ fi
 [ -z "$A_CALL_HOME" ] && A_CALL_HOME="$(old ETHORA_LICENSE_CALL_HOME)"
 A_CALL_HOME="${A_CALL_HOME:-true}"
 
+# Ethora Enterprise paid through AWS Marketplace: AWS bills the instance by
+# the hour; the licence server checks the instance identity document AWS
+# signs (IMDSv2) for our paid product code and issues a key bound to this
+# instance and domain. Every run re-activates (domain changes, renewals).
+[ -z "$A_LICENSE_SOURCE" ] && A_LICENSE_SOURCE="$(old ETHORA_LICENSE_SOURCE)"
+case "$A_LICENSE_SOURCE" in ""|aws-marketplace) ;; *) die "unknown licence source: $A_LICENSE_SOURCE (aws-marketplace, or empty for a key)" ;; esac
+json_esc() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\n'/\\n}"; s="${s//$'\r'/\\r}"; s="${s//$'\t'/\\t}"; printf '%s' "$s"; }
+aws_activate() {
+  local imds="${ETHORA_IMDS_URL:-http://169.254.169.254}" server tok doc sig p7 body domain key err
+  server="${ETHORA_LICENSE_SERVER_URL:-$(old ETHORA_LICENSE_SERVER_URL)}"; server="${server:-https://license.ethora.com}"
+  command -v curl >/dev/null 2>&1 || die "--aws-marketplace needs curl"
+  tok="$(curl -fsS -m 5 -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 300' "$imds/latest/api/token" 2>/dev/null)" \
+    || die "--aws-marketplace: this does not look like an EC2 instance (no instance metadata at $imds)"
+  doc="$(curl -fsS -m 5 -H "X-aws-ec2-metadata-token: $tok" "$imds/latest/dynamic/instance-identity/document")" || die "--aws-marketplace: cannot read the instance identity document"
+  sig="$(curl -fsS -m 5 -H "X-aws-ec2-metadata-token: $tok" "$imds/latest/dynamic/instance-identity/signature" 2>/dev/null || true)"
+  p7="$(curl -fsS -m 5 -H "X-aws-ec2-metadata-token: $tok" "$imds/latest/dynamic/instance-identity/rsa2048" 2>/dev/null || true)"
+  case "$doc" in *marketplaceProductCodes*) ;; *) die "--aws-marketplace: this instance was not started from the Ethora Enterprise AMI on AWS Marketplace (no Marketplace product code); use a licence key instead (--license-key)" ;; esac
+  domain="${A_DOMAIN:-$(printf '%s' "$A_PUBLIC_URL" | sed -E 's#^https?://##; s#[:/].*$##')}"
+  body="{\"document\":\"$(json_esc "$doc")\",\"signature\":\"$(json_esc "$sig")\",\"pkcs7\":\"$(json_esc "$p7")\",\"domain\":\"$domain\",\"email\":\"$A_ADMIN_EMAIL\"}"
+  err="$(mktemp)"
+  if ! body="$(curl -sS -m 30 -X POST -H 'Content-Type: application/json' --data-binary "$body" "$server/v1/aws/activate" 2>"$err")"; then
+    die "--aws-marketplace: cannot reach the licence server $server ($(head -1 "$err"))"
+  fi
+  rm -f "$err"
+  key="$(printf '%s' "$body" | sed -n 's/.*"key" *: *"\([^"]*\)".*/\1/p' | head -1)"
+  if [ -z "$key" ] || ! valid_key "$key"; then
+    die "--aws-marketplace: the licence server did not activate this instance: $(printf '%s' "$body" | sed -n 's/.*"error" *: *"\([^"]*\)".*/\1/p' | head -1) (support@ethora.com)"
+  fi
+  A_LICENSE_KEY="$key"
+  log "AWS Marketplace: activated ($(printf '%s' "$body" | sed -n 's/.*"lid" *: *"\([^"]*\)".*/\1/p' | head -1), domain $domain, expires $(printf '%s' "$body" | sed -n 's/.*"expiresAt" *: *"\([^"]*\)".*/\1/p' | head -1))"
+}
+if [ "$A_LICENSE_SOURCE" = aws-marketplace ]; then
+  [ "$A_CALL_HOME" != false ] || die "--aws-marketplace needs call-home (the key is renewed by the licence server)"
+  if [ "$DRY_RUN" = true ]; then log "AWS Marketplace: would activate this instance (dry run)"; else aws_activate; fi
+fi
+
 # Profiles: the bundled proxy (caddy) and the Enterprise modules. The
 # modules answered replace the previous ones; the proxy choice is kept.
 KNOWN_MODULES=" ai push playground mcp uptime calls "
@@ -318,7 +360,7 @@ else
 fi
 echo "  Admin:           $A_ADMIN_EMAIL  ($([ "$GENERATED_PASSWORD" = true ] && echo "password generated" || echo "password kept/supplied"))"
 echo "  Display name:    $A_DISPLAY_NAME"
-echo "  License:         $([ -n "$A_LICENSE_KEY" ] && echo "key ${A_LICENSE_KEY:0:24}..." || echo "none (Ethora Core; register from the admin panel)")  call-home=$A_CALL_HOME"
+echo "  License:         $([ "$A_LICENSE_SOURCE" = aws-marketplace ] && echo "AWS Marketplace (billed by AWS, key from the licence server)" || { [ -n "$A_LICENSE_KEY" ] && echo "key ${A_LICENSE_KEY:0:24}..." || echo "none (Ethora Core; register from the admin panel)"; })  call-home=$A_CALL_HOME"
 if [ -n "$MODULES" ]; then
   echo "  Modules:         $MODULES"
   [ "$AI_ON" != true ] || echo "                   ai: widget=$([ -n "$A_PUBLIC_URL" ] && echo "$A_PUBLIC_URL/widget/" || echo "${V_WIDGET:-widget.$A_DOMAIN}"), AI provider $A_AI_API_URL, key $([ -n "$A_AI_API_KEY" ] && echo set || echo MISSING)"
@@ -356,6 +398,7 @@ set_new AI_API_KEY "$A_AI_API_KEY"; set_new AI_API_URL "$A_AI_API_URL"
 set_new ADMIN_EMAIL "$A_ADMIN_EMAIL"; set_new ADMIN_PASSWORD "$A_ADMIN_PASSWORD"
 set_new BASE_APP_DISPLAY_NAME "$A_DISPLAY_NAME"
 set_new ETHORA_LICENSE_KEY "$A_LICENSE_KEY"; set_new ETHORA_LICENSE_CALL_HOME "$A_CALL_HOME"
+set_new ETHORA_LICENSE_SOURCE "$A_LICENSE_SOURCE"
 set_new COMPOSE_PROFILES "$PROFILES"; set_new CADDY_GLOBAL_OPTIONS "$CADDY_OPTS"
 set_new ETHORA_UPDATER "$UPDATER"
 # Where the install lives on this host: the updater mounts it at the same path.

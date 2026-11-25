@@ -48,4 +48,23 @@ r="$(curl -s -u admin:pw -X POST -H 'content-type: application/json' -d '{"domai
 echo "$r" | grep -q '"ok":true' && ok "a dry run leaves no done marker, so a second submit is accepted" || fail "second submit" "$r"
 kill "$srvpid" 2>/dev/null; wait "$srvpid" 2>/dev/null; srvpid=""
 
+echo "# Ethora Enterprise through AWS Marketplace (paid image)"
+out="$(ETHORA_DONE_FILE="$T/done" bash "$T/src/deploy/cloud/install.sh" --domain chat.example.com --admin-email ops@example.com --aws-marketplace --dry-run 2>&1)"; rc=$?
+[ "$rc" = 0 ] && echo "$out" | grep -q "Ethora Enterprise through AWS Marketplace" && echo "$out" | grep -q "AWS Marketplace: would activate" \
+  && echo "$out" | grep -qE "Modules: +ai push mcp uptime" && ok "install.sh --aws-marketplace: activation (dry run) and the default modules" || fail "install.sh --aws-marketplace" "$out"
+out="$(ETHORA_EDITION=nope ETHORA_STEP=base bash "$T/src/deploy/cloud/provision.sh" 2>&1)"; [ $? = 2 ] && ok "provision.sh refuses an unknown edition" || fail "provision.sh unknown edition" "$out"
+port=$((20000 + RANDOM % 20000))
+ETHORA_SOURCE_ROOT="$T/src" SETUP_MODE=compose SETUP_EDITION=aws-marketplace SETUP_DRY_RUN=1 SETUP_PASSWORD=pw SETUP_PORT=$port SETUP_BIND=127.0.0.1 \
+  SETUP_DONE_FILE="$T/done2" SETUP_LOG="$T/setup2.log" SETUP_LINGER_SECONDS=0 node "$ROOT/deploy/setup-web/server.js" >"$T/server2.out" 2>&1 &
+srvpid=$!
+for _ in $(seq 1 30); do curl -s -o /dev/null -u admin:pw "http://127.0.0.1:$port/healthz" && break; sleep 0.2; done
+page="$(curl -s -u admin:pw "http://127.0.0.1:$port/")"
+echo "$page" | grep -q 'Ethora Enterprise setup' && echo "$page" | grep -q 'Licensed through AWS Marketplace' && ! echo "$page" | grep -q 'name="license_key"' \
+  && echo "$page" | grep -q 'value="ai,push,mcp,uptime"' && ok "setup page on the paid image: no key field, modules prefilled" || fail "paid setup page"
+curl -s -u admin:pw -X POST -H 'content-type: application/json' -d '{"domain":"chat.example.com","admin_email":"ops@example.com","modules":"ai,push","license_key":"ignored"}' "http://127.0.0.1:$port/api/setup" >/dev/null
+for _ in $(seq 1 100); do grep -q "dry run: nothing written\|ERROR" "$T/setup2.log" 2>/dev/null && break; sleep 0.3; done
+grep -q "cloud/install.sh --domain chat.example.com --admin-email ops@example.com --aws-marketplace --modules ai,push --dry-run" "$T/setup2.log" \
+  && ok "paid image: --aws-marketplace passed, a pasted key ignored" || fail "paid image args" "$(head -3 "$T/setup2.log")"
+kill "$srvpid" 2>/dev/null; wait "$srvpid" 2>/dev/null; srvpid=""
+
 echo; echo "passed $PASS, failed $FAIL"; [ "$FAIL" = 0 ]

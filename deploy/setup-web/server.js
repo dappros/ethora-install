@@ -25,6 +25,9 @@
 //   SETUP_LOG            default /var/log/ethora-setup.log
 //   SETUP_DEFAULT_MODE   source | image, prefills the run-mode fields (default image)
 //   SETUP_DRY_RUN=1      test hook: run setup.sh --dry-run and skip install.sh
+//   SETUP_EDITION        aws-marketplace on the paid AWS image (default: the first line of
+//                        /etc/ethora/edition): no key field, the install activates the
+//                        instance with the licence server (configure.sh --aws-marketplace)
 'use strict'
 const http = require('http')
 const https = require('https')
@@ -38,6 +41,11 @@ const SETUP_SH = path.join(SOURCE_ROOT, 'deploy', 'scripts', 'setup.sh')
 const INSTALL_SH = path.join(SOURCE_ROOT, 'deploy', 'scripts', 'install.sh')
 const CONFIG_FILE = path.join(SOURCE_ROOT, 'deploy', 'config', 'deploy.yml')
 const MODE = process.env.SETUP_MODE === 'compose' ? 'compose' : 'host'
+const EDITION = (() => {
+  if (process.env.SETUP_EDITION !== undefined) return process.env.SETUP_EDITION.trim()
+  try { return fs.readFileSync('/etc/ethora/edition', 'utf8').split('\n')[0].trim() } catch (_) { return '' }
+})()
+const AWS_PAID = MODE === 'compose' && EDITION === 'aws-marketplace'
 const CLOUD_INSTALL_SH = path.join(SOURCE_ROOT, 'deploy', 'cloud', 'install.sh')
 const BUNDLE_ENV = path.join(SOURCE_ROOT, 'deploy', 'compose', '.env')
 const SETTINGS_FILE = MODE === 'compose' ? 'deploy/compose/.env' : 'deploy/config/deploy.yml'
@@ -180,7 +188,8 @@ function startCompose(a) {
   if (s(a.admin_email)) args.push('--admin-email', s(a.admin_email))
   if (s(a.admin_password)) args.push('--admin-password', s(a.admin_password))
   if (s(a.display_name)) args.push('--display-name', s(a.display_name))
-  if (s(a.license_key)) args.push('--license-key', s(a.license_key))
+  if (AWS_PAID) args.push('--aws-marketplace')
+  else if (s(a.license_key)) args.push('--license-key', s(a.license_key))
   if (a.secure_files === 'off') args.push('--secure-files', 'off')
   if (/^[a-z,]+$/.test(s(a.modules))) args.push('--modules', s(a.modules))
   if (s(a.ai_api_key)) args.push('--ai-api-key', s(a.ai_api_key))
@@ -306,7 +315,15 @@ function formFields(pre) {
 <div class="hint">Platform admin login, base app owner, and Let's Encrypt contact. The admin password is generated and shown once at the end.</div>
 </fieldset>
 
-<fieldset><legend>License</legend>
+${AWS_PAID ? `<fieldset><legend>Ethora Enterprise</legend>
+<p>Licensed through AWS Marketplace: no key needed. The install activates this server with the Ethora licence server, and AWS bills the software with your EC2 usage (manage it under AWS Marketplace, Manage subscriptions).</p>
+<label for="modules">Modules</label>
+<input id="modules" name="modules" type="text" value="${v('modules', 'ai,push,mcp,uptime')}">
+<div class="hint">Any of ai, push, playground, mcp, uptime, calls, comma-separated. All are included; the images are on this server already. calls needs extra ports open (see the bundle README).</div>
+<label for="ai_api_key">OpenAI API key (ai module, optional)</label>
+<input id="ai_api_key" name="ai_api_key" type="password" autocomplete="off">
+<div class="hint">Lets the AI agents answer. It can also be added later in the admin panel (Server settings, AI).</div>
+</fieldset>` : `<fieldset><legend>License</legend>
 <label for="license_key">License key (optional)</label>
 <textarea id="license_key" name="license_key" placeholder="ETHORA1.…  (leave empty for Ethora Core, free)">${v('license_key')}</textarea>
 <div class="hint">Ethora Core needs no key: 5 apps and 500 user accounts per server, nothing expires. Register for free on the License page of the admin panel afterwards to raise the limits, or paste an Enterprise key here or there later.</div>
@@ -316,7 +333,7 @@ function formFields(pre) {
 <label for="ai_api_key">OpenAI API key (ai module, optional)</label>
 <input id="ai_api_key" name="ai_api_key" type="password" autocomplete="off">
 <div class="hint">Lets the AI agents answer. It can also be added later in the admin panel (Server settings, AI).</div>
-</fieldset>
+</fieldset>`}
 
 <details><summary>Advanced</summary><fieldset>
 <label for="display_name">Product display name</label><input id="display_name" name="display_name" type="text" value="${v('display_name', 'Ethora')}">
@@ -346,7 +363,7 @@ button[disabled]{opacity:.5}
 pre{background:#0f1419;color:#d5dbe3;padding:14px;border-radius:12px;max-height:420px;overflow:auto;font-size:12px;white-space:pre-wrap}
 .ok{color:#137333}.bad{color:#b3261e}.chk{display:flex;gap:8px;align-items:center;font-weight:400;margin:8px 0}
 </style></head><body><main>
-<h1>Ethora setup</h1>
+<h1>${AWS_PAID ? 'Ethora Enterprise setup' : 'Ethora setup'}</h1>
 <p class="sub">${MODE === 'compose' ? 'Two answers. Every host derives from the root domain; all secrets are generated. The install takes about five minutes.' : 'Six answers. Every host derives from the root domain; all secrets are generated. Advanced options keep their defaults unless you open them.'}</p>
 <form id="f">${formFields(pre)}
 <p><button id="go" type="submit">Install Ethora</button></p>
