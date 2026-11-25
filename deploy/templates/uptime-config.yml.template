@@ -223,9 +223,14 @@ instances:
         intervalSeconds: 0
         timeoutMs: 60000
 
-      # AI Agents forward path: create app-scoped agent + list + invite into a
-      # room + inspect bot-instances (POST/GET /v2/apps/{appId}/agents,
-      # invite-to-chat, /v2/apps/{appId}/bot-instances).
+      # AI Agents forward path: create app-scoped agent + list + save (PUT
+      # /v2/agents/{id}) + upload a document and wait until GET
+      # /v2/agents/{id}/knowledge shows it indexed + optional one-page crawl
+      # (only when ETHORA_JOURNEY_AI_CRAWL_URL is set in uptime.env) + invite
+      # into a room + inspect bot-instances (POST/GET /v2/apps/{appId}/agents,
+      # /sources/docs, /sources/site-crawl, invite-to-chat,
+      # /v2/apps/{appId}/bot-instances). The waits for the index and the
+      # crawl are why timeoutMs is higher than for the other journeys.
       # ONLY enable on deployments where the AI module is turned on at deploy-
       # config level - it is deliberately excluded from journey_b2b so AI-
       # disabled servers don't false-RED. Uses the same tenant credentials as
@@ -236,7 +241,7 @@ instances:
         severity: optional
         enabled: false
         intervalSeconds: 0
-        timeoutMs: 90000
+        timeoutMs: 300000
 
       # ----- Cheap HTTP availability checks (no fixture overhead) -----
       # These hit single endpoints with deterministic inputs and verify the

@@ -865,7 +865,11 @@ reload_config_from_deploy_yml() {
   # AI providers
   export AI_API_URL=$(yq eval '.ai.ai_api_url // "https://api.openai.com/v1"' "$cfg")
   export AI_API_KEY=$(yq eval '.ai.ai_api_key // ""' "$cfg")
-  export AI_CHAT_MODEL=$(yq eval '.ai.chat_model // "gpt-4.1-mini"' "$cfg")
+  export AI_CHAT_MODEL=$(yq eval '.ai.chat_model // "gpt-5.6-luna"' "$cfg")
+  # Same match as services/api/src/modules/agents/retiredLlmModels.js.
+  if printf '%s' "$AI_CHAT_MODEL" | grep -qiE '^(openai/)?gpt-(4o|4\.1)(-mini)?(-[0-9]{4}-[0-9]{2}-[0-9]{2})?$'; then
+    warn "ai.chat_model in deploy.yml is $AI_CHAT_MODEL, which OpenAI retires on 2027-01-14; agents stop answering then. Set it to a current model (default: gpt-5.6-luna) and run update.sh again."
+  fi
   export AI_EMBEDDING_MODEL=$(yq eval '.ai.embedding_model // "text-embedding-3-small"' "$cfg")
   if [ -z "$AI_API_KEY" ] || [ "$AI_API_KEY" == "null" ]; then
     export AI_API_KEY=$(yq eval '.ai.openai_api_key // ""' "$cfg")

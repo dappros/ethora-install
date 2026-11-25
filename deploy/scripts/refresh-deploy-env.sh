@@ -171,6 +171,14 @@ xmpp_widget_jwt_ttl="$(read_config '.features.xmpp_widget_jwt_ttl // "100d"')"
 livekit_url="$(read_config '.integrations.livekit.url // ""')"
 livekit_api_key="$(read_config '.integrations.livekit.api_key // ""')"
 livekit_api_secret="$(read_config '.integrations.livekit.api_secret // ""')"
+apple_signin_team_id="$(read_config '.integrations.apple_signin.team_id // ""')"
+apple_signin_key_id="$(read_config '.integrations.apple_signin.key_id // ""')"
+apple_signin_private_key="$(read_config '.integrations.apple_signin.private_key // ""')"
+apple_signin_client_ids="$(read_config '.integrations.apple_signin.client_ids // ""')"
+# A key pasted with real line breaks (a YAML block or double quotes) is folded
+# to one line with \n, which the API unfolds; .deploy.env stays one line per key.
+nl=$'\n'; bsn='\n'
+apple_signin_private_key="${apple_signin_private_key//$nl/$bsn}"
 daily_report_receivers="$(read_config '.integrations.analytics.daily_report_receivers // ""')"
 monthly_report_receivers="$(read_config '.integrations.analytics.monthly_report_receivers // ""')"
 report_daily_schedule="$(read_config '.integrations.analytics.daily_schedule // "30 8 * * *"')"
@@ -207,6 +215,12 @@ update_env_var "XMPP_JWT_WIDGET_TTL" "$xmpp_widget_jwt_ttl"
 # The API does not read this at request time: init-services.sh syncs it into
 # Mongo, which is where get-config reads it from.
 force_update_env_var "TRANSLATE_LANGUAGES" "$translate_languages"
+# Sign in with Apple (integrations.apple_signin): token verification for the
+# listed client ids and token revocation on account deletion.
+update_env_var "APPLE_TEAM_ID" "$apple_signin_team_id"
+update_env_var "APPLE_SIGNIN_KEY_ID" "$apple_signin_key_id"
+update_env_var "APPLE_SIGNIN_PRIVATE_KEY" "$apple_signin_private_key"
+update_env_var "APPLE_SIGNIN_CLIENT_IDS" "$apple_signin_client_ids"
 update_env_var "LIVEKIT_URL" "$livekit_url"
 # Video calls: only hand the backend its LiveKit credentials when the feature
 # is enabled, so the call endpoints stay inert otherwise (chat.call.ts lazy-
@@ -453,7 +467,7 @@ update_env_var "AI_PG_URL" "$ai_pg_url_override"
 # AI provider settings
 ai_api_url="$(read_config '.ai.ai_api_url // "https://api.openai.com/v1"')"
 ai_api_key="$(read_config '.ai.ai_api_key // ""')"
-ai_chat_model="$(read_config '.ai.chat_model // "gpt-4.1-mini"')"
+ai_chat_model="$(read_config '.ai.chat_model // "gpt-5.6-luna"')"
 ai_embedding_model="$(read_config '.ai.embedding_model // "text-embedding-3-small"')"
 if [ -z "$ai_api_key" ]; then
   ai_api_key="$(read_config '.ai.openai_api_key // ""')"

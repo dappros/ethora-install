@@ -233,7 +233,7 @@ feedback:
 ai:
   ai_api_url: "https://api.openai.com/v1"
   ai_api_key: ""
-  chat_model: "gpt-4.1-mini"
+  chat_model: "gpt-5.6-luna"
   embedding_model: "text-embedding-3-small"
 
 # Web3 / blockchain providers (optional)

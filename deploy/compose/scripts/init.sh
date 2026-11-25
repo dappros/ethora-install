@@ -10,6 +10,7 @@
 #      app owner and system account     register / change_password over ejabberd's HTTP API
 #   3. data migrations                  scripts/migrateSourceAgentId.js (re-runnable by design),
 #      and the standard agent templates scripts/seedAgentTemplates.js (creates what is missing)
+#      agents on retired chat models    scripts/migrateRetiredLlmModels.js (clears the pin)
 #      MUC rooms hidden from discovery  get_room_options / change_room_option over ejabberd's HTTP API
 #   4. translation server languages     src/utils/scripts/syncTranslateLanguages.js
 #
@@ -119,6 +120,12 @@ done
 if [ -f /app/dist/scripts/seedAgentTemplates.jsc ] || [ -f /app/dist/scripts/seedAgentTemplates.js ]; then
   log "agent templates"
   step scripts/seedAgentTemplates.js || warn "agent template seeding failed (non-fatal)"
+fi
+# Agents pinned to chat models retired on 2027-01-14 go back to the platform
+# default. Images older than the script skip it.
+if [ -f /app/dist/scripts/migrateRetiredLlmModels.jsc ] || [ -f /app/dist/scripts/migrateRetiredLlmModels.js ]; then
+  log "migration scripts/migrateRetiredLlmModels.js"
+  step scripts/migrateRetiredLlmModels.js || warn "migration scripts/migrateRetiredLlmModels.js failed (non-fatal)"
 fi
 
 # ejabberd.yml makes new rooms public:false / public_list:false (hidden from

@@ -88,7 +88,7 @@ skipped = {"API_DOMAIN", "WEB_DOMAIN", "XMPP_DOMAIN", "FILES_DOMAIN", "SECURE_FI
            "ETHORA_TAG", "ETHORA_UPDATER_IMAGE", "ETHORA_UPDATER", "UPDATER_SECRET", "ETHORA_HOST_ROOT", "ETHORA_BUNDLE_DIR", "ETHORA_DOCKER_CONFIG"}  # the updater needs a bundle checkout
 assert [k for k in example if k not in skipped] == list(env), list(env)
 assert env["COMPOSE_PROFILES"] == "" and env["ROOT_DOMAIN"] == "${root_domain}"
-secrets = [k for k in env if k.endswith(("_SECRET", "_PASSWORD", "_KEY")) and k not in ("ETHORA_LICENSE_KEY", "AI_API_KEY", "PLAYGROUND_APP_SECRET")] + ["MINIO_ROOT_USER"]
+secrets = [k for k in env if k.endswith(("_SECRET", "_PASSWORD", "_KEY")) and k not in ("ETHORA_LICENSE_KEY", "AI_API_KEY", "PLAYGROUND_APP_SECRET", "APPLE_SIGNIN_PRIVATE_KEY")] + ["MINIO_ROOT_USER"]
 for k in secrets:
     v = re.fullmatch(r"(ethora)?\$\{([a-z0-9_]+)\}", env[k]); assert v and "${password:" in d["variables"][v.group(2)], (k, env[k])
 print(f"{len(c['domains'])} domains, {len(c['mounts'])} mounts, {len(env)} env keys, {len(secrets)} generated secrets")

@@ -14,6 +14,22 @@ default is not what you want.
 
 ## 2610 (development line, September 2026)
 
+**nginx HTTP/2 security fixes (CVE-2026-123007, CVE-2026-123633).** Both
+allow remote code execution over HTTP/2, which every TLS host of a host-mode
+install serves. On Ubuntu 24.04 the fix is nginx `1.24.0-2ubuntu7.20` or
+later (`dpkg -l nginx`); unattended-upgrades installs it, but the running
+nginx only picks it up after a restart. `update.sh` now upgrades the host
+nginx packages and restarts nginx when its running binary is stale
+(`ETHORA_NGINX_UPGRADE=false` skips that). To check by hand:
+`sudo apt-get install --only-upgrade nginx nginx-common`, then
+`sudo readlink /proc/$(cat /run/nginx.pid)/exe`; if it ends in `(deleted)`,
+`sudo systemctl restart nginx`. The `dappros/ethora-frontend` image moves from
+nginx 1.27 (no longer built upstream) to 1.30; it serves plain HTTP/1.1
+behind the proxy, so it was not exposed. Compose, Helm and Cloudron installs
+use Caddy or the platform's ingress in front, not this nginx. If you run your
+own nginx or ingress in front of Ethora, upgrade it to 1.30.7 / 1.31.9 or a
+distribution build carrying the fix.
+
 **Paid plans through Stripe (hosted service only).** With
 `features.stripe: true` the admin Billing page sells plans per App through
 Stripe Checkout and links to the Stripe Customer Portal. Two new keys under

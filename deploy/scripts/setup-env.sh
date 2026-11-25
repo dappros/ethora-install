@@ -680,6 +680,10 @@ replace_template() {
     replace_literal "{{WEBRTC_HOST}}" "${WEBRTC_HOST:-}"
     replace_literal "{{WEBRTC_API_KEY}}" "${WEBRTC_API_KEY:-}"
     replace_literal "{{WEBRTC_API_SECRET}}" "${WEBRTC_API_SECRET:-}"
+    replace_literal "{{APPLE_TEAM_ID}}" "${APPLE_TEAM_ID:-}"
+    replace_literal "{{APPLE_SIGNIN_KEY_ID}}" "${APPLE_SIGNIN_KEY_ID:-}"
+    replace_literal "{{APPLE_SIGNIN_PRIVATE_KEY}}" "${APPLE_SIGNIN_PRIVATE_KEY:-}"
+    replace_literal "{{APPLE_SIGNIN_CLIENT_IDS}}" "${APPLE_SIGNIN_CLIENT_IDS:-}"
     # coturn.conf.template (the bundled TURN relay); the API's own TURN lines
     # are appended to its .env after the render, see "Peer-to-peer calls" below.
     replace_literal "{{TURN_REALM}}" "${TURN_REALM:-}"

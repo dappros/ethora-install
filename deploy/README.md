@@ -428,6 +428,13 @@ or unexpected:
   with the variable unset does not prune and prints how to enable it.
   Never deleted regardless: `deploy.yml`, data directories and docker
   volumes, `.env` files, `uploads/`, `node_modules` and build output.
+- **Host nginx kept patched.** `setup-nginx.sh` (run by `install.sh` and
+  `update.sh`) upgrades the installed nginx packages to the newest build in
+  the host's apt sources, keeping local edits to `/etc/nginx`, and restarts
+  nginx when the running master still uses a binary the package has replaced
+  (a reload alone keeps the old one). The TLS vhosts serve HTTP/2, where
+  nginx's critical bugs tend to land. `ETHORA_NGINX_UPGRADE=false` skips the
+  upgrade; a failed upgrade is a warning, not a failed update.
 - **Developer checkouts.** When the source directory is a
   `ethora-monoserver` clone with submodules, the same command works; the
   script runs `git submodule update --init --recursive` after the checkout.

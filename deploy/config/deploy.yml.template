@@ -516,6 +516,20 @@ integrations:
     api_key: ""
     api_secret: ""
 
+  # Sign in with Apple (mobile apps and the web app). The API verifies Apple
+  # identity tokens for the client ids listed here and, with the key below,
+  # revokes a user's Apple tokens when the account is deleted (an App Store
+  # requirement). team_id, key_id and the private key come from the Apple
+  # developer account (Keys > Sign in with Apple). Paste the key as ONE line
+  # in SINGLE quotes with \n in place of line breaks (in double quotes YAML
+  # turns \n into real line breaks); the API unfolds it. Empty = the
+  # revocation step is skipped and only com.ethora.app is accepted.
+  apple_signin:
+    team_id: ""
+    key_id: ""
+    private_key: ''      # the .p8 file's PEM text on one line, newlines written as \n
+    client_ids: ""       # comma separated bundle ids and the web Services ID, e.g. com.ethora.app,com.example.app
+
   # STUN/TURN for peer-to-peer calls (features.calls_p2p). With
   # services.coturn.enabled the installer fills these in itself (URLs from
   # domains.turn, a generated secret); set them for a TURN server of your own.

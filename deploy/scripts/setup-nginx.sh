@@ -153,6 +153,60 @@ if [ "$API_DOMAIN" == "localhost" ]; then
     exit 0
 fi
 
+# Keep the host nginx on the newest build the distribution ships. Every TLS
+# vhost below listens with HTTP/2, which is where nginx's critical bugs tend
+# to land (CVE-2026-123007 and CVE-2026-123633, November 2026: remote code
+# execution over HTTP/2). Hosts without unattended-upgrades would otherwise
+# keep a vulnerable binary across any number of updates. Only the nginx
+# packages already installed are upgraded, local edits to /etc/nginx are kept,
+# and a failure here is a warning, never a failed deploy.
+# ETHORA_NGINX_UPGRADE=false skips it.
+upgrade_nginx_packages() {
+    [ "${ETHORA_NGINX_UPGRADE:-true}" = "false" ] && { log "Skipping nginx package upgrade (ETHORA_NGINX_UPGRADE=false)"; return 0; }
+    command -v apt-get >/dev/null 2>&1 && command -v dpkg-query >/dev/null 2>&1 || return 0
+    local pkgs=() p before after
+    for p in nginx nginx-common nginx-core nginx-full nginx-light nginx-extras; do
+        dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q "install ok installed" && pkgs+=("$p")
+    done
+    [ "${#pkgs[@]}" -gt 0 ] || return 0
+    before="$(nginx -v 2>&1) ($(dpkg-query -W -f='${Version}' nginx-common 2>/dev/null || true))"
+    log "Checking for nginx package updates..."
+    timeout 300 env DEBIAN_FRONTEND=noninteractive apt-get update -y -o DPkg::Lock::Timeout=120 >/dev/null 2>&1 || true
+    if ! timeout 600 env DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade \
+            -o DPkg::Lock::Timeout=120 \
+            -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
+            "${pkgs[@]}" >/dev/null 2>&1; then
+        log "[WARN] Could not upgrade nginx (${pkgs[*]}); upgrade it by hand: apt-get install --only-upgrade ${pkgs[*]}"
+        return 0
+    fi
+    after="$(nginx -v 2>&1) ($(dpkg-query -W -f='${Version}' nginx-common 2>/dev/null || true))"
+    if [ "$before" != "$after" ]; then
+        log "Upgraded nginx: $before -> $after"
+    else
+        log "nginx is current: $after"
+    fi
+}
+
+# A reload starts new workers from the running master, which keeps the binary
+# it was started with. When the package replaced /usr/sbin/nginx (here or by
+# unattended-upgrades) without a restart, the master's executable shows as
+# deleted; only a restart puts the new binary in service.
+restart_nginx_if_binary_replaced() {
+    local pid exe
+    pid="$(systemctl show -p MainPID --value nginx 2>/dev/null || true)"
+    { [ -n "$pid" ] && [ "$pid" != "0" ]; } || pid="$(cat /run/nginx.pid 2>/dev/null || true)"
+    [ -n "$pid" ] || return 0
+    exe="$(readlink "/proc/$pid/exe" 2>/dev/null || true)"
+    case "$exe" in
+        *" (deleted)")
+            log "Running nginx master predates the installed binary; restarting nginx to load it"
+            systemctl restart nginx || log "[WARN] nginx restart failed; run: systemctl restart nginx"
+            ;;
+    esac
+}
+
+upgrade_nginx_packages
+
 # Replace template variables
 replace_template() {
     local template_file="$1"
@@ -501,6 +555,7 @@ if nginx -t; then
     log "Nginx configuration is valid"
     systemctl reload nginx || systemctl restart nginx
     log "Nginx reloaded successfully"
+    restart_nginx_if_binary_replaced
 else
     error "Nginx configuration test failed"
 fi

@@ -1243,7 +1243,7 @@ parse_config() {
     # AI providers (optional)
     export AI_API_URL=$(yq eval '.ai.ai_api_url // "https://api.openai.com/v1"' "$CONFIG_FILE")
     export AI_API_KEY=$(yq eval '.ai.ai_api_key // ""' "$CONFIG_FILE")
-    export AI_CHAT_MODEL=$(yq eval '.ai.chat_model // "gpt-4.1-mini"' "$CONFIG_FILE")
+    export AI_CHAT_MODEL=$(yq eval '.ai.chat_model // "gpt-5.6-luna"' "$CONFIG_FILE")
     export AI_EMBEDDING_MODEL=$(yq eval '.ai.embedding_model // "text-embedding-3-small"' "$CONFIG_FILE")
     if [ -z "$AI_API_KEY" ] || [ "$AI_API_KEY" == "null" ]; then
         export AI_API_KEY=$(yq eval '.ai.openai_api_key // ""' "$CONFIG_FILE")
@@ -1643,7 +1643,7 @@ export HUBSPOT_FORM_ID_TUTORIAL="${HUBSPOT_FORM_ID_TUTORIAL:-}"
 export HUBSPOT_REGION="${HUBSPOT_REGION:-na1}"
 export AI_API_URL="${AI_API_URL:-https://api.openai.com/v1}"
 export AI_API_KEY="${AI_API_KEY:-}"
-export AI_CHAT_MODEL="${AI_CHAT_MODEL:-gpt-4.1-mini}"
+export AI_CHAT_MODEL="${AI_CHAT_MODEL:-gpt-5.6-luna}"
 export AI_EMBEDDING_MODEL="${AI_EMBEDDING_MODEL:-text-embedding-3-small}"
 export COINBASE_PRIVATE="${COINBASE_PRIVATE:-}"
 export EXTERNAL_BC_NETWORKNAME="${EXTERNAL_BC_NETWORKNAME:-}"

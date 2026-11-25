@@ -81,6 +81,11 @@ MIGRATIONS=(
   # a fresh install offered just "Blank agent". Creates what is missing, never
   # rewrites an existing template.
   "agent-templates|scripts/seedAgentTemplates.js|"
+  # Chat models OpenAI retires on 2027-01-14 (gpt-4o, gpt-4o-mini, gpt-4.1,
+  # gpt-4.1-mini). Clears Agent.llmModel / App.aiBot.llmModel pinned to one so
+  # those agents use the platform default, and removes a retired AI_CHAT_MODEL
+  # server setting (with an ai-service restart request). Idempotent.
+  "retired-llm-models|scripts/migrateRetiredLlmModels.js|"
 )
 
 DRY_RUN=""

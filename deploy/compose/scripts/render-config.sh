@@ -316,6 +316,12 @@ def ERRORS_AI_DSN ""
 def ENABLE_SWAGGER true
 def ENABLE_SWAGGER_INTERNAL false
 def DEFAULT_ROOMS_INACTIVE_DAYS 0
+# Sign in with Apple: token verification for these client ids and token
+# revocation on account deletion (team id, key id, one-line private key).
+def APPLE_TEAM_ID ""
+def APPLE_SIGNIN_KEY_ID ""
+def APPLE_SIGNIN_PRIVATE_KEY ""
+def APPLE_SIGNIN_CLIENT_IDS ""
 def EMAIL_TLD_VALIDATION off
 def RATE_LIMIT_DISABLED false
 def REFRESH_TOKEN_TTL_DAYS 7
