@@ -540,7 +540,9 @@ fi
 # Optional databases.mysql.performance_schema: false switches MySQL's instrumentation
 # off (a few hundred MB); anything else keeps the MySQL default. Always written, so
 # removing the key switches it back on at the next update.
-mysql_perf_schema="$(read_config '.databases.mysql.performance_schema // ""')"
+# Read raw: yq's // alternative swallows an explicit false (see mcp.enabled in
+# install.sh); read_config already turns null into an empty string.
+mysql_perf_schema="$(read_config '.databases.mysql.performance_schema')"
 mysql_extra_args=""
 if [ "$mysql_perf_schema" = "false" ]; then
   mysql_extra_args="--performance-schema=OFF"
