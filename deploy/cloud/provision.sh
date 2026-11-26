@@ -27,6 +27,9 @@ export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1
 
 STEP="${ETHORA_STEP:-base}"
 EDITION="${ETHORA_EDITION:-core}"
+# One Docker client config for every step: the pulls may run in a systemd
+# unit (Azure), which does not see a login stored under the SSH user's HOME.
+export DOCKER_CONFIG=/root/.docker
 case "$EDITION" in core|aws-marketplace|azure-marketplace) ;; *) echo "unknown ETHORA_EDITION: $EDITION" >&2; exit 2 ;; esac
 INSTALL_REF="${INSTALL_REF:-main}"
 INSTALL_REPO="${INSTALL_REPO:-https://github.com/dappros/ethora-install.git}"

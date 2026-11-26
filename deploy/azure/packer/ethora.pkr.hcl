@@ -120,7 +120,7 @@ source "azure-arm" "ethora" {
   image_sku       = "server"
 
   ssh_username                      = "packer"
-  temp_resource_group_name          = "ethora-packer-${local.version}"
+  temp_resource_group_name          = "ethora-packer-${local.product}-${local.version}"
   managed_image_resource_group_name = var.gallery_resource_group
   managed_image_name                = "ethora-${local.product}-${local.version}"
   # The Enterprise images take about 10 GB more.
