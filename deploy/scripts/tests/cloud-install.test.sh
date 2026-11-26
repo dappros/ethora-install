@@ -52,6 +52,9 @@ echo "# Ethora Enterprise through AWS Marketplace (paid image)"
 out="$(ETHORA_DONE_FILE="$T/done" bash "$T/src/deploy/cloud/install.sh" --domain chat.example.com --admin-email ops@example.com --aws-marketplace --dry-run 2>&1)"; rc=$?
 [ "$rc" = 0 ] && echo "$out" | grep -q "Ethora Enterprise through AWS Marketplace" && echo "$out" | grep -q "AWS Marketplace: would activate" \
   && echo "$out" | grep -qE "Modules: +ai push mcp uptime" && ok "install.sh --aws-marketplace: activation (dry run) and the default modules" || fail "install.sh --aws-marketplace" "$out"
+out="$(ETHORA_DONE_FILE="$T/done" bash "$T/src/deploy/cloud/install.sh" --domain chat.example.com --admin-email ops@example.com --azure-marketplace --dry-run 2>&1)"
+echo "$out" | grep -q "Ethora Enterprise through Azure Marketplace" && echo "$out" | grep -q "Azure Marketplace: would activate" && ! echo "$out" | grep -q "AWS Marketplace" \
+  && ok "install.sh --azure-marketplace: Azure activation (dry run), no AWS text" || fail "install.sh --azure-marketplace" "$out"
 out="$(ETHORA_EDITION=nope ETHORA_STEP=base bash "$T/src/deploy/cloud/provision.sh" 2>&1)"; [ $? = 2 ] && ok "provision.sh refuses an unknown edition" || fail "provision.sh unknown edition" "$out"
 port=$((20000 + RANDOM % 20000))
 ETHORA_SOURCE_ROOT="$T/src" SETUP_MODE=compose SETUP_EDITION=aws-marketplace SETUP_DRY_RUN=1 SETUP_PASSWORD=pw SETUP_PORT=$port SETUP_BIND=127.0.0.1 \

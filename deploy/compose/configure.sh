@@ -25,6 +25,8 @@
 #                            from the licence server, which checks this EC2 instance's
 #                            AWS-signed identity (the instance must run the paid AMI);
 #                            kept in .env (ETHORA_LICENSE_SOURCE), so every re-run renews it
+#   --azure-marketplace      the same for Azure Marketplace: the VM's attested document
+#                            (Azure IMDS, signed by Microsoft) must name our paid plan
 #   --modules LIST           modules to run, comma-separated (ai, push, playground,
 #                            mcp, uptime, calls), or `none`; each one is a compose
 #                            profile. The Enterprise modules' images are private:
@@ -97,6 +99,7 @@ while [ $# -gt 0 ]; do
     --license-key) A_LICENSE_KEY="$2"; shift 2 ;;
     --no-call-home) A_CALL_HOME="false"; shift ;;
     --aws-marketplace) A_LICENSE_SOURCE="aws-marketplace"; shift ;;
+    --azure-marketplace) A_LICENSE_SOURCE="azure-marketplace"; shift ;;
     --modules) A_MODULES="$2"; shift 2 ;;
     --ai-api-key) A_AI_API_KEY="$2"; shift 2 ;;
     --ai-api-url) A_AI_API_URL="$2"; shift 2 ;;
@@ -270,7 +273,7 @@ A_CALL_HOME="${A_CALL_HOME:-true}"
 # signs (IMDSv2) for our paid product code and issues a key bound to this
 # instance and domain. Every run re-activates (domain changes, renewals).
 [ -z "$A_LICENSE_SOURCE" ] && A_LICENSE_SOURCE="$(old ETHORA_LICENSE_SOURCE)"
-case "$A_LICENSE_SOURCE" in ""|aws-marketplace) ;; *) die "unknown licence source: $A_LICENSE_SOURCE (aws-marketplace, or empty for a key)" ;; esac
+case "$A_LICENSE_SOURCE" in ""|aws-marketplace|azure-marketplace) ;; *) die "unknown licence source: $A_LICENSE_SOURCE (aws-marketplace, azure-marketplace, or empty for a key)" ;; esac
 json_esc() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\n'/\\n}"; s="${s//$'\r'/\\r}"; s="${s//$'\t'/\\t}"; printf '%s' "$s"; }
 aws_activate() {
   local imds="${ETHORA_IMDS_URL:-http://169.254.169.254}" server tok doc sig p7 body domain key err
@@ -296,10 +299,39 @@ aws_activate() {
   A_LICENSE_KEY="$key"
   log "AWS Marketplace: activated ($(printf '%s' "$body" | sed -n 's/.*"lid" *: *"\([^"]*\)".*/\1/p' | head -1), domain $domain, expires $(printf '%s' "$body" | sed -n 's/.*"expiresAt" *: *"\([^"]*\)".*/\1/p' | head -1))"
 }
-if [ "$A_LICENSE_SOURCE" = aws-marketplace ]; then
-  [ "$A_CALL_HOME" != false ] || die "--aws-marketplace needs call-home (the key is renewed by the licence server)"
-  if [ "$DRY_RUN" = true ]; then log "AWS Marketplace: would activate this instance (dry run)"; else aws_activate; fi
-fi
+# Azure: the attested document (PKCS#7 signed by Microsoft) names the
+# Marketplace plan the VM was deployed from; fetched right before the call
+# (it expires within hours, sometimes minutes).
+azure_activate() {
+  local imds="${ETHORA_IMDS_URL:-http://169.254.169.254}" server nonce raw sig body domain key err
+  server="${ETHORA_LICENSE_SERVER_URL:-$(old ETHORA_LICENSE_SERVER_URL)}"; server="${server:-https://license.ethora.com}"
+  command -v curl >/dev/null 2>&1 || die "--azure-marketplace needs curl"
+  nonce="$(date +%s)"; nonce="${nonce:0:10}"
+  raw="$(curl -fsS -m 10 -H 'Metadata: true' "$imds/metadata/attested/document?api-version=2023-07-01&nonce=$nonce" 2>/dev/null)" \
+    || die "--azure-marketplace: this does not look like an Azure VM (no instance metadata at $imds)"
+  sig="$(printf '%s' "$raw" | sed -n 's/.*"signature" *: *"\([^"]*\)".*/\1/p' | head -1)"
+  [ -n "$sig" ] || die "--azure-marketplace: the VM's attested document came back empty"
+  domain="${A_DOMAIN:-$(printf '%s' "$A_PUBLIC_URL" | sed -E 's#^https?://##; s#[:/].*$##')}"
+  body="{\"signature\":\"$(json_esc "$sig")\",\"nonce\":\"$nonce\",\"domain\":\"$domain\",\"email\":\"$A_ADMIN_EMAIL\"}"
+  err="$(mktemp)"
+  if ! body="$(curl -sS -m 30 -X POST -H 'Content-Type: application/json' --data-binary "$body" "$server/v1/azure/activate" 2>"$err")"; then
+    die "--azure-marketplace: cannot reach the licence server $server ($(head -1 "$err"))"
+  fi
+  rm -f "$err"
+  key="$(printf '%s' "$body" | sed -n 's/.*"key" *: *"\([^"]*\)".*/\1/p' | head -1)"
+  if [ -z "$key" ] || ! valid_key "$key"; then
+    die "--azure-marketplace: the licence server did not activate this VM: $(printf '%s' "$body" | sed -n 's/.*"error" *: *"\([^"]*\)".*/\1/p' | head -1) (support@ethora.com)"
+  fi
+  A_LICENSE_KEY="$key"
+  log "Azure Marketplace: activated ($(printf '%s' "$body" | sed -n 's/.*"lid" *: *"\([^"]*\)".*/\1/p' | head -1), domain $domain, expires $(printf '%s' "$body" | sed -n 's/.*"expiresAt" *: *"\([^"]*\)".*/\1/p' | head -1))"
+}
+case "$A_LICENSE_SOURCE" in
+  aws-marketplace|azure-marketplace)
+    [ "$A_CALL_HOME" != false ] || die "--$A_LICENSE_SOURCE needs call-home (the key is renewed by the licence server)"
+    if [ "$DRY_RUN" = true ]; then log "$([ "$A_LICENSE_SOURCE" = aws-marketplace ] && echo AWS || echo Azure) Marketplace: would activate this instance (dry run)"
+    elif [ "$A_LICENSE_SOURCE" = aws-marketplace ]; then aws_activate
+    else azure_activate; fi ;;
+esac
 
 # Profiles: the bundled proxy (caddy) and the Enterprise modules. The
 # modules answered replace the previous ones; the proxy choice is kept.
@@ -360,7 +392,12 @@ else
 fi
 echo "  Admin:           $A_ADMIN_EMAIL  ($([ "$GENERATED_PASSWORD" = true ] && echo "password generated" || echo "password kept/supplied"))"
 echo "  Display name:    $A_DISPLAY_NAME"
-echo "  License:         $([ "$A_LICENSE_SOURCE" = aws-marketplace ] && echo "AWS Marketplace (billed by AWS, key from the licence server)" || { [ -n "$A_LICENSE_KEY" ] && echo "key ${A_LICENSE_KEY:0:24}..." || echo "none (Ethora Core; register from the admin panel)"; })  call-home=$A_CALL_HOME"
+case "$A_LICENSE_SOURCE" in
+  aws-marketplace) LIC_TEXT="AWS Marketplace (billed by AWS, key from the licence server)" ;;
+  azure-marketplace) LIC_TEXT="Azure Marketplace (billed by Azure, key from the licence server)" ;;
+  *) if [ -n "$A_LICENSE_KEY" ]; then LIC_TEXT="key ${A_LICENSE_KEY:0:24}..."; else LIC_TEXT="none (Ethora Core; register from the admin panel)"; fi ;;
+esac
+echo "  License:         $LIC_TEXT  call-home=$A_CALL_HOME"
 if [ -n "$MODULES" ]; then
   echo "  Modules:         $MODULES"
   [ "$AI_ON" != true ] || echo "                   ai: widget=$([ -n "$A_PUBLIC_URL" ] && echo "$A_PUBLIC_URL/widget/" || echo "${V_WIDGET:-widget.$A_DOMAIN}"), AI provider $A_AI_API_URL, key $([ -n "$A_AI_API_KEY" ] && echo set || echo MISSING)"

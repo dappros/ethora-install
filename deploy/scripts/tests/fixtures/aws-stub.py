@@ -1,5 +1,6 @@
-# Test stub for configure.sh --aws-marketplace: answers as EC2 instance
-# metadata (IMDSv2) and as the licence server's /v1/aws/activate.
+# Test stub for configure.sh --aws-marketplace / --azure-marketplace: answers
+# as EC2 instance metadata (IMDSv2), as Azure IMDS (attested document) and as
+# the licence server's /v1/aws/activate and /v1/azure/activate.
 #   python3 aws-stub.py <port> <dir>   (dir: document.json, writes request.json)
 import json, os, sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -12,6 +13,9 @@ class H(BaseHTTPRequestHandler):
     def do_PUT(self):
         self.send(200, 'tok123') if self.path == '/latest/api/token' else self.send(404, '')
     def do_GET(self):
+        if self.path.startswith('/metadata/attested/document'):
+            if self.headers.get('Metadata') != 'true': return self.send(400, '')
+            return self.send(200, json.dumps({'encoding': 'pkcs7', 'signature': 'MIIAzure/sig+data=='}), 'application/json')
         if self.headers.get('X-aws-ec2-metadata-token') != 'tok123': return self.send(401, '')
         if self.path.endswith('/document'): return self.send(200, DOC)
         if self.path.endswith('/signature'): return self.send(200, 'c2ln\nbmF0dXJl')
@@ -21,6 +25,10 @@ class H(BaseHTTPRequestHandler):
         raw = self.rfile.read(int(self.headers.get('Content-Length', 0))).decode()
         req = json.loads(raw)
         open(os.path.join(DIR, 'request.json'), 'w').write(raw)
+        if self.path == '/v1/azure/activate':
+            ok = req.get('signature') == 'MIIAzure/sig+data==' and len(req.get('nonce', '')) == 10 and req.get('nonce', '').isdigit()
+            if not ok: return self.send(400, json.dumps({'ok': False, 'error': 'bad request'}), 'application/json')
+            return self.send(201, json.dumps({'ok': True, 'lid': 'AZ-vm1', 'tier': 'enterprise', 'domain': req['domain'], 'key': 'ETHORA1.eyJsaWQiOiJBWiJ9.c2ln', 'expiresAt': '2026-12-26T00:00:00.000Z'}), 'application/json')
         if req.get('document') != DOC: return self.send(400, json.dumps({'ok': False, 'error': 'document altered'}), 'application/json')
         if 'paid' not in DOC: return self.send(403, json.dumps({'ok': False, 'error': 'this instance does not run the paid product', 'code': 'NOT_PAID_PRODUCT'}), 'application/json')
         self.send(201, json.dumps({'ok': True, 'lid': 'AWS-i-0abc', 'tier': 'enterprise', 'domain': req['domain'], 'key': 'ETHORA1.eyJsaWQiOiJBV1MifQ.c2ln', 'expiresAt': '2026-12-25T00:00:00.000Z'}), 'application/json')

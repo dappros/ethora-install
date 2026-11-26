@@ -805,6 +805,15 @@ if command -v python3 >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
   kill "$spid" 2>/dev/null; wait "$spid" 2>/dev/null
   ETHORA_IMDS_URL="http://127.0.0.1:9" "$B5/configure.sh" --yes --no-registry-check >/dev/null 2>"$T/aw.err"; grep -q 'not look like an EC2 instance' "$T/aw.err" \
     && ok "--aws-marketplace off EC2: a clear error" || fail "off-EC2 error" "$(cat "$T/aw.err")"
+  B6="$T/b6"; cp -r "$BUNDLE" "$B6"; rm -rf "$B6/.env" "$B6/.update"
+  python3 "$DEPLOY/scripts/tests/fixtures/aws-stub.py" "$aport" "$AW" & spid=$!
+  for i in $(seq 1 30); do curl -s -o /dev/null -X PUT "http://127.0.0.1:$aport/latest/api/token" && break; sleep 0.2; done
+  ETHORA_IMDS_URL="http://127.0.0.1:$aport" ETHORA_LICENSE_SERVER_URL="http://127.0.0.1:$aport" "$B6/configure.sh" --yes --no-registry-check \
+    --domain chat.example.com --admin-email ops@example.com --azure-marketplace >"$T/az.out" 2>"$T/az.err" \
+    && grep -qx 'ETHORA_LICENSE_KEY=ETHORA1.eyJsaWQiOiJBWiJ9.c2ln' "$B6/.env" && grep -qx 'ETHORA_LICENSE_SOURCE=azure-marketplace' "$B6/.env" \
+    && grep -q 'Azure Marketplace (billed by Azure' "$T/az.out" && ! grep -q 'AWS Marketplace' "$T/az.out" \
+    && ok "--azure-marketplace: attested document + nonce to the licence server, key and source written" || fail "--azure-marketplace" "$(cat "$T/az.err")"
+  kill "$spid" 2>/dev/null; wait "$spid" 2>/dev/null
 else skip "configure.sh --aws-marketplace (python3 or curl not available)"; fi
 
 echo "# installer compose files publish on loopback only"

@@ -147,6 +147,23 @@ credential as for any Enterprise key. Licence server settings:
 `AWS_PAID_PRODUCT_CODES` (the listing's product code), `AWS_KEY_DAYS`,
 `AWS_FEATURES`, `AWS_LIMITS`, `AWS_REGISTRY_USERNAME` / `AWS_REGISTRY_TOKEN`.
 
+### Ethora Enterprise through Azure Marketplace
+
+The same model on Azure: a paid plan of the Ethora Enterprise virtual machine
+offer, billed by Azure per VM hour (by core count) with a one-year software
+reservation discount. The image's `/etc/ethora/edition` says
+`azure-marketplace`; `configure.sh --azure-marketplace` asks Azure IMDS for
+the VM's attested document (`/metadata/attested/document`, a PKCS#7 signed by
+Microsoft, with a fresh 10-digit nonce) and sends it to
+`POST https://license.ethora.com/v1/azure/activate`. The licence server
+verifies the signature against Microsoft's Azure TLS issuing CAs and roots
+(bundled), the signer name `metadata.azure.com`, the nonce and the document's
+age, and that `plan` names one of `AZURE_PAID_PLANS`
+(`publisher:offer:plan`). The key (licence `AZ-<vm id>`) carries
+`azure: { vmId, subscriptionId }`; the API compares the VM id with Azure IMDS
+on the same schedule and with the same rules as on AWS
+(`azure_instance_mismatch`, `azure_instance_unverified`).
+
 ## What operators see
 
 - **Admin panel.** A banner at the top of every page for admins on the base

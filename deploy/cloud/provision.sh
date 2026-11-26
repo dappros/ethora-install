@@ -27,7 +27,7 @@ export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1
 
 STEP="${ETHORA_STEP:-base}"
 EDITION="${ETHORA_EDITION:-core}"
-case "$EDITION" in core|aws-marketplace) ;; *) echo "unknown ETHORA_EDITION: $EDITION" >&2; exit 2 ;; esac
+case "$EDITION" in core|aws-marketplace|azure-marketplace) ;; *) echo "unknown ETHORA_EDITION: $EDITION" >&2; exit 2 ;; esac
 INSTALL_REF="${INSTALL_REF:-main}"
 INSTALL_REPO="${INSTALL_REPO:-https://github.com/dappros/ethora-install.git}"
 ETHORA_USER="${ETHORA_USER:-ubuntu}"
@@ -82,9 +82,9 @@ pull-start)
   # caddy and verify profiles), so the list never drifts from the bundle.
   cd "$BUNDLE"
   profiles=(--profile caddy --profile verify --profile updater)
-  if [ "$EDITION" = aws-marketplace ]; then
+  if [ "$EDITION" != core ]; then
     for m in ai push playground mcp uptime calls; do profiles+=(--profile "$m"); done
-    [ -n "${REGISTRY_TOKEN:-}" ] || { echo "aws-marketplace: REGISTRY_USER / REGISTRY_TOKEN are needed for the module images" >&2; exit 1; }
+    [ -n "${REGISTRY_TOKEN:-}" ] || { echo "$EDITION: REGISTRY_USER / REGISTRY_TOKEN are needed for the module images" >&2; exit 1; }
     printf '%s' "$REGISTRY_TOKEN" | docker login -u "${REGISTRY_USER:?}" --password-stdin docker.io >/dev/null
   fi
   docker compose "${profiles[@]}" config --images | sort -u > /tmp/ethora-images

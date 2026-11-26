@@ -25,9 +25,10 @@
 //   SETUP_LOG            default /var/log/ethora-setup.log
 //   SETUP_DEFAULT_MODE   source | image, prefills the run-mode fields (default image)
 //   SETUP_DRY_RUN=1      test hook: run setup.sh --dry-run and skip install.sh
-//   SETUP_EDITION        aws-marketplace on the paid AWS image (default: the first line of
-//                        /etc/ethora/edition): no key field, the install activates the
-//                        instance with the licence server (configure.sh --aws-marketplace)
+//   SETUP_EDITION        aws-marketplace / azure-marketplace on the paid images (default: the
+//                        first line of /etc/ethora/edition): no key field, the install
+//                        activates the instance with the licence server (configure.sh
+//                        --aws-marketplace / --azure-marketplace)
 'use strict'
 const http = require('http')
 const https = require('https')
@@ -45,7 +46,8 @@ const EDITION = (() => {
   if (process.env.SETUP_EDITION !== undefined) return process.env.SETUP_EDITION.trim()
   try { return fs.readFileSync('/etc/ethora/edition', 'utf8').split('\n')[0].trim() } catch (_) { return '' }
 })()
-const AWS_PAID = MODE === 'compose' && EDITION === 'aws-marketplace'
+const PAID = MODE === 'compose' && (EDITION === 'aws-marketplace' || EDITION === 'azure-marketplace') ? EDITION : ''
+const PAID_CLOUD = PAID === 'azure-marketplace' ? 'Azure' : 'AWS'
 const CLOUD_INSTALL_SH = path.join(SOURCE_ROOT, 'deploy', 'cloud', 'install.sh')
 const BUNDLE_ENV = path.join(SOURCE_ROOT, 'deploy', 'compose', '.env')
 const SETTINGS_FILE = MODE === 'compose' ? 'deploy/compose/.env' : 'deploy/config/deploy.yml'
@@ -188,7 +190,7 @@ function startCompose(a) {
   if (s(a.admin_email)) args.push('--admin-email', s(a.admin_email))
   if (s(a.admin_password)) args.push('--admin-password', s(a.admin_password))
   if (s(a.display_name)) args.push('--display-name', s(a.display_name))
-  if (AWS_PAID) args.push('--aws-marketplace')
+  if (PAID) args.push(`--${PAID}`)
   else if (s(a.license_key)) args.push('--license-key', s(a.license_key))
   if (a.secure_files === 'off') args.push('--secure-files', 'off')
   if (/^[a-z,]+$/.test(s(a.modules))) args.push('--modules', s(a.modules))
@@ -315,8 +317,8 @@ function formFields(pre) {
 <div class="hint">Platform admin login, base app owner, and Let's Encrypt contact. The admin password is generated and shown once at the end.</div>
 </fieldset>
 
-${AWS_PAID ? `<fieldset><legend>Ethora Enterprise</legend>
-<p>Licensed through AWS Marketplace: no key needed. The install activates this server with the Ethora licence server, and AWS bills the software with your EC2 usage (manage it under AWS Marketplace, Manage subscriptions).</p>
+${PAID ? `<fieldset><legend>Ethora Enterprise</legend>
+<p>Licensed through ${PAID_CLOUD} Marketplace: no key needed. The install activates this server with the Ethora licence server, and ${PAID_CLOUD} bills the software with ${PAID_CLOUD === 'AWS' ? 'your EC2 usage (manage it under AWS Marketplace, Manage subscriptions)' : 'your virtual machine (see Marketplace purchases in the Azure portal)'}.</p>
 <label for="modules">Modules</label>
 <input id="modules" name="modules" type="text" value="${v('modules', 'ai,push,mcp,uptime')}">
 <div class="hint">Any of ai, push, playground, mcp, uptime, calls, comma-separated. All are included; the images are on this server already. calls needs extra ports open (see the bundle README).</div>
@@ -363,7 +365,7 @@ button[disabled]{opacity:.5}
 pre{background:#0f1419;color:#d5dbe3;padding:14px;border-radius:12px;max-height:420px;overflow:auto;font-size:12px;white-space:pre-wrap}
 .ok{color:#137333}.bad{color:#b3261e}.chk{display:flex;gap:8px;align-items:center;font-weight:400;margin:8px 0}
 </style></head><body><main>
-<h1>${AWS_PAID ? 'Ethora Enterprise setup' : 'Ethora setup'}</h1>
+<h1>${PAID ? 'Ethora Enterprise setup' : 'Ethora setup'}</h1>
 <p class="sub">${MODE === 'compose' ? 'Two answers. Every host derives from the root domain; all secrets are generated. The install takes about five minutes.' : 'Six answers. Every host derives from the root domain; all secrets are generated. Advanced options keep their defaults unless you open them.'}</p>
 <form id="f">${formFields(pre)}
 <p><button id="go" type="submit">Install Ethora</button></p>

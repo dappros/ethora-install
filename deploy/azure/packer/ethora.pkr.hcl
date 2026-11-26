@@ -3,6 +3,9 @@
 #   set -a; . ~/k/azure-sp.env; set +a       # ARM_CLIENT_ID/SECRET/TENANT_ID/SUBSCRIPTION_ID
 #   packer init  deploy/azure/packer
 #   packer build -var install_ref=main deploy/azure/packer
+#   packer build -var install_ref=main -var edition=azure-marketplace -var registry_user=... \
+#     -var registry_token=... deploy/azure/packer    (Ethora Enterprise, paid through Azure;
+#     gallery image definition ethora-enterprise, every module image pre-pulled)
 #
 # Same content as the AWS AMI: Ubuntu 24.04 (Canonical's Gen2 Marketplace
 # image) with every update, Docker, Node 24, the public installer at a
@@ -61,8 +64,26 @@ variable "gallery_name" {
   default = "ethora"
 }
 variable "image_definition" {
+  type        = string
+  default     = ""
+  description = "Gallery image definition; empty = ethora-core, or ethora-enterprise for edition azure-marketplace"
+}
+variable "edition" {
   type    = string
-  default = "ethora-core"
+  default = "core"
+  validation {
+    condition     = contains(["core", "azure-marketplace"], var.edition)
+    error_message = "The edition must be core or azure-marketplace."
+  }
+}
+variable "registry_user" {
+  type    = string
+  default = ""
+}
+variable "registry_token" {
+  type      = string
+  default   = ""
+  sensitive = true
 }
 variable "image_version" {
   type        = string
@@ -79,7 +100,9 @@ variable "install_repo" {
 }
 
 locals {
-  version = var.image_version != "" ? var.image_version : formatdate("YYYY.MMDD.hhmm", timestamp())
+  version    = var.image_version != "" ? var.image_version : formatdate("YYYY.MMDD.hhmm", timestamp())
+  product    = var.edition == "core" ? "core" : "enterprise"
+  definition = var.image_definition != "" ? var.image_definition : "ethora-${local.product}"
 }
 
 source "azure-arm" "ethora" {
@@ -99,20 +122,22 @@ source "azure-arm" "ethora" {
   ssh_username                      = "packer"
   temp_resource_group_name          = "ethora-packer-${local.version}"
   managed_image_resource_group_name = var.gallery_resource_group
-  managed_image_name                = "ethora-core-${local.version}"
+  managed_image_name                = "ethora-${local.product}-${local.version}"
+  # The Enterprise images take about 10 GB more.
+  os_disk_size_gb = var.edition == "core" ? 30 : 64
 
   shared_image_gallery_destination {
     subscription         = var.subscription_id
     resource_group       = var.gallery_resource_group
     gallery_name         = var.gallery_name
-    image_name           = var.image_definition
+    image_name           = local.definition
     image_version        = local.version
     replication_regions  = [var.location]
     storage_account_type = "Standard_LRS"
   }
 
   azure_tags = {
-    product = "ethora-core"
+    product = "ethora-${local.product}"
     ref     = var.install_ref
   }
 }
@@ -133,7 +158,7 @@ build {
   provisioner "shell" {
     script           = "${path.root}/../../cloud/provision.sh"
     execute_command  = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E {{ .Path }}"
-    environment_vars = ["ETHORA_STEP=pull-start", "ETHORA_USER=ubuntu", "ETHORA_HOME=/home/ubuntu", "PULL_RUNNER=systemd-run"]
+    environment_vars = ["ETHORA_STEP=pull-start", "ETHORA_USER=ubuntu", "ETHORA_HOME=/home/ubuntu", "PULL_RUNNER=systemd-run", "ETHORA_EDITION=${var.edition}", "REGISTRY_USER=${var.registry_user}", "REGISTRY_TOKEN=${var.registry_token}"]
   }
   provisioner "shell" {
     script            = "${path.root}/../../cloud/provision.sh"
@@ -146,7 +171,7 @@ build {
     script           = "${path.root}/../../cloud/provision.sh"
     execute_command  = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E {{ .Path }}"
     pause_before     = "10s"
-    environment_vars = ["ETHORA_STEP=finish", "ETHORA_USER=ubuntu", "ETHORA_HOME=/home/ubuntu"]
+    environment_vars = ["ETHORA_STEP=finish", "ETHORA_USER=ubuntu", "ETHORA_HOME=/home/ubuntu", "ETHORA_EDITION=${var.edition}"]
   }
   # Swap from the resource disk, not the OS disk (Azure guidance).
   provisioner "shell" {

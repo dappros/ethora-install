@@ -79,3 +79,12 @@ gallery version (Certification Test Tool, downloaded inside the VM, or the
 automated validation that Partner Center runs on submit); the build
 already meets its checks (no password auth, no root login, agent present,
 cloud-init, no swap on the OS disk, generalized).
+
+## Ethora Enterprise, paid through Azure Marketplace
+
+`packer build -var edition=azure-marketplace -var registry_user=... -var registry_token=...`
+bakes a version of the gallery image definition `ethora-enterprise` (create it once like
+`ethora-core`): every Enterprise module image pre-pulled with a bake-time registry login
+(removed before generalisation), a 64 GB OS disk, and `/etc/ethora/edition` =
+`azure-marketplace`, so the setup page activates the VM with the licence server instead of
+asking for a key (docs/LICENSING.md, "Ethora Enterprise through Azure Marketplace").
