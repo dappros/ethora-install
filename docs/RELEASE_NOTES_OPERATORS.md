@@ -84,6 +84,24 @@ character in a group chat, a post writer) can be switched back on the
 agent's Instructions tab ("Answer business facts only from instructions and
 knowledge") or with `grounding: "off"` in `PUT /v2/agents/:idOrAddress`.
 
+**Product catalogue for store agents.** An agent can hold a store's products
+as records (name, model, price, stock, link, category, specs), imported with
+`POST /v2/agents/:idOrAddress/products` (JSON, up to 5,000 items per
+request; `GET .../products/status` shows what each import did and which rows
+it rejected). An agent with products gets a `search_products` tool and
+quotes prices, stock and links from it instead of from crawled page text;
+links it returns pass the grounding filter. Agents without products see no
+change. Nothing to do on update: the `products` and `product_catalogs`
+collections and their indexes are created by the API on start, and the AI
+service reads them over its existing backend Mongo connection
+(`BACKEND_MONGO_URL`, which the deploy sets); without that connection the
+tool is never offered. Products are deleted with their agent and with the
+App they were imported under. Two optional environment variables, not in
+`deploy.yml`: `PRODUCTS_MAX_PER_AGENT` on the API (default 50,000 products
+per agent) and `AI_PRODUCT_CANDIDATES` on the AI service (products read per
+search before ranking, default 300). The shared platform agent takes no
+catalogue; a tenant imports into its App's own agent.
+
 **Daily AI spend caps per App, on by default.** Every App now has two daily
 caps, counted per UTC day. Conversations: 2,000,000 tokens (agent replies,
 reply checks, heartbeat messages, flow answers, the agent reply API and
