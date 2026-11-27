@@ -104,8 +104,11 @@ transforms:
     inputs: [pm2]
     source: |
       .source = "pm2"
-      # backend-out.log, push-worker-error.log, backend-out-3.log
-      name, err = parse_regex(string!(.file), r'/(?P<service>.+?)-(?P<stream>out|error)(?:-\d+)?\.log$')
+      # backend-out.log, push-worker-error.log, backend-out-3.log. The name is
+      # the last path segment only: with `.+?` the match started at the first
+      # slash and every pm2 service was labelled `var/log/pm2/<name>`, which no
+      # alert rule on the center looked for.
+      name, err = parse_regex(string!(.file), r'/(?P<service>[^/]+?)-(?P<stream>out|error)(?:-\d+)?\.log$')
       if err == null {
         .service = name.service
         .stream = name.stream
