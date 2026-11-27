@@ -102,6 +102,27 @@ per agent) and `AI_PRODUCT_CANDIDATES` on the AI service (products read per
 search before ranking, default 300). The shared platform agent takes no
 catalogue; a tenant imports into its App's own agent.
 
+**WooCommerce stores as product feeds.** An agent's catalogue can be filled
+from a WooCommerce store and kept current:
+`POST /v2/agents/:idOrAddress/product-feeds` with the store address and a
+WooCommerce REST API key with Read access. The key is checked against the
+store before it is saved, stored encrypted and never returned. The first
+import starts right away; after that backend-jobs refreshes each feed every
+`refreshHours` (default 24), and products the store no longer publishes are
+marked removed. backend-jobs must run for the scheduled refreshes; "Refresh
+now" (`POST .../product-feeds/:feedId/run`) runs in the API. Nothing to do
+on update. Optional environment variables, not in `deploy.yml`:
+`PRODUCT_FEEDS_ENCRYPTION_KEY` on the API and backend-jobs (key for stored
+store keys; default derived from `SECRET_KEY`, so set it before the first
+feed if you want a separate one, and keep it: changing it later makes the
+stored keys unreadable and the feeds fail until their keys are entered
+again), `PRODUCT_FEEDS_CRON` (how often backend-jobs looks for due feeds,
+default every 10 minutes) and `PRODUCT_FEEDS_MAX_PER_TICK` (feeds per look,
+default 5) on backend-jobs. The API and backend-jobs need outbound https to
+the stores. Store addresses that resolve to a private network address are
+refused, and plain http is not allowed; `PRODUCT_FEEDS_ALLOW_PRIVATE=true`
+on the API and backend-jobs lifts both, for stores on your internal network.
+
 **Daily AI spend caps per App, on by default.** Every App now has two daily
 caps, counted per UTC day. Conversations: 2,000,000 tokens (agent replies,
 reply checks, heartbeat messages, flow answers, the agent reply API and
